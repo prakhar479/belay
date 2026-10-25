@@ -55,7 +55,8 @@ pub fn project_of(cwd: &Path) -> String {
     {
         return main.display().to_string();
     }
-    root_of(cwd)
+    // git gives real paths; so does this, or a symlinked path is another project.
+    root_of(&fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf()))
 }
 
 /// The checkout `cwd` is in (its worktree): learned paths are relative to it.
@@ -568,6 +569,14 @@ mod tests {
         let plain = d.join("plain");
         fs::create_dir_all(&plain).unwrap();
         assert_eq!(project_of(&plain), root_of(&plain));
+        // A path through a symlink (macOS: /var is /private/var) is the same project:
+        // the hook's cwd and a shell's getcwd can differ that way.
+        std::os::unix::fs::symlink(&plain, d.join("link")).unwrap();
+        assert_eq!(project_of(&d.join("link")), project_of(&plain));
+        assert_eq!(
+            project_of(&plain),
+            fs::canonicalize(&plain).unwrap().display().to_string()
+        );
         let _ = fs::remove_dir_all(&d);
     }
 

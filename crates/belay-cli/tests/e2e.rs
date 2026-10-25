@@ -3626,9 +3626,9 @@ fn fleet_merges_parts_work_three_ways() {
             "fake-merge.sh",
             &format!(
                 r#"    *"Task t-1:"*)
-      sed -i '1s/.*/A/' f.txt; belay task done t-1 one >> "$D/done.txt" 2>&1; result ;;
+      sed '1s/.*/A/' f.txt > f.new; mv f.new f.txt; belay task done t-1 one >> "$D/done.txt" 2>&1; result ;;
     *"Task t-2:"*)
-      sed -i '{second}' f.txt; belay task done t-2 two >> "$D/done.txt" 2>&1; result ;;
+      sed '{second}' f.txt > f.new; mv f.new f.txt; belay task done t-2 two >> "$D/done.txt" 2>&1; result ;;
     *"Task t-3:"*)
       cp f.txt "$D/seen.txt"; echo "$line" > "$D/told.txt"
       belay task done t-3 three >> "$D/done.txt" 2>&1; result ;;"#

@@ -884,9 +884,12 @@ fn decide_hook(
             let project = ws
                 .as_ref()
                 .map(
+                    // Real paths, as `learnstore::project_of` gives them: the user's
+                    // `belay` commands look the project up from a shell's getcwd.
                     |w| match w.common.trim_end_matches('/').strip_suffix("/.git") {
                         Some(main) => main.to_string(),
-                        None => w.top.clone(),
+                        None => fs::canonicalize(&w.top)
+                            .map_or_else(|_| w.top.clone(), |p| p.display().to_string()),
                     },
                 )
                 .unwrap_or_default();
@@ -1286,7 +1289,13 @@ mod tests {
 
     /// Run one guard-deny hook with a clock that returns `times` in turn.
     fn decide(deadline: Option<u64>, times: &[u64]) -> (Vec<belay_core::Decision>, Response) {
-        let mut c = Controller::new(Config::default(), Capabilities::CLAUDE_CODE, Mode::Optimize);
+        // Not the machine's live sessions, fixes or notes: only the deadline is tested.
+        let cfg = Config {
+            commons: belay_core::FleetSetting::Off,
+            learn: belay_core::FleetSetting::Off,
+            ..Config::default()
+        };
+        let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE, Mode::Optimize);
         let mut conn = ClaudeCode::default();
         let mut t = times.iter().copied();
         let mut clock = move || t.next().unwrap_or(u64::MAX / 2);

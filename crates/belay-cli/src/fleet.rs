@@ -30,11 +30,14 @@ pub struct Workspace {
     pub common: String,
 }
 
-/// Where `cwd` works. Outside git (or without git), both are `cwd`.
+/// Where `cwd` works. Outside git (or without git), both are `cwd` (`common` canonical).
 pub fn workspace(cwd: &Path) -> Workspace {
     let plain = Workspace {
         top: cwd.display().to_string(),
-        common: cwd.display().to_string(),
+        common: std::fs::canonicalize(cwd)
+            .unwrap_or_else(|_| cwd.to_path_buf())
+            .display()
+            .to_string(),
     };
     let out = Command::new("git")
         .arg("-C")
@@ -443,6 +446,12 @@ mod tests {
         assert_eq!(wt.common, main.common, "worktrees share the common dir");
         let plain = tmp("ws-plain");
         assert_eq!(workspace(&plain).top, plain.display().to_string());
+        // Through a symlink (macOS: /var is /private/var): spelled as given, but the
+        // same repo.
+        let link = d.join("link");
+        std::os::unix::fs::symlink(&plain, &link).unwrap();
+        assert_eq!(workspace(&link).top, link.display().to_string());
+        assert_eq!(workspace(&link).common, workspace(&plain).common);
         let _ = std::fs::remove_dir_all(&d);
         let _ = std::fs::remove_dir_all(&plain);
     }
