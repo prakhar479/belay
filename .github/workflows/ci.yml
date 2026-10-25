@@ -1,0 +1,97 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  # The live conformance check needs a model session: run it by hand after a Claude
+  # Code update (needs the ANTHROPIC_API_KEY secret).
+  workflow_dispatch:
+    inputs:
+      conformance:
+        description: Run scripts/conformance.py against the latest Claude Code
+        type: boolean
+        default: false
+
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      # Pinned, so a new clippy lint cannot break the build; bump it on purpose.
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: make check
+        shell: bash
+        run: |
+          set -o pipefail
+          if ! make check 2>&1 | tee check.log; then
+            # The job log needs a GitHub login; annotations do not. Put each failure
+            # (the panic line and the two lines after it) into one.
+            awk '/panicked at|^error(\[|:)/ { n = 3; msg = "" }
+                 n > 0 { msg = msg (msg == "" ? "" : "%0A") $0; n--; if (n == 0) print "::error::" msg }' check.log | head -20
+            exit 1
+          fi
+      - run: python3 -m py_compile scripts/*.py
+
+  audit:
+    # belay audit on this repo's own changes (experimental; reports, never fails).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - uses: ./
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.87.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked
+
+  latency:
+    # Rule 7: shim p95 under 20 ms, with a release build.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release -p belay-cli --test e2e -- --ignored shim_latency --nocapture
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - name: 60 s per target
+        working-directory: fuzz
+        run: |
+          for t in shell output guard; do
+            cargo fuzz run "$t" -- -max_total_time=60 -max_len=4096
+          done
+
+  conformance:
+    if: github.event_name == 'workflow_dispatch' && inputs.conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - run: npm install -g @anthropic-ai/claude-code
+      - run: pip install pytest
+      - run: cargo build
+      - run: python3 scripts/conformance.py
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}

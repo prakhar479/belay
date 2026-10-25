@@ -1,0 +1,27 @@
+[package]
+name = "belay-cli"
+description = "Local supervisor for command-line coding agents."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../../README.md"
+
+[[bin]]
+name = "belay"
+path = "src/main.rs"
+
+[dependencies]
+belay-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# Fleet files (F3a). The old clash with the `winnow` crate ended when the tool stopped being called winnow.
+toml = { version = "0.8", default-features = false, features = ["parse"] }

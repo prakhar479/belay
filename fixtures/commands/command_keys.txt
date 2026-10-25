@@ -1,0 +1,8 @@
+# Command keys: the same test run gets the same key (loops, re-runs). Found in D3: a
+# quoted `-k` value with `>` in it was taken for a redirection and dropped.
+# Each line: the expected key, a tab, then the command.
+pytest -k a > b tests/test_x.py	pytest -k 'a > b' tests/test_x.py -q
+pytest -k x>y	pytest -k "x>y" 2>&1 | tail -5
+pytest tests/test_api.py	pytest tests/test_api.py > /tmp/out.txt 2>&1
+pytest tests/test_api.py	pytest tests/test_api.py >/tmp/out.txt
+pytest tests/test_api.py	pytest tests/test_api.py 2>&1

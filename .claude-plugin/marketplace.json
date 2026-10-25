@@ -1,0 +1,13 @@
+{
+  "name": "belay",
+  "owner": {
+    "name": "prakhar479"
+  },
+  "plugins": [
+    {
+      "name": "belay",
+      "source": "./plugin",
+      "description": "belay hooks for Claude Code (needs the belay binary on PATH)"
+    }
+  ]
+}

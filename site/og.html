@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1200">
+<title>belay social card</title>
+<!-- Source of og.png (1200 x 630). Render it with headless Chrome at a 1200 x 630 viewport. -->
+<style>
+:root {
+  --bg: #050708;
+  --ink: #eef5f3;
+  --ink-2: #a5b3af;
+  --ink-3: #7f8d89;
+  --line: rgba(170, 235, 220, .10);
+  --grad: linear-gradient(96deg, #c6fbe6 0%, #4eebbd 42%, #25c9dc 100%);
+  --rope: #3ee6b4;
+  --t-bg: #070a0b;
+  --t-bar: #0b1012;
+  --t-line: rgba(170, 235, 220, .12);
+  --t-ink: #e3ece9;
+  --t-dim: #8a9a96;
+  --t-red: #ff8077;
+  --t-amber: #ffc56e;
+  --t-green: #52eebf;
+  --ridge-1: #0d1c1c;
+  --ridge-2: #0a1516;
+  --ridge-3: #080f10;
+  --ridge-edge: rgba(78, 235, 189, .5);
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Ubuntu Sans", Ubuntu, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", "Cascadia Code", "Ubuntu Sans Mono", "Ubuntu Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: var(--bg); }
+body { position: relative; color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+.glow { position: absolute; left: -200px; top: -320px; width: 1100px; height: 760px; background: radial-gradient(closest-side, rgba(62, 230, 180, .17), transparent 72%); }
+.glow2 { position: absolute; right: -260px; top: 80px; width: 900px; height: 700px; background: radial-gradient(closest-side, rgba(37, 201, 220, .10), transparent 70%); }
+.cols { position: absolute; inset: 0 40px; display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px;
+  -webkit-mask-image: radial-gradient(ellipse 60% 70% at 30% 20%, #000 20%, transparent 80%); mask-image: radial-gradient(ellipse 60% 70% at 30% 20%, #000 20%, transparent 80%); }
+.cols span { border-left: 1px solid rgba(170, 235, 220, .045); border-right: 1px solid rgba(170, 235, 220, .045); }
+.ridge { position: absolute; left: 0; bottom: 0; width: 1200px; height: 200px; }
+
+.left { position: absolute; left: 72px; top: 70px; width: 610px; }
+.brand { display: flex; align-items: center; gap: 14px; font: 700 34px/1 var(--sans); letter-spacing: -.02em; }
+.brand svg { width: 44px; height: 44px; }
+.tag { display: inline-flex; margin-left: 10px; font: 600 13px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: #4eebbd; border: 1px solid rgba(62, 230, 180, .35); background: rgba(62, 230, 180, .09); padding: 7px 10px; border-radius: 999px; }
+h1 { margin: 56px 0 0; font: 700 64px/1.02 var(--sans); letter-spacing: -.045em; }
+h1 span { display: block; }
+h1 .g { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; padding-bottom: 6px; }
+.pitch { margin: 28px 0 0; font-size: 21.5px; line-height: 1.5; color: var(--ink-2); }
+.pitch b { font-size: 24px; }
+.pitch b { color: var(--ink); font-weight: 600; }
+.url { position: absolute; left: 72px; bottom: 44px; font: 500 17px/1 var(--mono); color: var(--ink-2); }
+
+.rope { position: absolute; left: 912px; top: 0; width: 40px; height: 150px; }
+.card { position: absolute; left: 688px; top: 140px; width: 448px; border-radius: 16px; padding: 1px;
+  background: linear-gradient(180deg, rgba(120, 240, 205, .55), rgba(120, 240, 205, .08) 40%, rgba(255, 128, 119, .35));
+  box-shadow: 0 40px 90px -30px rgba(62, 230, 180, .28), 0 30px 60px -30px rgba(0, 0, 0, .9); }
+.term { background: var(--t-bg); border-radius: 15px; overflow: hidden; }
+.bar { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px; background: var(--t-bar); border-bottom: 1px solid var(--t-line); font: 500 13px/1 var(--mono); color: var(--t-dim); }
+.bar i { width: 10px; height: 10px; border-radius: 50%; background: #2a3336; display: inline-block; margin-right: 2px; }
+.bar .t { flex: 1; text-align: center; }
+.chip { font: 600 11px/1 var(--mono); color: var(--t-green); border: 1px solid rgba(82, 238, 191, .35); background: rgba(82, 238, 191, .08); padding: 5px 8px; border-radius: 999px; }
+.screen { padding: 16px 18px 18px; font: 13.5px/1.6 var(--mono); color: var(--t-ink); }
+.ln b { font-weight: 700; }
+.ln .dot { color: var(--t-green); }
+.ln .dim { color: var(--t-dim); }
+.diff { margin: 8px 0 0; border: 1px solid var(--t-line); border-radius: 8px; overflow: hidden; }
+.diff div { padding: 1px 10px; white-space: pre; }
+.diff .del { background: rgba(255, 128, 119, .08); color: #ffb3ad; }
+.diff .add { background: rgba(255, 128, 119, .05); color: #a9f5dc; opacity: .5; }
+.diff .add span { text-decoration: line-through; text-decoration-color: var(--t-red); text-decoration-thickness: 1.5px; }
+.msg { margin-top: 12px; padding: 11px 13px 12px; border-radius: 10px; border: 1px solid rgba(255, 128, 119, .4); background: linear-gradient(180deg, rgba(255, 128, 119, .11), rgba(255, 128, 119, .03)); position: relative; }
+.msg::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: var(--t-red); }
+.head { display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: var(--t-dim); margin-bottom: 6px; }
+.stamp { font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-size: 11px; padding: 2px 7px; border-radius: 5px; color: #170504; background: var(--t-red); }
+.msg p { margin: 0; font-size: 13px; line-height: 1.6; }
+.msg code { font-family: inherit; color: var(--t-amber); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#b4f8dc"/><stop offset=".5" stop-color="#3ee6b4"/><stop offset="1" stop-color="#1fb8d6"/></linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".35" stop-color="#fff"/></linearGradient>
+    <mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="150"><rect width="40" height="150" fill="url(#fade)"/></mask>
+  </defs>
+</svg>
+<div class="glow"></div><div class="glow2"></div>
+<div class="cols"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+<svg class="ridge" viewBox="0 60 1600 360" preserveAspectRatio="none" aria-hidden="true">
+  <path fill="var(--ridge-1)" d="M0 262 L60 236 L120 249 L190 197 L240 214 L300 150 L338 178 L372 167 L430 222 L500 201 L560 169 L610 187 L680 112 L720 128 L760 70 L800 104 L836 97 L890 151 L950 139 L1010 177 L1070 151 L1130 156 L1180 120 L1220 140 L1262 133 L1320 191 L1380 179 L1440 201 L1500 171 L1550 189 L1600 181 L1600 420 L0 420 Z"/>
+  <path fill="none" stroke="var(--ridge-edge)" stroke-width="2" stroke-linejoin="round" vector-effect="non-scaling-stroke" d="M0 262 L60 236 L120 249 L190 197 L240 214 L300 150 L338 178 L372 167 L430 222 L500 201 L560 169 L610 187 L680 112 L720 128 L760 70 L800 104 L836 97 L890 151 L950 139 L1010 177 L1070 151 L1130 156 L1180 120 L1220 140 L1262 133 L1320 191 L1380 179 L1440 201 L1500 171 L1550 189 L1600 181"/>
+  <path fill="var(--ridge-2)" d="M0 300 L70 270 L130 286 L210 232 L260 252 L320 236 L390 280 L460 248 L520 262 L590 214 L640 236 L700 226 L770 268 L850 238 L910 254 L980 200 L1030 222 L1090 210 L1160 258 L1230 236 L1300 250 L1370 214 L1420 232 L1480 226 L1540 260 L1600 244 L1600 420 L0 420 Z"/>
+  <path fill="var(--ridge-3)" d="M0 332 L90 302 L170 322 L250 290 L330 318 L420 300 L500 334 L600 306 L680 324 L760 296 L850 326 L940 310 L1020 332 L1110 300 L1200 318 L1280 296 L1370 326 L1450 308 L1530 322 L1600 300 L1600 420 L0 420 Z"/>
+</svg>
+
+<div class="left">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><g transform="rotate(30 16 16)"><path d="M22.5 11.5A6.5 6.5 0 0 0 9.5 11.5V20.5A6.5 6.5 0 0 0 22.5 20.5" fill="none" stroke="url(#bg-grad)" stroke-width="3" stroke-linecap="round"/><path d="M22.5 19.5V13.8" fill="none" stroke="#eef5f3" stroke-width="2.2" stroke-linecap="round"/></g></svg>
+    belay <span class="tag">open source</span>
+  </div>
+  <h1><span>Your agent climbs.</span><span class="g">belay holds the rope.</span></h1>
+  <p class="pitch"><b>A local supervisor for Claude Code.</b><br>It guards your tests, catches loops, and writes down why.</p>
+</div>
+<p class="url">prakhar479.github.io/belay</p>
+
+<svg class="rope" viewBox="0 0 40 150" aria-hidden="true">
+  <g mask="url(#m)">
+    <path d="M20 0 V96" stroke="var(--rope)" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <path d="M20 0 V86" stroke="rgba(0,0,0,.28)" stroke-width="6" stroke-dasharray="1.8 3.4" fill="none"/>
+  </g>
+  <rect x="13.5" y="88" width="13" height="16" rx="5.5" fill="var(--rope)" stroke="#0a7f63" stroke-width="1.5"/>
+  <path d="M30.5 109 A10.5 10.5 0 0 0 9.5 109 V127 A10.5 10.5 0 0 0 30.5 127" fill="none" stroke="url(#bg-grad)" stroke-width="4.2" stroke-linecap="round"/>
+  <path d="M30.5 125.5 V112" fill="none" stroke="#eef5f3" stroke-width="3" stroke-linecap="round"/>
+  <rect x="12" y="134" width="16" height="12" rx="4" fill="#0b1012" stroke="var(--rope)" stroke-width="2.6"/>
+</svg>
+
+<div class="card">
+  <div class="term">
+    <div class="bar"><span><i></i><i></i><i></i></span><span class="t">~/shop · claude</span><span class="chip">optimize</span></div>
+    <div class="screen">
+      <div class="ln"><span class="dot">●</span> <b>Edit</b><span class="dim">(</span>tests/test_discount.py<span class="dim">)</span></div>
+      <div class="diff">
+        <div class="del">-  assert total(cart) == 19.99</div>
+        <div class="add">+  <span>assert total(cart) == 19.98</span></div>
+      </div>
+      <div class="msg">
+        <div class="head"><span class="stamp">Denied</span> test guard · before the edit lands</div>
+        <p>belay: this edit may weaken tests in tests/test_discount.py: expected value changed to the failing run's actual value (19.99 → 19.98). If the user wants it anyway, they can run <code>`! belay allow`</code> and you can retry the same edit.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

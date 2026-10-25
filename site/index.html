@@ -1,0 +1,2074 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>belay · a local supervisor for Claude Code</title>
+<meta name="description" content="belay is an open-source, local supervisor for Claude Code. It sits on the hooks and sees every tool call before the agent reads it. It guards your tests, catches loops, trims long test output, and records every action with a reason.">
+<link rel="canonical" href="https://prakhar479.github.io/belay/">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#050708" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="belay">
+<meta property="og:locale" content="en_US">
+<meta property="og:url" content="https://prakhar479.github.io/belay/">
+<meta property="og:title" content="belay: your agent climbs, belay holds the rope">
+<meta property="og:description" content="An open-source, local supervisor for Claude Code. It guards your tests, catches loops, trims long test output, and records every action with a reason.">
+<meta property="og:image" content="https://prakhar479.github.io/belay/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Beside it, a terminal shows belay denying an edit that weakens a test.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="belay: your agent climbs, belay holds the rope">
+<meta name="twitter:description" content="An open-source, local supervisor for Claude Code. It guards your tests, catches loops, trims long test output, and records every action with a reason.">
+<meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
+<meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Beside it, a terminal shows belay denying an edit that weakens a test.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b4f8dc'/%3E%3Cstop offset='.5' stop-color='%233ee6b4'/%3E%3Cstop offset='1' stop-color='%231fb8d6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='%23071012'/%3E%3Cg transform='rotate(30 16 16)'%3E%3Cpath d='M22 11.8A6 6 0 0 0 10 11.8V20.2A6 6 0 0 0 22 20.2' fill='none' stroke='url(%23g)' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M22 19.4V14' stroke='%23eef5f3' stroke-width='2.4' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
+<script>
+  (function () {
+    var d = document.documentElement;
+    d.className = d.className.replace('no-js', 'js');
+    try {
+      var t = localStorage.getItem('belay-theme');
+      if (t === 'light' || t === 'dark') d.setAttribute('data-theme', t);
+    } catch (e) {}
+  })();
+</script>
+<style>
+/* ---------- Tokens ---------- */
+:root {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-soft: #f5f8f7;
+  --panel: #ffffff;
+  --panel-2: #f3f7f6;
+  --line: rgba(6, 42, 36, .10);
+  --line-2: rgba(6, 42, 36, .17);
+  --ink: #06120f;
+  --ink-2: #384845;
+  --ink-3: #566663;
+  --accent: #067a60;
+  --accent-strong: #0bb488;
+  --accent-soft: rgba(11, 180, 136, .10);
+  --accent-line: rgba(11, 180, 136, .35);
+  --grad: linear-gradient(96deg, #079e7a 0%, #0aa69c 48%, #0a83c0 100%);
+  --glow-1: rgba(16, 200, 160, .20);
+  --glow-2: rgba(30, 170, 214, .14);
+  --grid-line: rgba(6, 42, 36, .055);
+  --btn-bg: #06120f;
+  --btn-ink: #ffffff;
+  --ok: #067a60;
+  --warn: #9a5b00;
+  --bad: #b8322a;
+  --ok-bg: rgba(6, 122, 96, .10);
+  --warn-bg: rgba(186, 112, 0, .12);
+  --bad-bg: rgba(184, 50, 42, .10);
+  --card-shadow: 0 1px 0 rgba(6, 42, 36, .03), 0 12px 32px -18px rgba(6, 42, 36, .18);
+  --term-shadow: 0 50px 100px -40px rgba(4, 46, 40, .45), 0 24px 48px -30px rgba(4, 46, 40, .35);
+  --ridge-1: #e2f0ec;
+  --ridge-2: #cfe5de;
+  --ridge-3: #b9d8ce;
+  --ridge-edge: rgba(6, 122, 96, .45);
+  --rope: #0a9c78;
+  --rope-2: #067a60;
+
+  /* The terminal stays dark in both themes. */
+  --t-bg: #070a0b;
+  --t-bar: #0b1012;
+  --t-line: rgba(170, 235, 220, .10);
+  --t-ink: #e3ece9;
+  --t-dim: #8a9a96;
+  --t-faint: #788784;
+  --t-green: #52eebf;
+  --t-teal: #5fd8e8;
+  --t-red: #ff8077;
+  --t-amber: #ffc56e;
+
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Ubuntu Sans", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  --display: "Inter Display", "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", "Ubuntu Sans", Roboto, "Helvetica Neue", Arial, system-ui, sans-serif;
+  --mono: "JetBrains Mono", "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", "Ubuntu Sans Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --r: 16px;
+  --gut: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #050708;
+    --bg-soft: #080b0c;
+    --panel: #0a0e0f;
+    --panel-2: #0d1214;
+    --line: rgba(170, 235, 220, .085);
+    --line-2: rgba(170, 235, 220, .16);
+    --ink: #eef5f3;
+    --ink-2: #a5b3af;
+    --ink-3: #7f8d89;
+    --accent: #4eebbd;
+    --accent-strong: #3ee6b4;
+    --accent-soft: rgba(62, 230, 180, .09);
+    --accent-line: rgba(62, 230, 180, .35);
+    --grad: linear-gradient(96deg, #c6fbe6 0%, #4eebbd 42%, #25c9dc 100%);
+    --glow-1: rgba(62, 230, 180, .17);
+    --glow-2: rgba(37, 201, 220, .12);
+    --grid-line: rgba(170, 235, 220, .045);
+    --btn-bg: #eef5f3;
+    --btn-ink: #050708;
+    --ok: #4eebbd;
+    --warn: #ffc56e;
+    --bad: #ff8077;
+    --ok-bg: rgba(78, 235, 189, .10);
+    --warn-bg: rgba(255, 197, 110, .10);
+    --bad-bg: rgba(255, 128, 119, .10);
+    --card-shadow: none;
+    --term-shadow: 0 60px 120px -50px rgba(62, 230, 180, .25), 0 30px 60px -30px rgba(0, 0, 0, .8);
+    --ridge-1: #0d1c1c;
+    --ridge-2: #0a1516;
+    --ridge-3: #080f10;
+    --ridge-edge: rgba(78, 235, 189, .5);
+    --rope: #3ee6b4;
+    --rope-2: #1fb8d6;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #050708;
+  --bg-soft: #080b0c;
+  --panel: #0a0e0f;
+  --panel-2: #0d1214;
+  --line: rgba(170, 235, 220, .085);
+  --line-2: rgba(170, 235, 220, .16);
+  --ink: #eef5f3;
+  --ink-2: #a5b3af;
+  --ink-3: #7f8d89;
+  --accent: #4eebbd;
+  --accent-strong: #3ee6b4;
+  --accent-soft: rgba(62, 230, 180, .09);
+  --accent-line: rgba(62, 230, 180, .35);
+  --grad: linear-gradient(96deg, #c6fbe6 0%, #4eebbd 42%, #25c9dc 100%);
+  --glow-1: rgba(62, 230, 180, .17);
+  --glow-2: rgba(37, 201, 220, .12);
+  --grid-line: rgba(170, 235, 220, .045);
+  --btn-bg: #eef5f3;
+  --btn-ink: #050708;
+  --ok: #4eebbd;
+  --warn: #ffc56e;
+  --bad: #ff8077;
+  --ok-bg: rgba(78, 235, 189, .10);
+  --warn-bg: rgba(255, 197, 110, .10);
+  --bad-bg: rgba(255, 128, 119, .10);
+  --card-shadow: none;
+  --term-shadow: 0 60px 120px -50px rgba(62, 230, 180, .25), 0 30px 60px -30px rgba(0, 0, 0, .8);
+  --ridge-1: #0d1c1c;
+  --ridge-2: #0a1516;
+  --ridge-3: #080f10;
+  --ridge-edge: rgba(78, 235, 189, .5);
+  --rope: #3ee6b4;
+  --rope-2: #1fb8d6;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 76px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  text-rendering: optimizeLegibility;
+}
+@media (min-width: 720px) { body { font-size: 17px; } :root { --gut: 32px; } }
+img, svg { display: block; }
+a { color: inherit; }
+p { margin: 0; }
+h1, h2, h3, h4 { margin: 0; font-family: var(--display); }
+code, pre, kbd, .mono { font-family: var(--mono); }
+code { font-size: .86em; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.skip { position: absolute; left: 12px; top: -60px; z-index: 100; background: var(--btn-bg); color: var(--btn-ink); padding: 10px 14px; border-radius: 10px; font-weight: 600; text-decoration: none; }
+.skip:focus { top: 12px; }
+.wrap { width: 100%; max-width: 1248px; margin: 0 auto; padding: 0 var(--gut); }
+.g12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.g12 > * { grid-column: 1 / -1; min-width: 0; }
+.grad-text {
+  background: var(--grad);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+}
+.ic { width: 16px; height: 16px; flex: none; }
+
+/* ---------- Nav ---------- */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  backdrop-filter: saturate(1.6) blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+.nav .wrap { display: flex; align-items: center; height: 60px; gap: 12px; }
+.brand { display: inline-flex; align-items: center; gap: 9px; text-decoration: none; font-weight: 700; font-size: 18px; letter-spacing: -.02em; color: var(--ink); font-family: var(--display); }
+.brand svg { width: 28px; height: 28px; color: var(--ink); }
+.nav-links { display: none; gap: 4px; margin-left: 28px; }
+.nav-links a { text-decoration: none; color: var(--ink-2); font-size: 14.5px; padding: 6px 11px; border-radius: 8px; }
+.nav-links a:hover { color: var(--ink); background: var(--accent-soft); }
+.nav-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.btn-sm {
+  display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 13px;
+  border-radius: 10px; border: 1px solid var(--line-2); background: transparent;
+  color: var(--ink); font: 600 14px/1 var(--sans); text-decoration: none; cursor: pointer;
+}
+.btn-sm:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.icon-btn { width: 36px; padding: 0; justify-content: center; }
+.theme-btn .sun { display: none; }
+:root[data-theme="dark"] .theme-btn .sun { display: block; }
+:root[data-theme="dark"] .theme-btn .moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .theme-btn .sun { display: block; }
+  :root:not([data-theme="light"]) .theme-btn .moon { display: none; }
+}
+@media (min-width: 940px) { .nav-links { display: flex; } }
+.nav-qs { display: none; }
+@media (min-width: 480px) and (max-width: 939px) { .nav-qs { display: inline-flex; } }
+.hide-xs { display: none; }
+@media (min-width: 480px) { .hide-xs { display: inline-flex; } }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  height: 46px; padding: 0 20px; border-radius: 12px;
+  font: 600 15.5px/1 var(--sans); text-decoration: none; cursor: pointer;
+  border: 1px solid var(--line-2); color: var(--ink); background: var(--panel);
+  transition: transform .15s ease, border-color .15s ease, background .15s ease;
+}
+.btn:hover { border-color: var(--accent-line); transform: translateY(-1px); }
+.btn.primary { background: var(--btn-bg); color: var(--btn-ink); border-color: transparent; }
+.btn.primary:hover { box-shadow: 0 0 0 4px var(--accent-soft), 0 10px 30px -10px var(--accent-line); }
+.btn .arr { transition: transform .15s ease; }
+.btn:hover .arr { transform: translateX(3px); }
+
+/* ---------- Hero ---------- */
+.hero { position: relative; padding: 48px 0 0; overflow: hidden; isolation: isolate; }
+@media (min-width: 900px) { .hero { padding-top: 50px; } }
+.hero-bg { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.hero-bg .cols {
+  position: absolute; inset: 0 var(--gut); max-width: 1184px; margin: 0 auto;
+  display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, #000 20%, transparent 78%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 20%, #000 20%, transparent 78%);
+}
+.hero-bg .cols span { border-left: 1px solid var(--grid-line); border-right: 1px solid var(--grid-line); }
+.hero-bg .glow-a {
+  position: absolute; left: 50%; top: -260px; width: 1100px; height: 700px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--glow-1), transparent 72%);
+  filter: blur(10px);
+}
+.hero-bg .glow-b {
+  position: absolute; left: 50%; top: 620px; width: 1300px; height: 900px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, var(--glow-2), transparent 70%);
+}
+.hero-inner { text-align: center; display: flex; flex-direction: column; align-items: center; }
+.pill {
+  display: inline-flex; align-items: center; gap: 10px; padding: 6px 8px 6px 8px;
+  border: 1px solid var(--line-2); border-radius: 999px; background: color-mix(in srgb, var(--panel) 70%, transparent);
+  font-size: 13.5px; color: var(--ink-2); text-decoration: none; margin-bottom: 22px;
+}
+.pill:hover { border-color: var(--accent-line); }
+.pill .tag { font: 600 11.5px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line); padding: 5px 8px; border-radius: 999px; }
+.pill .go { color: var(--ink-3); padding-right: 6px; }
+h1.hero-title {
+  font-size: clamp(40px, 7.2vw, 96px);
+  line-height: .98; letter-spacing: -.05em; font-weight: 700;
+  max-width: 12.5em; text-wrap: balance;
+}
+h1.hero-title .line { display: block; }
+.hero-lede {
+  margin-top: 22px; max-width: 44em; color: var(--ink-2);
+  font-size: clamp(17px, 1.5vw, 19px); line-height: 1.55; text-wrap: pretty;
+}
+.hero-lede strong { color: var(--ink); font-weight: 600; }
+
+/* Install box */
+.install { margin-top: 26px; width: 100%; max-width: 720px; text-align: left; }
+.install-tabs { display: flex; gap: 2px; margin-bottom: -1px; padding-left: 10px; }
+.itab {
+  font: 500 13px/1 var(--mono); color: var(--ink-3); background: transparent;
+  border: 1px solid transparent; border-bottom: none; padding: 9px 13px; border-radius: 10px 10px 0 0; cursor: pointer;
+}
+.itab[aria-selected="true"] { color: var(--ink); background: var(--panel); border-color: var(--line-2); }
+.ibox {
+  display: flex; align-items: stretch; background: var(--panel); border: 1px solid var(--line-2);
+  border-radius: 14px; overflow: hidden; box-shadow: var(--card-shadow);
+}
+.ibox[hidden] { display: none; }
+.ibox pre {
+  flex: 1; min-width: 0; margin: 0; padding: 15px 16px; overflow-x: auto;
+  font-size: 14px; line-height: 1.65; color: var(--ink); white-space: pre; scrollbar-width: thin;
+}
+.ibox pre .ps { color: var(--accent); user-select: none; }
+.ibox pre .cm { color: var(--ink-3); }
+.copy {
+  flex: none; display: inline-flex; align-items: center; gap: 7px; align-self: stretch;
+  border: none; border-left: 1px solid var(--line); background: var(--panel-2); color: var(--ink-2);
+  font: 600 13px/1 var(--sans); padding: 0 16px; cursor: pointer;
+}
+.copy:hover { color: var(--ink); }
+@media (max-width: 479px) { .copy .lbl { display: none; } .copy { padding: 0 14px; } }
+.copy .ck { display: none; }
+.copy.done { color: var(--accent); }
+.copy.done .cp { display: none; }
+.copy.done .ck { display: block; }
+.install-note { margin-top: 11px; font-size: 13.5px; color: var(--ink-3); text-align: center; }
+.install-note a { color: var(--ink-2); text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.install-note a:hover { color: var(--accent); }
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin-top: 20px; }
+.install-note code { font-size: .92em; color: var(--ink); white-space: nowrap; }
+
+/* ---------- Stage: the hero terminal ---------- */
+.stage-wrap { position: relative; margin-top: 0; padding-bottom: 24px; }
+/* The rope: it drops from the headline and clips onto the terminal. */
+.rope-drop { position: relative; height: 80px; max-width: 1040px; margin: 0 auto; z-index: 3; pointer-events: none; }
+.rope-drop svg { position: absolute; left: 50%; bottom: -14px; width: 40px; height: 100px; margin-left: -20px; overflow: visible; }
+.rope-drop .strand { stroke: var(--rope); }
+.rope-drop .twist { stroke: rgba(0, 0, 0, .28); }
+.rope-drop .knot { fill: var(--rope); stroke: var(--rope-2); }
+.stage-wrap.caught .rope-drop .knot { fill: var(--t-red); }
+.rope-drop .biner { stroke: var(--ink-2); }
+.rope-drop .gate { stroke: var(--ink); }
+.rope-drop .hang { fill: var(--t-bar); stroke: var(--rope); }
+.rope-drop .clip { transform-origin: 20px 40px; }
+.stage-wrap.caught .rope-drop .clip { animation: tug .7s cubic-bezier(.3, 1.6, .5, 1) both; }
+.stage-wrap.caught .rope-drop .strand { stroke: var(--t-red); transition: stroke .2s ease; }
+@keyframes tug { 0% { transform: none; } 30% { transform: translateY(4px); } 100% { transform: none; } }
+.term-cap { padding: 9px 16px 10px; border-bottom: 1px solid var(--t-line); background: #090d0e; font: 12.5px/1.5 var(--sans); color: var(--t-dim); text-align: center; text-wrap: balance; }
+.term-cap b { color: var(--t-ink); font-weight: 600; }
+@media (min-width: 720px) { .term-cap { font-size: 13px; padding: 9px 24px 10px; } }
+/* Mountain ridge: hero floor, section divider, final backdrop. */
+.ridge { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; pointer-events: none; display: block; }
+.hero .ridge { height: clamp(200px, 28vw, 400px); width: 100vw; left: 50%; right: auto; transform: translateX(-50%); z-index: -1; }
+.ridge-div { position: relative; height: clamp(90px, 11vw, 160px); overflow: hidden; margin-top: -1px; }
+.ridge-div .ridge { height: 100%; }
+.ridge-div::before { content: ""; position: absolute; left: 50%; bottom: -40%; width: min(1100px, 120vw); height: 160%; transform: translateX(-50%); background: radial-gradient(closest-side, var(--glow-1), transparent 75%); pointer-events: none; }
+/* Horizontal scroll cue on wide code. */
+.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); }
+.stage {
+  position: relative; max-width: 1040px; margin: 0 auto; border-radius: 18px; padding: 1px;
+  background: linear-gradient(180deg, rgba(120, 240, 205, .55), rgba(120, 240, 205, .10) 30%, rgba(120, 240, 205, .06) 70%, rgba(37, 201, 220, .30));
+  box-shadow: var(--term-shadow);
+}
+.stage::after {
+  content: ""; position: absolute; inset: -1px; border-radius: 19px; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 128, 119, 0), 0 0 0 rgba(255, 128, 119, 0);
+  transition: box-shadow .5s ease;
+}
+.stage.flash::after { box-shadow: 0 0 0 1px rgba(255, 128, 119, .7), 0 0 60px 4px rgba(255, 128, 119, .22); }
+.term { background: var(--t-bg); border-radius: 17px; overflow: hidden; color: var(--t-ink); }
+.term-bar {
+  display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 14px;
+  background: var(--t-bar); border-bottom: 1px solid var(--t-line);
+}
+.dots { display: flex; gap: 7px; }
+.dots i { width: 11px; height: 11px; border-radius: 50%; background: #2a3336; }
+.term-title { flex: 1; min-width: 0; text-align: center; font: 500 12.5px/1 var(--mono); color: var(--t-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mode-chip { font: 600 11px/1 var(--mono); letter-spacing: .04em; color: var(--t-green); border: 1px solid rgba(82, 238, 191, .35); background: rgba(82, 238, 191, .08); padding: 5px 8px; border-radius: 999px; white-space: nowrap; }
+.screen { position: relative; padding: 18px 16px 22px; font: 12.5px/1.7 var(--mono); min-height: 400px; }
+@media (min-width: 720px) { .screen { padding: 20px 30px 26px; font-size: 13.5px; min-height: 420px; } }
+.scene { outline: none; }
+.scene[hidden] { display: none; }
+.scene-title { display: none; }
+.ln { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; min-height: 1.7em; }
+.ln .ps { color: var(--t-green); }
+.ln.cmd { color: var(--t-dim); }
+.ln.user { color: var(--t-ink); margin-top: 10px; }
+.ln.user .ps { color: var(--t-teal); }
+.ln.tool { margin-top: 12px; color: var(--t-ink); }
+.ln.tool .b { color: var(--t-green); }
+.ln.tool .tn { font-weight: 700; color: var(--t-ink); }
+.ln.tool .ar { color: var(--t-dim); }
+.ln.out { color: var(--t-dim); padding-left: 2ch; }
+.ln.out .br { color: var(--t-faint); }
+.ln .red { color: var(--t-red); }
+.ln .grn { color: var(--t-green); }
+.ln .amb { color: var(--t-amber); }
+.ln .dim { color: var(--t-dim); }
+.ln.agent { margin-top: 14px; color: var(--t-ink); }
+.ln.agent .b { color: #f2f5f4; }
+.chip { display: inline-block; font-size: .82em; line-height: 1.5; padding: 0 7px; border-radius: 6px; border: 1px solid var(--t-line); color: var(--t-dim); margin-left: 6px; white-space: nowrap; }
+.chip.r { color: var(--t-red); border-color: rgba(255, 128, 119, .35); background: rgba(255, 128, 119, .07); }
+.chip.s { color: var(--t-amber); border-color: rgba(255, 197, 110, .35); background: rgba(255, 197, 110, .07); }
+.diff { margin: 8px 0 0 2ch; border: 1px solid var(--t-line); border-radius: 9px; overflow: hidden; }
+.diff .ln { padding: 1px 10px 1px 0; display: flex; }
+.diff .no { width: 4ch; flex: none; text-align: right; padding-right: 1.2ch; color: var(--t-faint); user-select: none; }
+.diff .sg { width: 2ch; flex: none; }
+.diff .tx { flex: 1; min-width: 0; }
+.diff .del { background: rgba(255, 128, 119, .08); color: #ffb3ad; }
+.diff .add { background: rgba(82, 238, 191, .08); color: #a9f5dc; transition: opacity .4s ease, background .4s ease; }
+.diff mark { background: rgba(255, 255, 255, .1); color: inherit; border-radius: 3px; padding: 0 2px; }
+.diff.blocked .add { opacity: .45; background: rgba(255, 128, 119, .05); }
+.diff.blocked .add .tx { text-decoration: line-through; text-decoration-color: var(--t-red); text-decoration-thickness: 1.5px; }
+.msg {
+  margin: 14px 0 0 2ch; padding: 12px 14px 13px; border-radius: 10px;
+  border: 1px solid rgba(82, 238, 191, .28); background: linear-gradient(180deg, rgba(82, 238, 191, .08), rgba(82, 238, 191, .03));
+  position: relative;
+}
+.msg::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 2px; border-radius: 2px; background: var(--t-green); }
+.msg.deny { border-color: rgba(255, 128, 119, .38); background: linear-gradient(180deg, rgba(255, 128, 119, .10), rgba(255, 128, 119, .03)); }
+.msg.deny::before { background: var(--t-red); }
+.msg-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: .86em; color: var(--t-dim); margin-bottom: 6px; }
+.msg-head .stamp { font-weight: 700; letter-spacing: .06em; text-transform: uppercase; font-size: .9em; padding: 2px 7px; border-radius: 5px; color: #170504; background: var(--t-red); }
+.msg-head .stamp.g { background: var(--t-green); color: #03140e; }
+.msg-head .stamp.t { background: var(--t-teal); color: #031218; }
+.msg p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--t-ink); }
+.msg code { font-size: 1em; color: var(--t-amber); }
+.caret { display: inline-block; width: .6em; height: 1.15em; vertical-align: -0.2em; background: var(--t-green); animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.stream { display: none; overflow: hidden; }
+.stream.live { display: block; transition: max-height .6s cubic-bezier(.6, 0, .2, 1), opacity .5s ease; }
+.stream.live.collapsed { max-height: 0 !important; opacity: 0; }
+.stream .ln { color: var(--t-faint); padding-left: 2ch; animation: lnIn .2s ease both; }
+.stream .ln .grn { color: #2f8f73; }
+.ln.omit { color: var(--t-teal); padding-left: 2ch; }
+.ln.foot { color: var(--t-green); padding-left: 2ch; }
+/* hidden steps while a scene plays */
+.js .pending { opacity: 0; transform: translateY(4px); }
+.js .shown { animation: lnIn .32s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes lnIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+.js .msg.shown { animation: msgIn .5s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: none; } }
+
+/* Demo chapters (the tabs) */
+.chapters { max-width: 1040px; margin: 18px auto 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 820px) { .chapters { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } }
+.chap {
+  position: relative; text-align: left; background: color-mix(in srgb, var(--bg) 80%, transparent); border: 1px solid var(--line-2);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border-radius: 12px; padding: 13px 14px 15px; cursor: pointer; color: var(--ink-2); font: inherit; overflow: hidden;
+  transition: border-color .2s ease, background .2s ease;
+}
+.chap:hover { border-color: var(--line-2); }
+.chap[aria-selected="true"] { border-color: var(--accent-line); background: color-mix(in srgb, var(--bg) 84%, var(--accent-strong)); color: var(--ink); }
+.chap b { display: flex; align-items: center; gap: 8px; font: 600 14.5px/1.3 var(--sans); color: var(--ink); }
+.chap b .k { font: 500 11px/1 var(--mono); color: var(--ink-3); }
+.chap span.d { display: block; font-size: 13.5px; line-height: 1.45; margin-top: 5px; color: var(--ink-2); }
+.chap .prog { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--grad); transform-origin: left; transform: scaleX(0); }
+.chap[aria-selected="true"] .prog.run { animation: prog var(--dur, 10s) linear forwards; }
+@keyframes prog { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.demo-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; text-align: center; margin-top: 16px; font-size: 13px; color: var(--ink-3); }
+.demo-note .btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; }
+.no-js .demo-note { display: none; }
+.motion-off .live, .motion-off .caret, .motion-off .wire .pkt, .motion-off .ret .lane i { animation: none !important; }
+.motion-off .wire .pkt { display: none; }
+.no-js .chapters { display: none; }
+.no-js .scene { display: block !important; }
+.no-js .scene + .scene { margin-top: 28px; padding-top: 22px; border-top: 1px dashed var(--t-line); }
+.no-js .scene-title { display: block; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--t-teal); margin-bottom: 10px; }
+
+.factbar { position: relative; list-style: none; margin: 56px auto 0; padding: 0; max-width: 1040px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+@media (min-width: 820px) { .factbar { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.factbar li { padding: 20px 16px; text-align: center; border-left: 1px solid var(--line); }
+.factbar li:nth-child(odd) { border-left: none; }
+.factbar li:nth-child(n+3) { border-top: 1px solid var(--line); }
+.factbar li:last-child { grid-column: 1 / -1; }
+@media (min-width: 820px) { .factbar li, .factbar li:nth-child(odd), .factbar li:nth-child(n+3) { border-left: 1px solid var(--line); border-top: none; } .factbar li:first-child { border-left: none; } .factbar li:last-child { grid-column: auto; } }
+.factbar b { display: block; font: 700 19px/1.2 var(--display); letter-spacing: -.02em; color: var(--ink); }
+.factbar span { display: block; margin-top: 4px; font-size: 13px; color: var(--ink-3); }
+
+/* ---------- Sections ---------- */
+.sec { position: relative; padding: 88px 0; }
+@media (min-width: 900px) { .sec { padding: 136px 0; } }
+.sec.rule { border-top: 1px solid var(--line); }
+.sec.rule::before, .sec.rule::after {
+  content: "+"; position: absolute; top: -12px; font: 300 18px/22px var(--mono); color: var(--ink-3);
+  left: max(var(--gut), calc(50% - 624px + var(--gut))); transform: translateX(-50%);
+}
+.sec.rule::after { left: auto; right: max(var(--gut), calc(50% - 624px + var(--gut))); transform: translateX(50%); }
+.sec-head { max-width: 780px; margin-bottom: 56px; }
+.sec-head.center { margin-left: auto; margin-right: auto; text-align: center; }
+.eyebrow { display: inline-flex; align-items: center; gap: 10px; font: 500 12.5px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin-bottom: 20px; }
+.eyebrow .n { color: var(--ink-3); }
+.eyebrow .n::after { content: "/"; margin-left: 10px; color: var(--line-2); }
+h2.h2 { font-size: clamp(34px, 5.2vw, 64px); line-height: 1.02; letter-spacing: -.04em; font-weight: 700; text-wrap: balance; }
+h2.h2 .mute { color: var(--ink-3); }
+.sec-lede { margin-top: 20px; color: var(--ink-2); font-size: clamp(17px, 1.5vw, 19px); max-width: 38em; text-wrap: pretty; }
+.sec-head.center .sec-lede { margin-left: auto; margin-right: auto; }
+.inline-code { font-family: var(--mono); font-size: .86em; padding: .1em .4em; border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); white-space: nowrap; }
+
+/* reveal */
+.js .reveal { opacity: 0; transform: translateY(22px); transition: opacity .8s cubic-bezier(.2, .7, .2, 1), transform .8s cubic-bezier(.2, .7, .2, 1); transition-delay: var(--rd, 0s); }
+.js .reveal.in { opacity: 1; transform: none; }
+.js .reveal.now { transition: none; }
+
+/* ---------- Moments ---------- */
+.moments { gap: 16px; }
+.moment {
+  position: relative; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel);
+  padding: 22px 22px 24px; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--card-shadow); overflow: hidden;
+}
+@media (min-width: 720px) { .moment { grid-column: span 6; } }
+@media (min-width: 1100px) { .moment { grid-column: span 3; } }
+.moment .vis {
+  height: 92px; border-radius: 10px; background: var(--t-bg); border: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: center; padding: 0 14px; font: 12px/1.7 var(--mono); color: var(--t-dim); overflow: hidden;
+}
+.moment .vis .del { color: #ffb3ad; }
+.moment .vis .add { color: #a9f5dc; }
+.moment .vis .red { color: var(--t-red); }
+.moment .vis .grn { color: var(--t-green); }
+.moment .vis .amb { color: var(--t-amber); }
+.moment h3 { font-size: 20px; line-height: 1.2; letter-spacing: -.02em; font-weight: 650; }
+.moment p { color: var(--ink-2); font-size: 15.5px; line-height: 1.55; }
+.moments-close { margin-top: 40px; text-align: center; color: var(--ink-2); font-size: 18px; }
+.moments-close strong { color: var(--ink); }
+
+/* ---------- Bento ---------- */
+.bento { gap: 16px; }
+.card {
+  position: relative; border: 1px solid var(--line); border-radius: 20px; background: var(--panel);
+  padding: 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: var(--card-shadow);
+}
+@media (min-width: 720px) { .card { padding: 30px; } }
+.card::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: radial-gradient(600px 220px at 0% 0%, var(--accent-soft), transparent 60%);
+  opacity: .9;
+}
+.card > * { position: relative; }
+.card .kicker { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+.card h3 { margin-top: 14px; font-size: clamp(22px, 2.2vw, 28px); line-height: 1.12; letter-spacing: -.03em; font-weight: 700; }
+.card .body { margin-top: 10px; color: var(--ink-2); font-size: 15.5px; line-height: 1.6; max-width: 34em; }
+.card .body + .body { margin-top: 8px; }
+.card .demo { margin-top: 24px; }
+.card .grow { flex: 1; }
+@media (min-width: 720px) {
+  .c-guard { grid-column: span 12; }
+  .c-loop, .c-sum { grid-column: span 6; }
+  .c-retro { grid-column: span 12; }
+  .c-ledger { grid-column: span 12; }
+  .c-learn { grid-column: span 12; }
+}
+@media (min-width: 1100px) {
+  .c-guard { grid-column: 1 / span 7; grid-row: span 2; }
+  .c-loop, .c-sum { grid-column: 8 / span 5; }
+  .c-retro { grid-column: 1 / span 7; }
+  .c-ledger { grid-column: 8 / span 5; }
+  .c-learn { grid-column: 1 / -1; }
+}
+.mini-term { background: var(--t-bg); border: 1px solid var(--line); border-radius: 12px; color: var(--t-ink); font: 12.5px/1.7 var(--mono); overflow: hidden; }
+.mini-term .mt-bar { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--t-line); color: var(--t-dim); font-size: 11.5px; }
+.mini-term .mt-bar .dots i { width: 9px; height: 9px; }
+.mini-term .mt-body { padding: 12px 14px; }
+
+/* Guard rules list */
+.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border: 1px solid var(--t-line); border-radius: 12px; overflow: hidden; background: var(--t-bg); }
+.rules li {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; align-items: start; padding: 12px 14px;
+  border-top: 1px solid var(--t-line); color: #c9d6d2; font-size: 14px; transition: background .35s ease, color .35s ease;
+}
+@media (min-width: 560px) { .rules li { grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; } }
+.rules li:first-child { border-top: none; }
+.rules li .x { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; background: rgba(255, 128, 119, .1); color: var(--t-red); font: 700 11px/1 var(--mono); }
+.rules li code { font-size: 12px; color: var(--t-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: none; }
+.rules li code i { font-style: italic; color: var(--t-dim); margin-right: 4px; }
+@media (min-width: 560px) { .rules li code { display: block; } }
+.rules li.hot { background: rgba(255, 128, 119, .08); color: #fff; }
+.rules li.hot code { color: #ffb3ad; }
+.rules li.hot .x { background: var(--t-red); color: #170504; }
+.c-guard .demo { display: flex; flex-direction: column; }
+.who { padding-top: 20px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: stretch; }
+@media (min-width: 560px) { .who { grid-template-columns: minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr) 14px minmax(0, 1fr); } }
+.who-arr { display: none; align-self: center; text-align: center; color: var(--ink-3); font: 13px/1 var(--mono); }
+@media (min-width: 560px) { .who-arr { display: block; } }
+.who-step { border: 1px solid var(--line-2); border-radius: 12px; padding: 11px 12px; background: var(--panel); min-width: 0; }
+.who-k { display: block; font: 600 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin-bottom: 7px; }
+.who-v { display: block; font-size: 14px; line-height: 1.35; color: var(--ink); font-weight: 550; }
+.who-v code { font-size: 12.5px; }
+.who-step.deny { border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: var(--bad-bg); }
+.who-step.deny .who-k, .who-step.deny .who-v { color: var(--bad); }
+.who-step.you { border-color: var(--accent-line); background: var(--accent-soft); }
+.who-step.you .who-k { color: var(--accent); }
+.deny-bar {
+  margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 12px;
+  border: 1px dashed var(--line-2); font-size: 14.5px; color: var(--ink-2);
+}
+.kbd { font: 600 13px/1 var(--mono); padding: 6px 9px; border-radius: 7px; background: var(--btn-bg); color: var(--btn-ink); white-space: nowrap; }
+.notes { margin-top: 16px; display: grid; gap: 10px; }
+@media (min-width: 560px) { .notes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
+.notes p.wide { grid-column: 1 / -1; }
+.notes p { font-size: 14.5px; line-height: 1.5; color: var(--ink-2); padding: 12px 14px; border-radius: 12px; border: 1px dashed var(--line-2); }
+.notes b { display: block; color: var(--ink); font-weight: 650; margin-bottom: 2px; }
+
+/* Loop counter */
+.loopviz { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 20px; align-items: center; }
+.ring { position: relative; width: 112px; height: 112px; }
+.ring svg { width: 112px; height: 112px; transform: rotate(-90deg); }
+.ring .trk { stroke: var(--line-2); }
+.ring .seg { stroke: var(--accent-strong); transition: opacity .3s ease; }
+.ring .seg.off { opacity: 0; }
+.ring .seg.warn { stroke: var(--warn); }
+.ring .ctr { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+.ring .ctr b { display: block; font: 700 30px/1 var(--display); letter-spacing: -.03em; }
+.ring .ctr small { display: block; font: 500 10.5px/1.2 var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .08em; margin-top: 4px; }
+.rounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font: 12.5px/1.4 var(--mono); }
+.rounds li { display: flex; align-items: center; gap: 8px; color: var(--ink-3); transition: color .3s ease, opacity .3s ease; min-width: 0; }
+.rounds li .sig { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rounds li .rn { flex: none; width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; border: 1px solid var(--line-2); font-size: 11px; }
+.rounds li.on { color: var(--ink); }
+.rounds li.on .rn { border-color: var(--accent-line); color: var(--accent); }
+.rounds li.off { opacity: .35; }
+.told { margin-top: 16px; padding: 11px 13px; border-radius: 11px; background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); color: var(--ink); font-size: 14px; transition: opacity .4s ease, transform .4s ease; }
+.told b { color: var(--warn); font-family: var(--mono); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+.told.off { opacity: 0; transform: translateY(6px); }
+
+/* Summary bars */
+.sumviz { display: grid; gap: 16px; }
+.srow .top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.srow .k { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); }
+.srow .v { font: 700 22px/1 var(--display); letter-spacing: -.02em; white-space: nowrap; }
+.srow .v s { font: 500 14px/1 var(--sans); color: var(--ink-3); text-decoration: none; margin-right: 8px; }
+.srow .v s::after { content: " →"; }
+.track { position: relative; height: 10px; border-radius: 6px; background: var(--accent-soft); border: 1px solid var(--line); overflow: hidden; }
+.track i { position: absolute; left: 0; top: 0; bottom: 0; width: var(--w); border-radius: 4px; background: var(--grad); transition: width 1.4s cubic-bezier(.6, 0, .2, 1); }
+.lines-vis { display: flex; gap: 3px; height: 34px; align-items: flex-end; margin-top: 2px; }
+.lines-vis i { flex: 1; height: 100%; border-radius: 2px; background: var(--line-2); transition: transform .5s ease, opacity .5s ease, background .5s ease; transform-origin: bottom; }
+.lines-vis i.f { background: var(--bad); }
+.lines-vis.cut i:not(.f):not(.k) { transform: scaleY(.12); opacity: .5; }
+.lines-vis i.k { background: var(--accent-line); }
+.sum-foot { font: 12px/1.6 var(--mono); color: var(--ink-3); }
+.sum-foot code { color: var(--accent); font-size: 1em; }
+
+/* Ledger */
+.ticks { position: relative; display: flex; gap: 5px; height: 54px; align-items: flex-end; padding-top: 18px; }
+.ticks i { flex: 1; height: 22px; border-radius: 2px; background: var(--line-2); transition: background .3s ease; }
+.ticks i.a { height: 34px; background: var(--accent-strong); position: relative; }
+.ticks i.a::after { content: attr(data-l); position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font: 600 10.5px/1 var(--mono); color: var(--accent); white-space: nowrap; }
+.ticks i.lit { background: var(--ink-3); }
+.ticks i.a.lit { background: var(--accent-strong); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cmds { margin-top: 18px; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.cmds div { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; color: var(--ink-2); align-items: baseline; }
+.cmds code { font-size: 13px; color: var(--ink); white-space: nowrap; }
+
+/* Retro */
+.rflow { display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .rflow { grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr) 18px minmax(0, 1fr); align-items: stretch; } }
+.rf-arr { display: none; align-self: center; text-align: center; color: var(--ink-3); font: 13px/1 var(--mono); }
+@media (min-width: 640px) { .rf-arr { display: block; } }
+.rf-step { border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 14px; background: var(--panel); min-width: 0; }
+.rf-step.mid { background: var(--t-bg); border-color: var(--t-line); }
+.rf-step.mid .rf-k { color: var(--t-dim); }
+.rf-step.mid code { color: var(--t-green); font-size: 13px; }
+.rf-k { display: block; font: 600 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin-bottom: 7px; }
+.rf-v { display: block; font-size: 14px; line-height: 1.4; color: var(--ink); font-weight: 550; }
+.rf-tags { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.rf-tags > span { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; padding: 6px 11px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--ink); }
+.rf-tags > span .ic { color: var(--accent); width: 14px; height: 14px; }
+.rf-tags a { font-size: 13.5px; color: var(--accent); text-underline-offset: 3px; margin-left: 4px; }
+.retro pre { margin: 0; padding: 14px 16px; font: 12.5px/1.75 var(--mono); color: var(--t-ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.retro .hl { color: var(--t-amber); }
+.retro .gd { color: var(--t-green); }
+.retro .dm { color: var(--t-dim); }
+
+/* Learned fixes flow */
+.learn-wrap { display: grid; gap: 28px; }
+@media (min-width: 1100px) { .learn-wrap { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); align-items: center; gap: 40px; } }
+.flow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; position: relative; }
+@media (min-width: 720px) { .flow { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; } }
+.step {
+  position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--panel-2);
+  font-size: 14px; color: var(--ink-2); transition: border-color .4s ease, background .4s ease, color .4s ease;
+}
+@media (min-width: 720px) { .step { margin-right: 22px; } .step:last-child { margin-right: 0; } .step:not(:last-child)::after { content: ""; position: absolute; right: -19px; top: 50%; width: 16px; height: 1px; background: var(--line-2); } }
+.step b { display: block; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); margin-bottom: 6px; }
+.step.lit { border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
+.step.lit b { color: var(--accent); }
+.step.fail.lit { border-color: color-mix(in srgb, var(--bad) 40%, transparent); background: var(--bad-bg); }
+.step.fail.lit b { color: var(--bad); }
+.step.next { border-style: dashed; }
+
+/* ---------- How it works ---------- */
+.pipe { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; position: relative; }
+@media (min-width: 1000px) { .pipe { grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr) 44px minmax(0, 1fr) 44px minmax(0, 1fr) 44px minmax(0, 1fr); } }
+.node {
+  border: 1px solid var(--line-2); border-radius: 16px; background: var(--panel); padding: 18px 18px 20px; position: relative; box-shadow: var(--card-shadow);
+}
+.node .nk { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); }
+.node h3 { margin-top: 10px; font: 650 18px/1.2 var(--mono); letter-spacing: -.02em; }
+.node p { margin-top: 8px; font-size: 14.5px; color: var(--ink-2); line-height: 1.5; }
+.node.core { border-color: var(--accent-line); background: linear-gradient(180deg, var(--accent-soft), transparent), var(--panel); }
+.wire { position: relative; height: 34px; }
+.wire::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line-2); }
+.wire .pkt { position: absolute; left: 50%; width: 7px; height: 7px; margin-left: -3.5px; border-radius: 50%; background: var(--accent-strong); box-shadow: 0 0 12px var(--accent-strong); animation: pktV 2.4s linear infinite; animation-delay: var(--pd, 0s); }
+@keyframes pktV { 0% { top: -4px; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: calc(100% - 3px); opacity: 0; } }
+@media (min-width: 1000px) {
+  .wire { height: auto; align-self: center; height: 1px; }
+  .wire::before { left: 0; right: 0; top: 0; bottom: auto; width: auto; height: 1px; }
+  .wire .pkt { left: 0; top: -3px; margin-left: 0; animation-name: pktH; }
+  @keyframes pktH { 0% { left: -4px; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { left: calc(100% - 3px); opacity: 0; } }
+}
+.ret {
+  margin-top: 16px; border: 1px dashed var(--line-2); border-radius: 14px; padding: 14px 16px; display: flex; align-items: center; gap: 12px;
+  font-size: 14.5px; color: var(--ink-3); transition: border-color .4s ease, color .4s ease, background .4s ease; position: relative; overflow: hidden;
+}
+.ret .arrow { font-family: var(--mono); color: var(--ink-3); flex: none; }
+.ret .rtx-on { display: none; }
+.ret .lane { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
+.ret .lane i { position: absolute; top: 0; height: 2px; width: 120px; right: -120px; background: linear-gradient(270deg, transparent, var(--accent-strong)); opacity: 0; }
+.how[data-mode="optimize"] .ret { border-style: solid; border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
+.how[data-mode="optimize"] .ret .arrow { color: var(--accent); }
+.how[data-mode="optimize"] .ret .rtx-on { display: inline; }
+.how[data-mode="optimize"] .ret .rtx-off { display: none; }
+.how[data-mode="optimize"] .ret .lane i { opacity: 1; animation: lane 2.2s linear infinite; }
+@keyframes lane { from { right: -120px; } to { right: 100%; } }
+@media (min-width: 1000px) { .ret { margin-left: 0; width: calc(80% - 8px); } }
+
+.modes { margin-top: 64px; gap: 16px; align-items: start; }
+@media (min-width: 1000px) { .modes-text { grid-column: 1 / span 4; } .modes-panel { grid-column: 6 / span 7; } }
+.modes-text h3 { font-size: clamp(26px, 3vw, 36px); letter-spacing: -.03em; line-height: 1.1; }
+.modes-text p { margin-top: 12px; color: var(--ink-2); }
+.seg-ctl { display: inline-flex; padding: 4px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); gap: 2px; margin-bottom: 14px; }
+.seg-ctl button { font: 600 14px/1 var(--mono); padding: 10px 16px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--ink-3); cursor: pointer; }
+.seg-ctl button[aria-pressed="true"] { background: var(--panel); color: var(--ink); border-color: var(--line-2); box-shadow: var(--card-shadow); }
+.mtable { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--card-shadow); overflow: hidden; font-size: 15px; }
+.mtable th, .mtable td { text-align: left; vertical-align: top; padding: 13px 16px; border-top: 1px solid var(--line); transition: background .3s ease, color .3s ease; }
+.mtable thead th, .mtable thead td { border-top: none; font: 650 17px/1.3 var(--display); letter-spacing: -.01em; padding-top: 16px; }
+.mtable thead .tag { display: inline-block; vertical-align: 2px; margin-left: 6px; font: 600 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-3); }
+.mtable tbody th { font: 500 11.5px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); width: 22%; padding-top: 15px; }
+.mtable td { color: var(--ink); }
+.mtable td.none { color: var(--ink-3); }
+.mtable td.hot { color: var(--accent); font-weight: 650; }
+.mtable code { font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
+.how[data-mode="look"] .mtable .c-look, .how[data-mode="optimize"] .mtable .c-opt { background: var(--accent-soft); }
+@media (max-width: 599px) {
+  .mtable, .mtable tbody, .mtable tr, .mtable th, .mtable td { display: block; width: auto; }
+  .mtable thead { display: none; }
+  .mtable tbody tr { padding: 12px 14px 14px; border-top: 1px solid var(--line); }
+  .mtable tbody tr:first-child { border-top: none; }
+  .mtable tbody th, .mtable td { border: none; padding: 0; }
+  .mtable tbody th { margin-bottom: 6px; width: auto; }
+  .mtable td { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; padding: 5px 8px; border-radius: 8px; }
+  .mtable td::before { content: attr(data-m); font: 600 12px/1.6 var(--mono); color: var(--ink-3); }
+}
+
+/* ---------- Sessions + fleets ---------- */
+.split { gap: 16px; align-items: start; }
+@media (min-width: 1000px) {
+  .split .l5 { grid-column: 1 / span 5; padding-right: 24px; }
+  .split .r7 { grid-column: 6 / span 7; }
+  .split.rev .l5 { grid-column: 8 / span 5; grid-row: 1; padding-right: 0; padding-left: 24px; }
+  .split.rev .r7 { grid-column: 1 / span 7; grid-row: 1; }
+}
+.split h3 { font-size: clamp(26px, 3vw, 36px); letter-spacing: -.03em; line-height: 1.1; }
+.split p.t { margin-top: 14px; color: var(--ink-2); }
+.facts { margin: 22px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.facts li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 15.5px; color: var(--ink-2); }
+@media (min-width: 560px) { .facts li { grid-template-columns: 170px minmax(0, 1fr); gap: 16px; } }
+.facts li code { font-size: 13.5px; color: var(--ink); }
+.hears { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+.hears span { font-size: 14px; padding: 7px 11px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-2); background: var(--panel); }
+.win { background: var(--t-bg); border-radius: 16px; overflow: hidden; color: var(--t-ink); border: 1px solid var(--line); box-shadow: var(--term-shadow); }
+.win .term-bar { height: 40px; }
+.win pre { margin: 0; padding: 18px 20px 20px; font: 12.5px/1.75 var(--mono); overflow-x: auto; white-space: pre; scrollbar-width: thin; scrollbar-color: #2a3336 transparent; }
+@media (min-width: 720px) { .win pre { font-size: 13px; } }
+.win .ps { color: var(--t-green); }
+.win .dm { color: var(--t-dim); }
+.win .fa { color: var(--t-faint); }
+.win .gn { color: var(--t-green); }
+.win .tl { color: var(--t-teal); }
+.win .am { color: var(--t-amber); }
+.win .rd { color: var(--t-red); }
+.win .me { color: var(--t-teal); }
+.live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--t-green); vertical-align: 1px; box-shadow: 0 0 0 0 rgba(82, 238, 191, .6); animation: live 2s ease-out infinite; animation-delay: var(--ld, 0s); }
+@keyframes live { 0% { box-shadow: 0 0 0 0 rgba(82, 238, 191, .55); } 70% { box-shadow: 0 0 0 7px rgba(82, 238, 191, 0); } 100% { box-shadow: 0 0 0 0 rgba(82, 238, 191, 0); } }
+.toasts { display: grid; gap: 12px; margin-top: 14px; }
+.toast { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--panel); box-shadow: var(--card-shadow); }
+.toast .when { font: 500 11.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
+.toast .when i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-strong); }
+.toast p { margin-top: 8px; font: 13.5px/1.65 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.fleet-block { margin-top: 96px; }
+.toml .k { color: #cfe0dc; }
+.toml .s { color: var(--t-green); }
+.toml .h { color: var(--t-teal); }
+.toml .p { color: var(--t-faint); }
+.fleetflow { margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 720px) { .fleetflow { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; } }
+.ff-step { position: relative; border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px 14px; background: var(--panel); box-shadow: var(--card-shadow); min-width: 0; }
+.ff-k { display: block; font: 600 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); }
+.ff-v { display: block; margin-top: 8px; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+.ff-v code { font-size: 12.5px; color: var(--ink); }
+.ff-wk { display: flex; gap: 8px; margin-top: 10px; }
+.ff-wk .live { width: 9px; height: 9px; background: var(--accent-strong); }
+.ff-step.workers { border-color: var(--accent-line); }
+.ff-step.gate { border-style: dashed; border-color: var(--line-2); }
+.presets { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.presets li { position: relative; display: grid; gap: 6px; padding: 10px 10px 11px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel); box-shadow: var(--card-shadow); }
+.presets svg { width: 100%; height: 38px; }
+.presets b { font: 600 13px/1.1 var(--mono); color: var(--ink); text-align: center; }
+.presets .nd { fill: var(--panel); stroke: var(--ink-3); stroke-width: 1.8; }
+.presets .nd.r { fill: var(--accent-strong); stroke: var(--accent); }
+.presets .ed { fill: none; stroke: var(--line-2); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.presets li.on { border-color: var(--accent-line); background: var(--accent-soft); }
+.presets li.on .nd:not(.r) { fill: var(--panel); stroke: var(--accent); }
+.presets li.on .ed { stroke: var(--accent-line); }
+.presets-label span { text-transform: none; letter-spacing: 0; color: var(--accent); }
+.presets-label { margin-top: 26px; font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+
+/* ---------- Principles ---------- */
+.stats { gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; }
+.stat { background: var(--bg); padding: 28px 26px 30px; display: flex; flex-direction: column; gap: 10px; min-height: 230px; }
+@media (min-width: 720px) { .stat { grid-column: span 6; } }
+@media (min-width: 1100px) { .stat { grid-column: span 4; padding: 34px 32px 36px; } }
+.stat .lbl { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); }
+.stat .big { font: 700 clamp(52px, 6vw, 76px)/1 var(--display); letter-spacing: -.05em; margin-top: 8px; color: var(--ink); }
+.stat .big small { font-size: .42em; letter-spacing: -.02em; color: var(--ink-2); margin-left: 4px; font-weight: 600; }
+.stat h3 { font: 650 18px/1.3 var(--sans); letter-spacing: -.01em; }
+.stat p { color: var(--ink-2); font-size: 15px; line-height: 1.55; }
+.meter { margin-top: auto; padding-top: 8px; }
+.meter .mt { position: relative; height: 8px; border-radius: 5px; background: var(--accent-soft); border: 1px solid var(--line); }
+.meter .mt i { position: absolute; left: 0; top: -1px; bottom: -1px; width: 10%; border-radius: 4px; background: var(--accent-strong); }
+.meter .ml { display: flex; justify-content: space-between; margin-top: 8px; font: 500 11.5px/1 var(--mono); color: var(--ink-3); }
+.testsplit { margin-top: auto; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--line); padding-top: 14px; gap: 8px; }
+.testsplit div { font: 700 20px/1 var(--display); letter-spacing: -.02em; }
+.testsplit div span { display: block; margin-top: 6px; font: 500 11px/1.3 var(--mono); color: var(--ink-3); letter-spacing: .02em; }
+
+/* ---------- Quick start ---------- */
+.qs { gap: 16px; align-items: start; }
+@media (min-width: 1000px) { .qs .l5 { grid-column: 1 / span 5; padding-right: 24px; position: sticky; top: 100px; } .qs .r7 { grid-column: 6 / span 7; } }
+.qs h2.h2 { font-size: clamp(34px, 4.2vw, 54px); }
+.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 16px 14px 14px; border-top: 1px solid var(--t-line); }
+.steps li:first-child { border-top: none; }
+.steps .num { counter-increment: s; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font: 600 11.5px/1 var(--mono); color: var(--t-green); border: 1px solid rgba(82, 238, 191, .3); margin-top: 1px; }
+.steps .num::before { content: counter(s); }
+.steps .cmd { min-width: 0; }
+.steps .cmd code { display: block; font-size: 13px; line-height: 1.55; color: var(--t-ink); overflow-x: auto; white-space: pre; scrollbar-width: none; padding-bottom: 2px; }
+.steps .cmd code .ps { color: var(--t-green); user-select: none; }
+.steps .cmd > span { display: block; margin-top: 3px; font: 13px/1.5 var(--sans); color: var(--t-dim); }
+.steps .cmd > span a { color: var(--t-ink); text-underline-offset: 3px; text-decoration-color: rgba(170, 235, 220, .35); }
+.steps .cmd > span a:hover { color: var(--t-green); }
+.qs-out { margin-top: 22px; }
+.qs-out .k { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+.qs-out .cap { margin-top: 10px; font-size: 14px; color: var(--ink-3); }
+.win.retro pre { white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 20px; }
+.mini-copy { border: 1px solid var(--t-line); background: transparent; color: var(--t-dim); width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; cursor: pointer; flex: none; }
+.mini-copy:hover { color: var(--t-ink); border-color: rgba(170, 235, 220, .25); }
+.mini-copy .ck { display: none; }
+.mini-copy.done { color: var(--t-green); }
+.mini-copy.done .cp { display: none; }
+.mini-copy.done .ck { display: block; }
+.qs-tabs { display: inline-flex; padding: 4px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); gap: 2px; margin-top: 26px; }
+.qs-tabs button { font: 600 13.5px/1 var(--sans); padding: 10px 14px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--ink-3); cursor: pointer; }
+.qs-tabs button[aria-selected="true"] { background: var(--panel); color: var(--ink); border-color: var(--line-2); box-shadow: var(--card-shadow); }
+.qs-panel[hidden] { display: none; }
+.qs-links { margin-top: 26px; display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* ---------- Status ---------- */
+.status-card { border: 1px solid var(--line); border-radius: 22px; background: var(--panel); overflow: hidden; box-shadow: var(--card-shadow); }
+.status-top { display: grid; gap: 18px; padding: 28px; border-bottom: 1px solid var(--line); }
+@media (min-width: 900px) { .status-top { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 34px 36px; } }
+.status-top h3 { font-size: clamp(24px, 2.6vw, 32px); letter-spacing: -.03em; line-height: 1.15; }
+.status-top p { margin-top: 8px; color: var(--ink-2); }
+.badge-proto { display: inline-flex; align-items: center; gap: 8px; font: 600 12.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 9px 13px; border-radius: 999px; color: var(--warn); background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); justify-self: start; }
+.badge-proto i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.status-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; background: var(--line); }
+@media (min-width: 720px) { .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .status-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.srow2 { display: flex; gap: 14px; align-items: flex-start; padding: 22px 28px; background: var(--panel); }
+.srow2 .si { flex: none; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font: 700 13px/1 var(--mono); margin-top: 1px; }
+.srow2.ok .si { color: var(--ok); background: var(--ok-bg); }
+.srow2.wn .si { color: var(--warn); background: var(--warn-bg); }
+.srow2.no .si { color: var(--bad); background: var(--bad-bg); }
+.srow2 b { display: block; font-weight: 650; font-size: 16px; }
+.srow2 span { display: block; color: var(--ink-2); font-size: 14.5px; margin-top: 2px; }
+.srow2 .vchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.srow2 .vchips code { font-size: 12.5px; padding: 3px 8px; border-radius: 7px; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--ink); }
+.srow2 .st { font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; margin-top: 8px; }
+.srow2.ok .st { color: var(--ok); }
+.srow2.wn .st { color: var(--warn); }
+.srow2.no .st { color: var(--bad); }
+
+/* ---------- Final CTA ---------- */
+.final { position: relative; padding: 120px 0 200px; text-align: center; overflow: hidden; isolation: isolate; border-top: 1px solid var(--line); }
+@media (min-width: 900px) { .final { padding: 140px 0 340px; } }
+.final .glow { position: absolute; left: 50%; top: 50%; width: 1100px; height: 640px; transform: translate(-50%, -40%); z-index: -1; background: radial-gradient(closest-side, var(--glow-1), transparent 70%); pointer-events: none; }
+.final .call { font: 600 clamp(15px, 1.5vw, 18px)/1 var(--mono); color: var(--ink-3); letter-spacing: .02em; }
+.final h2 { margin-top: 18px; font-size: clamp(54px, 11vw, 148px); line-height: .95; letter-spacing: -.055em; font-weight: 700; }
+.final p.sub { margin: 26px auto 0; color: var(--ink-2); max-width: 32em; font-size: 18px; }
+.final .install { margin-left: auto; margin-right: auto; }
+.final .mark-big { width: 62px; height: 80px; margin: 0 auto 22px; color: var(--ink); overflow: visible; }
+.final .ridge { height: clamp(200px, 26vw, 380px); z-index: -1; }
+.final-rope { width: 8px; height: 96px; margin: -40px auto -2px; border-radius: 3px;
+  background: repeating-linear-gradient(180deg, var(--rope) 0 3.2px, color-mix(in srgb, var(--rope) 72%, #000) 3.2px 4.8px);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 60%); mask-image: linear-gradient(180deg, transparent, #000 60%); }
+@media (min-width: 900px) { .final-rope { height: 128px; margin-top: -72px; } }
+
+/* ---------- Footer ---------- */
+footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
+.foot-grid { gap: 28px; }
+@media (min-width: 900px) { .foot-brand { grid-column: 1 / span 5; } .foot-col { grid-column: span 2; } }
+@media (min-width: 560px) and (max-width: 899px) { .foot-brand { grid-column: 1 / -1; } .foot-col { grid-column: span 4; } }
+.foot-brand p { margin-top: 14px; color: var(--ink-2); max-width: 26em; font-size: 15px; }
+.foot-col h2 { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-3); margin-bottom: 14px; }
+.foot-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.foot-col a { color: var(--ink-2); text-decoration: none; font-size: 15px; }
+.foot-col a:hover { color: var(--accent); }
+.foot-bottom { margin-top: 48px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; color: var(--ink-3); font-size: 13.5px; }
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
+  .js .reveal { opacity: 1; transform: none; }
+  .wire .pkt, .ret .lane i, .live, .caret { animation: none !important; }
+  .wire .pkt { display: none; }
+}
+@media print {
+  .nav, .chapters, .copy, .mini-copy, .seg-ctl, .rope-drop { display: none; }
+  .js .reveal { opacity: 1 !important; transform: none !important; }
+  .js .pending { opacity: 1 !important; transform: none !important; }
+}
+/* Without JS: show every panel, labelled. */
+.no-js .install-tabs, .no-js .qs-tabs { display: none; }
+.no-js .ibox[hidden] { display: flex; margin-top: 10px; }
+.no-js .qs-panel[hidden] { display: block; border-top: 1px dashed var(--t-line); }
+.no-js .qs-panel::before { content: attr(data-label); display: block; padding: 12px 16px 0; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--t-teal); }
+.no-js .seg-ctl { display: none; }
+.no-js .theme-btn, .no-js .copy, .no-js .mini-copy { display: none; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b4f8dc"/>
+      <stop offset=".5" stop-color="#3ee6b4"/>
+      <stop offset="1" stop-color="#1fb8d6"/>
+    </linearGradient>
+    <symbol id="mark" viewBox="0 0 32 32">
+      <g transform="rotate(30 16 16)">
+        <path d="M22.5 11.5A6.5 6.5 0 0 0 9.5 11.5V20.5A6.5 6.5 0 0 0 22.5 20.5" fill="none" stroke="url(#bg-grad)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M22.5 19.5V13.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+      </g>
+    </symbol>
+    <symbol id="ridge" viewBox="0 0 1600 420" preserveAspectRatio="xMidYMax slice">
+      <path style="fill: var(--ridge-1)" d="M0 262 L60 236 L120 249 L190 197 L240 214 L300 150 L338 178 L372 167 L430 222 L500 201 L560 169 L610 187 L680 112 L720 128 L760 70 L800 104 L836 97 L890 151 L950 139 L1010 177 L1070 151 L1130 156 L1180 120 L1220 140 L1262 133 L1320 191 L1380 179 L1440 201 L1500 171 L1550 189 L1600 181 L1600 420 L0 420 Z"/>
+      <path style="fill: none; stroke: var(--ridge-edge); stroke-width: 1.4; stroke-linejoin: round" vector-effect="non-scaling-stroke" d="M0 262 L60 236 L120 249 L190 197 L240 214 L300 150 L338 178 L372 167 L430 222 L500 201 L560 169 L610 187 L680 112 L720 128 L760 70 L800 104 L836 97 L890 151 L950 139 L1010 177 L1070 151 L1130 156 L1180 120 L1220 140 L1262 133 L1320 191 L1380 179 L1440 201 L1500 171 L1550 189 L1600 181"/>
+      <path style="fill: var(--ridge-2)" d="M0 300 L70 270 L130 286 L210 232 L260 252 L320 236 L390 280 L460 248 L520 262 L590 214 L640 236 L700 226 L770 268 L850 238 L910 254 L980 200 L1030 222 L1090 210 L1160 258 L1230 236 L1300 250 L1370 214 L1420 232 L1480 226 L1540 260 L1600 244 L1600 420 L0 420 Z"/>
+      <path style="fill: var(--ridge-3)" d="M0 332 L90 302 L170 322 L250 290 L330 318 L420 300 L500 334 L600 306 L680 324 L760 296 L850 326 L940 310 L1020 332 L1110 300 L1200 318 L1280 296 L1370 326 L1450 308 L1530 322 L1600 300 L1600 420 L0 420 Z"/>
+      <path style="fill: var(--ridge-front, var(--bg))" d="M0 394 L120 376 L260 390 L400 370 L560 386 L720 372 L900 392 L1060 374 L1220 388 L1380 370 L1500 382 L1600 374 L1600 420 L0 420 Z"/>
+    </symbol>
+    <symbol id="ridge-band" viewBox="0 60 1600 360" preserveAspectRatio="none"><use href="#ridge" x="0" y="0" width="1600" height="420"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5" y="5" width="8.5" height="8.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 3.2V3a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-ext" viewBox="0 0 16 16"><path d="M6 3.5H3.5v9h9V10M9 3h4v4M13 3L7.5 8.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </defs>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="belay home">
+      <svg aria-hidden="true"><use href="#mark"/></svg>
+      belay
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="#demo">Demo</a>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#sessions">Sessions</a>
+      <a href="#status">Status</a>
+    </nav>
+    <div class="nav-right">
+      <a class="btn-sm nav-qs" href="#start">Quick start</a>
+      <a class="btn-sm hide-xs" href="https://github.com/prakhar479/belay/blob/main/docs/guide.md">Guide</a>
+      <a class="btn-sm" href="https://github.com/prakhar479/belay">GitHub <svg class="ic" aria-hidden="true"><use href="#i-ext"/></svg></a>
+      <button class="btn-sm icon-btn theme-btn" type="button" aria-label="Switch color theme" title="Switch color theme">
+        <svg class="ic moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 10.2A5.6 5.6 0 0 1 5.8 2.8a5.6 5.6 0 1 0 7.4 7.4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <svg class="ic sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<!-- ===================== HERO ===================== -->
+<section class="hero" id="top" aria-labelledby="hero-title">
+  <div class="hero-bg" aria-hidden="true">
+    <div class="glow-a"></div>
+    <div class="glow-b"></div>
+    <div class="cols"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+  </div>
+  <div class="wrap hero-inner">
+    <a class="pill" href="#status"><span class="tag">Prototype</span> Open source, for Claude Code <span class="go" aria-hidden="true">→</span></a>
+    <h1 class="hero-title" id="hero-title">
+      <span class="line">Your agent climbs.</span>
+      <span class="line grad-text">belay holds the rope.</span>
+    </h1>
+    <p class="hero-lede"><strong>A local supervisor for Claude Code.</strong> It sees every tool call, and its output, before the agent reads it. It guards your tests, catches loops, trims long test output, and writes down why.</p>
+
+    <div class="install" data-tabs>
+      <div class="install-tabs" role="tablist" aria-label="Install method">
+        <button class="itab" role="tab" id="it-cargo" aria-controls="ip-cargo" aria-selected="true" tabindex="0" type="button">cargo</button>
+        <button class="itab" role="tab" id="it-plugin" aria-controls="ip-plugin" aria-selected="false" tabindex="-1" type="button">claude plugin</button>
+      </div>
+      <div class="ibox" role="tabpanel" id="ip-cargo" aria-labelledby="it-cargo">
+        <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</pre>
+        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy the install command"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+      </div>
+      <div class="ibox" role="tabpanel" id="ip-plugin" aria-labelledby="it-plugin" hidden>
+        <pre tabindex="0" role="region" aria-label="Plugin install commands"><span class="ps">$ </span>claude plugin marketplace add prakhar479/belay
+<span class="ps">$ </span>claude plugin install belay@belay</pre>
+        <button class="copy" type="button" data-copy="claude plugin marketplace add prakhar479/belay&#10;claude plugin install belay@belay" aria-label="Copy the plugin commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+      </div>
+      <p class="install-note">Rust 1.87+. Or get a binary from <a href="https://github.com/prakhar479/belay/releases">Releases</a>. Then run <code>belay claude</code> instead of <code>claude</code>.</p>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn primary" href="#start">Quick start <span class="arr" aria-hidden="true">→</span></a>
+      <a class="btn" href="https://github.com/prakhar479/belay">View on GitHub</a>
+    </div>
+  </div>
+
+  <!-- The demo -->
+  <div class="wrap stage-wrap" id="demo">
+    <svg class="ridge" aria-hidden="true" focusable="false"><use href="#ridge"/></svg>
+    <div class="rope-drop" aria-hidden="true">
+      <svg viewBox="0 0 40 100" focusable="false">
+        <defs>
+          <linearGradient id="rope-fade" x1="0" y1="0" x2="0" y2="1"><stop offset=".14" stop-color="#fff" stop-opacity="0"/><stop offset=".36" stop-color="#fff"/></linearGradient>
+          <mask id="rope-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="40" height="100"><rect x="0" y="0" width="40" height="100" fill="url(#rope-fade)"/></mask>
+        </defs>
+        <g class="clip">
+          <g mask="url(#rope-mask)">
+            <path class="strand" d="M20 0 V46" fill="none" stroke-width="6" stroke-linecap="round"/>
+            <path class="twist" d="M20 0 V36" fill="none" stroke-width="6" stroke-dasharray="1.8 3.4"/>
+          </g>
+          <rect class="knot" x="13.5" y="38" width="13" height="16" rx="5.5" stroke-width="1.5"/>
+          <path d="M30.5 59 A10.5 10.5 0 0 0 9.5 59 V77 A10.5 10.5 0 0 0 30.5 77" fill="none" stroke="url(#bg-grad)" stroke-width="4.2" stroke-linecap="round"/>
+          <path class="gate" d="M30.5 75.5 V62" fill="none" stroke-width="3" stroke-linecap="round"/>
+        </g>
+        <rect class="hang" x="12" y="84" width="16" height="12" rx="4" stroke-width="2.6"/>
+      </svg>
+    </div>
+    <div class="stage" id="stage">
+      <div class="term">
+        <div class="term-bar">
+          <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="term-title" id="term-title">~/shop · claude</div>
+          <span class="mode-chip">optimize</span>
+        </div>
+        <p class="term-cap"><b>What the agent reads.</b> An illustrative session in optimize mode. belay's messages are real, word for word. In look mode they are only recorded.</p>
+        <div class="screen" id="screen">
+
+          <div class="scene" id="scene-guard" role="tabpanel" aria-labelledby="tab-guard" tabindex="0" data-title="~/shop · claude">
+            <p class="scene-title">Guard</p>
+            <div class="ln cmd" data-step data-d="150"><span class="ps">$</span> belay claude --belay-mode optimize</div>
+            <div class="ln user" data-step data-d="450" data-type><span class="ps">›</span> <span class="tx">make the discount test pass</span></div>
+            <div class="ln tool" data-step data-d="650"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_discount.py<span class="ar">)</span></div>
+            <div class="ln out" data-step data-d="500"><span class="br">└</span> <span class="red">FAILED</span> tests/test_discount.py::test_total</div>
+            <div class="ln out" data-step data-d="90"><span class="br"> </span> <span class="red">E</span>   assert 19.98 == 19.99</div>
+            <div class="ln tool" data-step data-d="800"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>tests/test_discount.py<span class="ar">)</span></div>
+            <div class="diff blocked" data-step data-d="250" data-fx="diff">
+              <div class="ln del"><span class="no">14</span><span class="sg">-</span><span class="tx">    assert total(cart) == <mark>19.99</mark></span></div>
+              <div class="ln add"><span class="no">14</span><span class="sg">+</span><span class="tx">    assert total(cart) == <mark>19.98</mark></span></div>
+            </div>
+            <div class="msg deny" data-step data-d="900" data-fx="deny">
+              <div class="msg-head"><span class="stamp">Denied</span> test guard · before the edit lands</div>
+              <p>belay: this edit may weaken tests in tests/test_discount.py: expected value changed to the failing run's actual value (19.99 → 19.98). If the user wants it anyway, they can run <code>`! belay allow`</code> and you can retry the same edit.</p>
+            </div>
+            <div class="ln agent" data-step data-d="1300"><span class="b">●</span> The test is right. I'll fix the rounding in shop/discount.py.</div>
+            <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
+          </div>
+
+          <div class="scene" id="scene-loop" role="tabpanel" aria-labelledby="tab-loop" tabindex="0" hidden data-title="~/shop · claude">
+            <p class="scene-title">Loop</p>
+            <div class="ln user" data-step data-d="200" data-type><span class="ps">›</span> <span class="tx">fix the order API tests</span></div>
+            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/api.py<span class="ar">)</span></div>
+            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip">round 1</span></div>
+            <div class="ln tool" data-step data-d="800"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/api.py<span class="ar">)</span></div>
+            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip s">round 2 · same signature</span></div>
+            <div class="ln tool" data-step data-d="800"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/api.py<span class="ar">)</span></div>
+            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip s">round 3 · same signature</span></div>
+            <div class="msg" data-step data-d="900">
+              <div class="msg-head"><span class="stamp g">Loop</span> told once, after round 3</div>
+              <p>belay: 2 failures are unchanged after 3 fix attempts (edit, then run): tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total'. A different approach may be needed.</p>
+            </div>
+            <div class="ln agent" data-step data-d="1300"><span class="b">●</span> Same two failures each time. I'll read the order handler before I edit again.</div>
+            <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
+          </div>
+
+          <div class="scene" id="scene-summary" role="tabpanel" aria-labelledby="tab-summary" tabindex="0" hidden data-title="~/shop · claude">
+            <p class="scene-title">Summary</p>
+            <div class="ln tool" data-step data-d="200"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest -v<span class="ar">)</span></div>
+            <div class="ln out" data-step data-d="400">============================= test session starts ==============================</div>
+            <div class="stream" data-step data-d="200" data-fx="stream" aria-hidden="true">
+              <div class="ln">tests/test_cart.py::test_total[1] <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_cart.py::test_total[2] <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_cart.py::test_total[3] <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_cart.py::test_empty_cart <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_dates.py::test_parse_iso <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_dates.py::test_parse_us <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_orders.py::test_create <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_orders.py::test_cancel <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_orders.py::test_list <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_payments.py::test_charge <span class="grn">PASSED</span></div>
+              <div class="ln">tests/test_payments.py::test_capture <span class="grn">PASSED</span></div>
+              <div class="ln">…</div>
+            </div>
+            <div class="ln omit" data-step data-d="1900" data-fx="collapse">[… 242 lines omitted (242 passing) …]</div>
+            <div class="ln out" data-step data-d="500"><span class="red">FAILED</span> tests/test_refunds.py::test_partial_refund</div>
+            <div class="ln out" data-step data-d="90"><span class="red">FAILED</span> tests/test_refunds.py::test_refund_twice</div>
+            <div class="ln out" data-step data-d="90">…</div>
+            <div class="ln out" data-step data-d="300">======================== <span class="red">2 failed</span>, <span class="grn">300 passed</span> in 0.28s =========================</div>
+            <div class="ln foot" data-step data-d="700">[belay: 334 lines → 93 lines · full output: belay show o-3]</div>
+            <div class="ln agent" data-step data-d="1200"><span class="b">●</span> Two refund tests fail. Every failure line is still here.</div>
+            <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
+          </div>
+
+          <div class="scene" id="scene-peers" role="tabpanel" aria-labelledby="tab-peers" tabindex="0" hidden data-title="~/shop · claude · session shop-2">
+            <p class="scene-title">Peers</p>
+            <div class="ln user" data-step data-d="200" data-type><span class="ps">›</span> <span class="tx">add tests for refunds</span></div>
+            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/payments.py<span class="ar">)</span></div>
+            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Write</span><span class="ar">(</span>tests/test_refunds.py<span class="ar">)</span></div>
+            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_refunds.py<span class="ar">)</span><span class="chip r">2 failed</span></div>
+            <div class="msg" data-step data-d="900">
+              <div class="msg-head"><span class="stamp t">Peer</span> from another live session</div>
+              <p>belay: shop-1 edited shop/payments.py after you did. Read it again before you change it.</p>
+            </div>
+            <div class="ln agent" data-step data-d="1300"><span class="b">●</span> Another session changed payments.py. I'll read it again first.</div>
+            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Read</span><span class="ar">(</span>shop/payments.py<span class="ar">)</span></div>
+            <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="chapters" role="tablist" aria-label="Demo scenes" id="chapters">
+      <button class="chap" role="tab" type="button" id="tab-guard" aria-controls="scene-guard" aria-selected="true" tabindex="0"><b><span class="k">01</span> Test guard</b><span class="d">Stops edits that weaken tests.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-loop" aria-controls="scene-loop" aria-selected="false" tabindex="-1"><b><span class="k">02</span> Loops</b><span class="d">Speaks up when fixes go in circles.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-summary" aria-controls="scene-summary" aria-selected="false" tabindex="-1"><b><span class="k">03</span> Summaries</b><span class="d">334 lines in, 93 lines out.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-peers" aria-controls="scene-peers" aria-selected="false" tabindex="-1"><b><span class="k">04</span> Other sessions</b><span class="d">Hears what the others changed.</span><i class="prog" aria-hidden="true"></i></button>
+    </div>
+    <p class="demo-note">The demo plays once. Pick a scene to see it again. <button class="btn-sm demo-pause" id="demo-pause" type="button" aria-pressed="false">Pause animations</button></p>
+  </div>
+  <div class="wrap">
+    <ul class="factbar" aria-label="belay at a glance">
+      <li><b>~2 ms</b><span>per hook, p95</span></li>
+      <li><b>Fails open</b><span>on any error, it prints nothing</span></li>
+      <li><b>0</b><span>network or model calls</span></li>
+      <li><b>474</b><span>tests, plus fuzz targets</span></li>
+      <li><b>MIT / Apache-2.0</b><span>open source</span></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===================== MOMENTS ===================== -->
+<section class="sec" id="moments" aria-labelledby="moments-title">
+  <div class="wrap">
+    <div class="sec-head center reveal">
+      <p class="eyebrow"><span class="n">01</span> The problem</p>
+      <h2 class="h2" id="moments-title">You have watched this happen.</h2>
+      <p class="sec-lede">Coding agents are fast. They also take shortcuts you only notice later.</p>
+    </div>
+    <div class="g12 moments">
+      <article class="moment reveal" style="--rd:.0s">
+        <div class="vis" aria-hidden="true"><span class="del">-  assert total == 19.99</span><span class="add">+  assert total == 19.98</span></div>
+        <h3>The test was right. The agent changed it.</h3>
+        <p>The code returned 19.98. The test expected 19.99. The quickest way to green was to edit the test.</p>
+      </article>
+      <article class="moment reveal" style="--rd:.08s">
+        <div class="vis" aria-hidden="true"><span>edit → run → <span class="red">assert 500 == 200</span></span><span>edit → run → <span class="red">assert 500 == 200</span></span><span>edit → run → <span class="red">assert 500 == 200</span></span></div>
+        <h3>Third fix. Same failure.</h3>
+        <p>Edit, run, fail. The error never changes. The agent keeps going anyway.</p>
+      </article>
+      <article class="moment reveal" style="--rd:.16s">
+        <div class="vis" aria-hidden="true"><span>300 passed · <span class="red">2 failed</span></span><span class="amb">334 lines · 6,407 tokens</span><span>all of it in context</span></div>
+        <h3>Two failures in 334 lines.</h3>
+        <p>Every passing line lands in the context. The two that matter are buried in the rest.</p>
+      </article>
+      <article class="moment reveal" style="--rd:.24s">
+        <div class="vis" aria-hidden="true"><span><span class="grn">shop-1</span> edits shop/payments.py</span><span><span class="amb">shop-2</span> edits shop/payments.py</span><span>neither one knows</span></div>
+        <h3>Two sessions, one file.</h3>
+        <p>Another session changed the file. Yours is still working from an old read.</p>
+      </article>
+    </div>
+    <p class="moments-close reveal"><strong>belay catches each of these moments.</strong> In optimize mode, it tells the agent in time.</p>
+  </div>
+</section>
+
+<!-- ===================== FEATURES ===================== -->
+<section class="sec rule" id="features" aria-labelledby="features-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">02</span> What it does</p>
+      <h2 class="h2" id="features-title">It watches every move. <span class="mute">It catches the fall.</span></h2>
+      <p class="sec-lede">belay sees each tool call, and its output, before the agent reads it. Here is what it does with that.</p>
+    </div>
+
+    <div class="g12 bento">
+      <!-- Guard -->
+      <article class="card c-guard reveal" aria-labelledby="f-guard">
+        <p class="kicker">Test guard</p>
+        <h3 id="f-guard">Edits that weaken tests wait for you.</h3>
+        <p class="body">Before an Edit or Write lands in a test file, belay compares the old and new text. It flags six things. In optimize mode, the edit is denied until you allow it.</p>
+        <div class="demo grow">
+          <ul class="rules" id="rules">
+            <li><span class="x" aria-hidden="true">✕</span><span>An assertion is removed</span><code><i>e.g.</i> - assert total(cart) == 19.99</code></li>
+            <li><span class="x" aria-hidden="true">✕</span><span>A skip marker is added</span><code><i>e.g.</i> + @pytest.mark.skip</code></li>
+            <li class="hot"><span class="x" aria-hidden="true">✕</span><span>An expected value becomes the failing run's actual value</span><code>19.99 → 19.98</code></li>
+            <li><span class="x" aria-hidden="true">✕</span><span>A tolerance is raised</span><code><i>e.g.</i> abs=1e-6 → abs=0.5</code></li>
+            <li><span class="x" aria-hidden="true">✕</span><span>An assert is always true</span><code><i>e.g.</i> assert True</code></li>
+            <li><span class="x" aria-hidden="true">✕</span><span>A command rewrites snapshot or golden files</span><code>snapshots · golden files</code></li>
+          </ul>
+          <div class="who" role="group" aria-label="Who can allow a denied edit">
+            <div class="who-step"><span class="who-k">Agent</span><span class="who-v"><code>Edit</code> a test</span></div>
+            <span class="who-arr" aria-hidden="true">→</span>
+            <div class="who-step deny"><span class="who-k">belay</span><span class="who-v">Denied</span></div>
+            <span class="who-arr" aria-hidden="true">→</span>
+            <div class="who-step you"><span class="who-k">You</span><span class="who-v"><code>! belay allow</code></span></div>
+            <span class="who-arr" aria-hidden="true">→</span>
+            <div class="who-step"><span class="who-k">Agent</span><span class="who-v">Retries the same edit</span></div>
+          </div>
+          <div class="notes">
+            <p><b>Only a human can allow it.</b> The allow comes from your <code class="inline-code">!</code> shell line, never from the agent.</p>
+            <p><b>Protect any path.</b> List it in <code class="inline-code">.belay.toml</code>.</p>
+            <p class="wide"><b>In look mode, the edit goes through.</b> belay records the flag and what it would have done. The agent sees no difference.</p>
+          </div>
+        </div>
+      </article>
+
+      <!-- Loop -->
+      <article class="card c-loop reveal" style="--rd:.08s" aria-labelledby="f-loop">
+        <p class="kicker">Loop detection</p>
+        <h3 id="f-loop">Three rounds. Same failure. One message.</h3>
+        <p class="body">It matches failures by a normalized signature. It also catches edit cycles: edit, revert, edit. It tells the agent once.</p>
+        <div class="demo">
+          <div class="loopviz" id="loopviz" aria-hidden="true">
+            <div class="ring">
+              <svg viewBox="0 0 112 112">
+                <circle class="trk" cx="56" cy="56" r="46" fill="none" stroke-width="6" opacity=".6"/>
+                <circle class="seg" data-i="0" cx="56" cy="56" r="46" fill="none" stroke-width="6" stroke-linecap="round" stroke-dasharray="84.3 204.7" stroke-dashoffset="-4"/>
+                <circle class="seg" data-i="1" cx="56" cy="56" r="46" fill="none" stroke-width="6" stroke-linecap="round" stroke-dasharray="84.3 204.7" stroke-dashoffset="-100.3"/>
+                <circle class="seg warn" data-i="2" cx="56" cy="56" r="46" fill="none" stroke-width="6" stroke-linecap="round" stroke-dasharray="84.3 204.7" stroke-dashoffset="-196.6"/>
+              </svg>
+              <div class="ctr"><div><b id="loop-n">3</b><small>of 3</small></div></div>
+            </div>
+            <ul class="rounds" id="rounds">
+              <li class="on"><span class="rn">1</span><span class="sig">assert 500 == 200</span></li>
+              <li class="on"><span class="rn">2</span><span class="sig">assert 500 == 200</span></li>
+              <li class="on"><span class="rn">3</span><span class="sig">assert 500 == 200</span></li>
+            </ul>
+          </div>
+          <p class="told" id="told"><b>Told once</b> A different approach may be needed.</p>
+        </div>
+      </article>
+
+      <!-- Summary -->
+      <article class="card c-sum reveal" style="--rd:.12s" aria-labelledby="f-sum">
+        <p class="kicker">Faithful summaries</p>
+        <h3 id="f-sum">Every failure line kept. The noise cut.</h3>
+        <p class="body">A real pytest run, before and after. <code class="inline-code">belay show o-3</code> prints the original.</p>
+        <div class="demo sumviz" id="sumviz">
+          <div class="srow">
+            <div class="top"><span class="k">Lines</span><span class="v"><s>334</s><span>93</span></span></div>
+            <div class="track" aria-hidden="true"><i style="--w:27.8%"></i></div>
+          </div>
+          <div class="srow">
+            <div class="top"><span class="k">Tokens</span><span class="v"><s>6,407</s><span>1,576</span></span></div>
+            <div class="track" aria-hidden="true"><i style="--w:24.6%"></i></div>
+          </div>
+          <div class="lines-vis cut" id="linesvis" aria-hidden="true"><i class="k"></i><i class="k"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="f"></i><i class="f"></i><i class="k"></i><i class="k"></i><i class="k"></i><i></i><i></i><i></i><i></i></div>
+          <p class="sum-foot">Red: failure lines. All of them stay.</p>
+        </div>
+      </article>
+
+      <!-- Retro -->
+      <article class="card c-retro reveal" aria-labelledby="f-retro">
+        <p class="kicker">Replay history</p>
+        <h3 id="f-retro">See what it would have caught. Before you trust it.</h3>
+        <p class="body"><code class="inline-code">belay retro --all</code> reads the Claude Code transcripts you already have. It ranks past sessions by what belay would have caught. It starts nothing and changes nothing.</p>
+        <div class="demo">
+          <div class="rflow" role="group" aria-label="How belay retro works">
+            <div class="rf-step"><span class="rf-k">In</span><span class="rf-v">The Claude Code transcripts you already have</span></div>
+            <span class="rf-arr" aria-hidden="true">→</span>
+            <div class="rf-step mid"><span class="rf-k">Run</span><span class="rf-v"><code>belay retro --all</code></span></div>
+            <span class="rf-arr" aria-hidden="true">→</span>
+            <div class="rf-step"><span class="rf-k">Out</span><span class="rf-v">Past sessions, ranked by what belay would have caught</span></div>
+          </div>
+          <div class="rf-tags"><span><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Starts nothing</span><span><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Changes nothing</span><a href="#start-out">See a real report <span aria-hidden="true">↓</span></a></div>
+        </div>
+      </article>
+
+      <!-- Ledger -->
+      <article class="card c-ledger reveal" style="--rd:.08s" aria-labelledby="f-ledger">
+        <p class="kicker">Ledger with reasons</p>
+        <h3 id="f-ledger">Every action has a reason.</h3>
+        <p class="body">Every session is recorded. Each action carries a one-sentence reason and the chain of causes behind it.</p>
+        <div class="demo">
+          <div class="ticks" id="ticks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="a" data-l="a-1"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="a" data-l="a-2"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          <div class="cmds">
+            <div><code>belay report</code><span>the whole session</span></div>
+            <div><code>belay why a-2</code><span>one action, its reason and causes</span></div>
+            <div><code>belay flag</code><span>note a mistake belay made</span></div>
+          </div>
+        </div>
+      </article>
+
+      <!-- Learned fixes -->
+      <article class="card c-learn reveal" aria-labelledby="f-learn">
+        <div class="learn-wrap">
+          <div>
+            <p class="kicker">Learned fixes</p>
+            <h3 id="f-learn">A fix found once is not lost.</h3>
+            <p class="body">When a failure is fixed and the full suite passes, belay keeps the change. The next session in that project that hits the same failure is told how it was fixed, with the diff.</p>
+          </div>
+          <div class="flow" id="flow" role="group" aria-label="How a fix is learned">
+            <div class="step fail lit"><b>1 · Fails</b>A test fails</div>
+            <div class="step lit"><b>2 · Edits</b>The agent fixes it</div>
+            <div class="step lit"><b>3 · Passes</b>The full suite passes</div>
+            <div class="step lit"><b>4 · Kept</b>belay keeps the change</div>
+            <div class="step next lit"><b>Next session</b>Same failure: told the fix, with the diff</div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section class="sec rule how" id="how" data-mode="look" aria-labelledby="how-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">03</span> How it works</p>
+      <h2 class="h2" id="how-title">Between the hook and the agent.</h2>
+      <p class="sec-lede">Claude Code calls a hook on every tool call. belay answers in about 2 ms, or it stays quiet. Either way, it writes down what it saw.</p>
+    </div>
+
+    <div class="pipe reveal" role="group" aria-label="Data flow: hook, shim, daemon, core, ledger">
+      <div class="node"><p class="nk">1 · Hook</p><h3>Claude Code</h3><p>Calls belay before and after each tool call.</p></div>
+      <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:0s"></i></div>
+      <div class="node"><p class="nk">2 · Shim</p><h3>belay hook</h3><p>A thin shim. It only forwards. On any error it prints nothing.</p></div>
+      <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:.6s"></i></div>
+      <div class="node"><p class="nk">3 · Daemon</p><h3>daemon</h3><p>One per session. It keeps the session's state.</p></div>
+      <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.2s"></i></div>
+      <div class="node core"><p class="nk">4 · Core</p><h3>core</h3><p>Decides: guard, loops, summaries, messages.</p></div>
+      <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.8s"></i></div>
+      <div class="node"><p class="nk">5 · Ledger</p><h3>ledger</h3><p>Records every action with a reason.</p></div>
+    </div>
+    <div class="ret reveal" aria-live="polite">
+      <span class="arrow" aria-hidden="true">←</span>
+      <span class="rtx-off">Look mode: no response. The agent sees no difference.</span>
+      <span class="rtx-on">Optimize mode: the decision goes back to the agent. A deny, a message, or a summary.</span>
+      <span class="lane" aria-hidden="true"><i></i></span>
+    </div>
+
+    <div class="g12 modes">
+      <div class="modes-text reveal">
+        <h3>Two modes. Start in look.</h3>
+        <p>Look mode is the default. belay records everything and decides what it would do. The agent sees no difference.</p>
+        <p>In optimize mode, the same decisions reach the agent. Switch when the report looks right to you.</p>
+      </div>
+      <div class="modes-panel reveal" style="--rd:.08s">
+        <div class="seg-ctl" role="group" aria-label="Show the data flow for a mode">
+          <button type="button" aria-pressed="true" data-mode="look">look</button>
+          <button type="button" aria-pressed="false" data-mode="optimize">optimize</button>
+        </div>
+        <table class="mtable">
+          <caption class="sr-only">look and optimize, side by side</caption>
+          <thead>
+            <tr><td></td><th scope="col" class="c-look">look <span class="tag">default</span></th><th scope="col" class="c-opt">optimize <span class="tag">opt in</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Ledger</th><td class="c-look" data-m="look">Every decision, with its reason</td><td class="c-opt" data-m="optimize">Every decision, with its reason</td></tr>
+            <tr><th scope="row">Hook answer</th><td class="c-look none" data-m="look">None. belay never answers a hook.</td><td class="c-opt hot" data-m="optimize">The decision</td></tr>
+            <tr><th scope="row">Agent sees</th><td class="c-look none" data-m="look">No difference</td><td class="c-opt" data-m="optimize">Denied edits, summaries, loop notes, peer news</td></tr>
+            <tr class="cmdrow"><th scope="row">Run</th><td class="c-look" data-m="look"><code>belay claude</code></td><td class="c-opt" data-m="optimize"><code>belay claude --belay-mode optimize</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SESSIONS + FLEETS ===================== -->
+<section class="sec rule" id="sessions" aria-labelledby="sessions-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">04</span> Many sessions</p>
+      <h2 class="h2" id="sessions-title">Many sessions. <span class="mute">One rope.</span></h2>
+      <p class="sec-lede">Sessions can see each other. Or run a whole fleet, each session in its own worktree.</p>
+    </div>
+
+    <div class="g12 split">
+      <div class="l5 reveal">
+        <h3>Sessions that see each other.</h3>
+        <p class="t"><code class="inline-code">belay sessions</code> is a board of live sessions. A session hears when another one:</p>
+        <div class="hears"><span>edits the same file</span><span>runs <code>git reset</code> under it</span><span>is about to cause a merge conflict</span></div>
+        <ul class="facts">
+          <li><code>belay msg</code><span>Message another session.</span></li>
+          <li><code>belay share · ask</code><span>Share findings, and search them.</span></li>
+          <li><code>belay handoff</code><span>Leave a note for the next session.</span></li>
+        </ul>
+      </div>
+      <div class="r7 reveal" style="--rd:.08s">
+        <div class="win">
+          <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay sessions</div></div>
+<pre tabindex="0" role="region" aria-label="Output of belay sessions"><span class="ps">$</span> belay sessions
+<span class="dm">3 live belay sessions</span>
+<span class="tl">/home/you/shop</span>
+ <span class="live" aria-hidden="true"></span> shop-1  <span class="gn">working</span>  "move checkout to the new payments API"
+      <span class="dm">changed shop/payments.py · active 1 min ago</span>
+ <span class="live" aria-hidden="true" style="--ld:.7s"></span> shop-2  <span class="gn">working</span>  "add tests for refunds"  <span class="me">(you)</span>
+      <span class="dm">last test `pytest tests/test_refunds.py` failed (2) 59 s ago · active 1 min ago</span>
+<span class="tl">/home/you/site</span>
+ <span class="live" aria-hidden="true" style="--ld:1.3s"></span> docs-1  <span class="gn">working</span>  "rewrite the install page"
+      <span class="dm">active 1 min ago</span></pre>
+        </div>
+        <div class="toasts">
+          <div class="toast"><p class="when"><i></i> When another session edits your file</p><p>belay: shop-1 edited shop/payments.py after you did. Read it again before you change it.</p></div>
+          <div class="toast"><p class="when"><i></i> When a session starts</p><p>belay: the last session in this repo (shop-1, ended 2 h ago): left: open: the leap-year test, next: fix parse_date; it was on: date parsing; it changed shop/dates.py, tests/test_dates.py; its last test `pytest` failed (1). Check `git status` before you go on.</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g12 split rev fleet-block">
+      <div class="l5 reveal">
+        <h3>Or run a fleet.</h3>
+        <p class="t"><code class="inline-code">belay fleet up</code> runs a team of headless Claude Code sessions.</p>
+        <ul class="facts">
+          <li><b>Worktrees</b><span>Each session gets its own git worktree.</span></li>
+          <li><b>Task board</b><span>Tasks come from a board.</span></li>
+          <li><b>Checks</b><span>A check command must pass before a task counts as done.</span></li>
+          <li><b>Limits</b><span>Budgets, and a merge plan.</span></li>
+        </ul>
+        <p class="presets-label">9 presets <span>· the fleet file here uses lead</span></p>
+        <ul class="presets" aria-label="The 9 fleet presets">
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><circle class="nd r" cx="50" cy="22" r="8"/></svg><b>solo</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M30 32 50 10 70 32Z"/><circle class="nd" cx="30" cy="32" r="7"/><circle class="nd" cx="70" cy="32" r="7"/><circle class="nd" cx="50" cy="11" r="7"/></svg><b>peers</b></li>
+          <li class="on"><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M50 11 26 34M50 11v23M50 11l24 23"/><circle class="nd r" cx="50" cy="10" r="7"/><circle class="nd" cx="26" cy="34" r="6"/><circle class="nd" cx="50" cy="34" r="6"/><circle class="nd" cx="74" cy="34" r="6"/></svg><b>lead</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M50 11 30 33M50 11l20 22"/><circle class="nd r" cx="50" cy="10" r="7"/><rect class="nd" x="23" y="27" width="13" height="13" rx="2"/><path class="nd" d="M70 26l8 14H62z"/></svg><b>specialists</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M50 8 32 22M50 8l18 14M32 22l-10 14M32 22l8 14M68 22l-8 14M68 22l10 14"/><circle class="nd r" cx="50" cy="7" r="5.5"/><circle class="nd" cx="32" cy="22" r="5"/><circle class="nd" cx="68" cy="22" r="5"/><circle class="nd" cx="22" cy="37" r="4.5"/><circle class="nd" cx="40" cy="37" r="4.5"/><circle class="nd" cx="60" cy="37" r="4.5"/><circle class="nd" cx="78" cy="37" r="4.5"/></svg><b>tree</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M20 22h60M33 18l4 4-4 4M53 18l4 4-4 4M73 18l4 4-4 4"/><circle class="nd" cx="16" cy="22" r="6"/><circle class="nd" cx="44" cy="22" r="6"/><circle class="nd" cx="64" cy="22" r="6"/><circle class="nd r" cx="86" cy="22" r="6"/></svg><b>pipeline</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M38 16c8-6 16-6 24 0M62 28c-8 6-16 6-24 0M57 13l5 3-4 4M43 31l-5-3 4-4"/><circle class="nd" cx="30" cy="22" r="8"/><circle class="nd r" cx="70" cy="22" r="8"/></svg><b>review</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M28 9 66 22M28 22h38M28 35l38-13"/><circle class="nd" cx="24" cy="9" r="5.5"/><circle class="nd" cx="24" cy="22" r="5.5"/><circle class="nd" cx="24" cy="35" r="5.5"/><circle class="nd r" cx="72" cy="22" r="8"/></svg><b>best-of</b></li>
+          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M36 22h14M50 22 64 9M50 22h14M50 22l14 13"/><rect class="nd r" x="14" y="10" width="18" height="6" rx="2"/><rect class="nd r" x="14" y="19" width="18" height="6" rx="2"/><rect class="nd r" x="14" y="28" width="18" height="6" rx="2"/><circle class="nd" cx="70" cy="9" r="5.5"/><circle class="nd" cx="70" cy="22" r="5.5"/><circle class="nd" cx="70" cy="35" r="5.5"/></svg><b>pool</b></li>
+        </ul>
+      </div>
+      <div class="r7 reveal" style="--rd:.08s">
+        <div class="win toml">
+          <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">a fleet file</div></div>
+<pre tabindex="0" role="region" aria-label="Example fleet file"><span class="k">preset</span> <span class="p">=</span> <span class="s">"lead"</span>
+<span class="k">check</span>  <span class="p">=</span> <span class="s">"make test"</span>
+<span class="k">permission_mode</span> <span class="p">=</span> <span class="s">"acceptEdits"</span>
+
+<span class="h">[role.worker]</span>
+<span class="k">model</span>         <span class="p">=</span> <span class="s">"sonnet"</span>
+<span class="k">replicas</span>      <span class="p">=</span> <span class="s">"1..3"</span>
+<span class="k">may_not_write</span> <span class="p">=</span> <span class="p">[</span><span class="s">"tests/**"</span><span class="p">]</span>
+<span class="k">budget</span>        <span class="p">=</span> <span class="p">{</span> <span class="k">tokens</span> <span class="p">=</span> <span class="s">"2M"</span><span class="p">,</span> <span class="k">wall</span> <span class="p">=</span> <span class="s">"45m"</span> <span class="p">}</span></pre>
+        </div>
+        <div class="fleetflow" role="group" aria-label="What this fleet file sets up">
+          <div class="ff-step"><span class="ff-k">Board</span><span class="ff-v">Tasks come from it</span></div>
+          <div class="ff-step workers"><span class="ff-k">Workers · 1..3</span><span class="ff-wk"><i class="live" aria-hidden="true"></i><i class="live" aria-hidden="true" style="--ld:.6s"></i><i class="live" aria-hidden="true" style="--ld:1.2s"></i></span><span class="ff-v">One worktree each. May not write tests/**.</span></div>
+          <div class="ff-step gate"><span class="ff-k">Check</span><span class="ff-v"><code>make test</code> must pass</span></div>
+          <div class="ff-step"><span class="ff-k">Budget</span><span class="ff-v">2M tokens, 45 min wall</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PRINCIPLES ===================== -->
+<div class="ridge-div" aria-hidden="true"><svg class="ridge" focusable="false"><use href="#ridge-band"/></svg></div>
+<section class="sec" id="principles" aria-labelledby="principles-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">05</span> Principles</p>
+      <h2 class="h2" id="principles-title">Built to stay out of the way.</h2>
+      <p class="sec-lede">A supervisor should never be the thing that breaks your session.</p>
+    </div>
+    <div class="g12 stats reveal">
+      <div class="stat">
+        <p class="lbl">Fast</p>
+        <p class="big" aria-hidden="true">~2<small>ms</small></p>
+        <h3><span class="sr-only">About 2 ms </span>per hook, at p95.</h3>
+        <p>The budget is 20 ms, and CI measures it.</p>
+        <div class="meter" role="img" aria-label="About 2 ms of a 20 ms budget"><div class="mt"><i></i></div><div class="ml"><span>2 ms</span><span>budget 20 ms</span></div></div>
+      </div>
+      <div class="stat">
+        <p class="lbl">Fails open</p>
+        <p class="big" aria-hidden="true">250<small>ms</small></p>
+        <h3><span class="sr-only">250 ms, </span>and then it lets go.</h3>
+        <p>On any error, or a timeout over 250 ms, the hook prints nothing. The agent goes on.</p>
+      </div>
+      <div class="stat">
+        <p class="lbl">Local</p>
+        <p class="big" aria-hidden="true">0</p>
+        <h3><span class="sr-only">0 </span>network calls. 0 model calls.</h3>
+        <p>Secrets are redacted before anything is written.</p>
+      </div>
+      <div class="stat">
+        <p class="lbl">Prompt cache</p>
+        <p class="big" aria-hidden="true">Never</p>
+        <h3><span class="sr-only">Never </span>edits the past.</h3>
+        <p>belay acts only on what the agent has not seen yet. The prompt cache stays intact.</p>
+      </div>
+      <div class="stat">
+        <p class="lbl">One binary</p>
+        <p class="big" aria-hidden="true">1</p>
+        <h3><span class="sr-only">1 </span>Rust binary.</h3>
+        <p>The hook, the daemon and every command ship as one binary. Build it with cargo, or take one from Releases.</p>
+      </div>
+      <div class="stat">
+        <p class="lbl">Tested</p>
+        <p class="big" aria-hidden="true">474</p>
+        <h3><span class="sr-only">474 </span>tests, plus fuzz targets.</h3>
+        <div class="testsplit">
+          <div>285<span>core</span></div>
+          <div>128<span>CLI</span></div>
+          <div>57<span>end-to-end, fake agent</span></div>
+          <div>4<span>property</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== QUICK START ===================== -->
+<section class="sec rule" id="start" aria-labelledby="start-title">
+  <div class="wrap">
+    <div class="g12 qs">
+      <div class="l5 reveal">
+        <p class="eyebrow"><span class="n">06</span> Quick start</p>
+        <h2 class="h2" id="start-title">Start with sessions you already ran.</h2>
+        <p class="sec-lede"><code class="inline-code">belay retro --all</code> reads your old transcripts and changes nothing. Then run one session in look mode, and read the report.</p>
+        <div data-tabs>
+          <div class="qs-tabs" role="tablist" aria-label="Install with">
+            <button role="tab" type="button" id="qt-cargo" aria-controls="qp-cargo" aria-selected="true" tabindex="0">cargo</button>
+            <button role="tab" type="button" id="qt-plugin" aria-controls="qp-plugin" aria-selected="false" tabindex="-1">Claude Code plugin</button>
+          </div>
+        </div>
+      </div>
+      <div class="r7 reveal" style="--rd:.08s">
+        <div class="win">
+          <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">quick start</div></div>
+          <div class="qs-panel" role="tabpanel" id="qp-cargo" aria-labelledby="qt-cargo" data-label="With cargo">
+            <ol class="steps">
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</code><span>Rust 1.87+. Or a binary from <a href="https://github.com/prakhar479/belay/releases">Releases</a>.</span></div><button class="mini-copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy: cargo install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay doctor</code><span>Check the setup.</span></div><button class="mini-copy" type="button" data-copy="belay doctor" aria-label="Copy: belay doctor"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay retro --all</code><span>What belay would have caught in sessions you already ran.</span></div><button class="mini-copy" type="button" data-copy="belay retro --all" aria-label="Copy: belay retro --all"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay claude</code><span>Your next session, in look mode. All args go to claude.</span></div><button class="mini-copy" type="button" data-copy="belay claude" aria-label="Copy: belay claude"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay report</code><span>What it saw, and what it would have done.</span></div><button class="mini-copy" type="button" data-copy="belay report" aria-label="Copy: belay report"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay claude --belay-mode optimize</code><span>When you agree with it, let the decisions reach the agent.</span></div><button class="mini-copy" type="button" data-copy="belay claude --belay-mode optimize" aria-label="Copy: belay claude --belay-mode optimize"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            </ol>
+          </div>
+          <div class="qs-panel" role="tabpanel" id="qp-plugin" aria-labelledby="qt-plugin" data-label="Or as a Claude Code plugin" hidden>
+            <ol class="steps">
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude plugin marketplace add prakhar479/belay</code><span>Add the marketplace.</span></div><button class="mini-copy" type="button" data-copy="claude plugin marketplace add prakhar479/belay" aria-label="Copy: claude plugin marketplace add"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude plugin install belay@belay</code><span>Install the plugin.</span></div><button class="mini-copy" type="button" data-copy="claude plugin install belay@belay" aria-label="Copy: claude plugin install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            </ol>
+          </div>
+        </div>
+        <div class="qs-out" id="start-out">
+          <p class="k">What one session looks like in the report</p>
+          <div class="win retro">
+            <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay retro</div></div>
+<pre tabindex="0" role="region" aria-label="Real output of belay retro on a test fixture"><span class="ps">$</span> belay retro loop_session.jsonl
+Session loop_session.jsonl · claude-code (retro) · 14 s · mode: look
+<span class="hl">Needs attention: 1 loops</span>
+Loops (13 s in loops): 1
+  - <span class="hl">[would steer]</span> after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run): …
+<span class="dm">Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages</span>
+<span class="dm">Test runs: 4 · wrapped (or would be, in auto mode): 4 (100%)</span></pre>
+          </div>
+          <p class="cap">Real output on a test fixture, shortened. In look mode, belay says what it would have done.</p>
+        </div>
+        <div class="qs-links">
+          <a class="btn" href="https://github.com/prakhar479/belay/blob/main/docs/guide.md">Read the guide <span class="arr" aria-hidden="true">→</span></a>
+          <a class="btn" href="https://github.com/prakhar479/belay/releases">Releases</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STATUS ===================== -->
+<section class="sec rule" id="status" aria-labelledby="status-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">07</span> Status</p>
+      <h2 class="h2" id="status-title">An honest status.</h2>
+    </div>
+    <div class="status-card reveal">
+      <div class="status-top">
+        <div>
+          <h3>belay is a prototype.</h3>
+          <p>Read this before you rely on it.</p>
+        </div>
+        <span class="badge-proto"><i aria-hidden="true"></i> Prototype</span>
+      </div>
+      <div class="status-grid">
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other agents are not supported yet.</span><p class="st">Supported</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>The Claude Code versions it is checked against:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code></span><p class="st">Checked</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Linux and WSL</b><span>Where it is tested.</span><p class="st">Tested</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Builds exist. They are untested.</span><p class="st">Untested</p></div></div>
+        <div class="srow2 no"><span class="si" aria-hidden="true">✕</span><div><b>Windows</b><span>Not supported.</span><p class="st">Not supported</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>MIT OR Apache-2.0</b><span>Open source, your choice of license.</span><p class="st">License</p></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FINAL CTA ===================== -->
+<section class="final" aria-labelledby="final-title">
+  <div class="glow" aria-hidden="true"></div>
+  <svg class="ridge" aria-hidden="true" focusable="false"><use href="#ridge"/></svg>
+  <div class="wrap">
+    <div class="final-rope" aria-hidden="true"></div>
+    <svg class="mark-big" viewBox="0 0 40 52" aria-hidden="true" focusable="false">
+      <rect x="13.5" y="-2" width="13" height="16" rx="5.5" fill="var(--rope)" stroke="var(--rope-2)" stroke-width="1.5"/>
+      <path d="M30.5 21 A10.5 10.5 0 0 0 9.5 21 V39 A10.5 10.5 0 0 0 30.5 39" fill="none" stroke="url(#bg-grad)" stroke-width="4.2" stroke-linecap="round"/>
+      <path d="M30.5 37.5 V24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+    </svg>
+    <p class="call reveal">On belay?</p>
+    <h2 class="reveal" id="final-title"><span class="grad-text">Belay on.</span></h2>
+    <p class="sub reveal">Install it, replay your history, and run your next session on belay.</p>
+    <div class="install reveal" data-tabs>
+      <div class="ibox">
+        <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</pre>
+        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy the install command"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+      </div>
+    </div>
+    <div class="cta-row reveal">
+      <a class="btn primary" href="https://github.com/prakhar479/belay">Get belay on GitHub <span class="arr" aria-hidden="true">→</span></a>
+      <a class="btn" href="https://github.com/prakhar479/belay/blob/main/docs/guide.md">Read the guide</a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="g12 foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="#top"><svg aria-hidden="true"><use href="#mark"/></svg> belay</a>
+        <p>A local supervisor for Claude Code. Formerly called tend. In climbing, the belayer holds the rope and catches the fall.</p>
+      </div>
+      <div class="foot-col">
+        <h2>Project</h2>
+        <ul>
+          <li><a href="https://github.com/prakhar479/belay">GitHub</a></li>
+          <li><a href="https://github.com/prakhar479/belay/releases">Releases</a></li>
+          <li><a href="https://github.com/prakhar479/belay/blob/main/docs/guide.md">Usage guide</a></li>
+          <li><a href="https://github.com/prakhar479/belay/issues">Issues</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h2>On this page</h2>
+        <ul>
+          <li><a href="#demo">Demo</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#how">How it works</a></li>
+          <li><a href="#sessions">Sessions</a></li>
+          <li><a href="#status">Status</a></li>
+        </ul>
+      </div>
+      <div class="foot-col">
+        <h2>Get started</h2>
+        <ul>
+          <li><a href="#start">Quick start</a></li>
+          <li><a href="https://github.com/prakhar479/belay/issues">Report an issue</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>MIT OR Apache-2.0</span>
+      <span>This page is one file. It makes no outside requests.</span>
+    </div>
+  </div>
+</footer>
+<p class="sr-only" aria-live="polite" id="live"></p>
+
+<script>
+(function () {
+  'use strict';
+  var root = document.documentElement;
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var live = document.getElementById('live');
+
+  /* ---------- Theme ---------- */
+  var themeBtn = document.querySelector('.theme-btn');
+  function currentTheme() {
+    var t = root.getAttribute('data-theme');
+    if (t) return t;
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function labelTheme() {
+    if (!themeBtn) return;
+    var l = 'Switch to ' + (currentTheme() === 'dark' ? 'light' : 'dark') + ' theme';
+    themeBtn.setAttribute('aria-label', l);
+    themeBtn.title = l;
+  }
+  labelTheme();
+  if (themeBtn) themeBtn.addEventListener('click', function () {
+    var next = currentTheme() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('belay-theme', next); } catch (e) {}
+    document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.setAttribute('content', next === 'dark' ? '#050708' : '#ffffff'); });
+    labelTheme();
+  });
+  if (window.matchMedia) {
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onScheme = function () { if (!root.getAttribute('data-theme')) labelTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onScheme); else if (mq.addListener) mq.addListener(onScheme);
+  }
+
+  /* ---------- Copy ---------- */
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }, function () { return fallback(text); });
+    }
+    return Promise.resolve(fallback(text));
+  }
+  function fallback(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.top = '-1000px'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    return ok;
+  }
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      copyText(b.getAttribute('data-copy')).then(function (ok) {
+        var lbl = b.querySelector('.lbl');
+        b.classList.toggle('done', ok);
+        b.title = ok ? 'Copied' : 'Copy failed. Select the text.';
+        if (lbl) lbl.textContent = ok ? 'Copied' : 'Select';
+        live.textContent = ok ? 'Copied to clipboard.' : 'Copy failed. Select the text instead.';
+        clearTimeout(b._t);
+        b._t = setTimeout(function () { b.classList.remove('done'); b.removeAttribute('title'); if (lbl) lbl.textContent = 'Copy'; }, 1800);
+      });
+    });
+  });
+
+  /* ---------- Tabs (keyboard: arrows, Home, End) ---------- */
+  function setupTabs(list, onChange) {
+    var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+    function select(tab, focus, byUser) {
+      tabs.forEach(function (t) {
+        var on = t === tab;
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+        t.tabIndex = on ? 0 : -1;
+        var p = document.getElementById(t.getAttribute('aria-controls'));
+        if (p) p.hidden = !on;
+      });
+      if (focus) tab.focus();
+      if (onChange) onChange(tab, byUser);
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener('click', function () { select(t, false, true); });
+      t.addEventListener('keydown', function (e) {
+        var j = null;
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') j = (i + 1) % tabs.length;
+        else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') j = (i - 1 + tabs.length) % tabs.length;
+        else if (e.key === 'Home') j = 0;
+        else if (e.key === 'End') j = tabs.length - 1;
+        if (j !== null) { e.preventDefault(); select(tabs[j], true, true); }
+      });
+    });
+    return { select: select, tabs: tabs };
+  }
+  document.querySelectorAll('.install-tabs, .qs-tabs').forEach(function (l) { setupTabs(l); });
+  var how = document.getElementById('how');
+  var segBtns = document.querySelectorAll('.seg-ctl button');
+  segBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      segBtns.forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
+      how.setAttribute('data-mode', b.getAttribute('data-mode'));
+    });
+  });
+
+  /* ---------- Hero demo player ---------- */
+  var stage = document.getElementById('stage');
+  var stageWrap = document.getElementById('demo');
+  var screenEl = document.getElementById('screen');
+  // Keep the panel one height: the tallest scene sets it.
+  function sizeScreen() {
+    if (!screenEl) return;
+    var scenes = screenEl.querySelectorAll('.scene');
+    var keep = [];
+    scenes.forEach(function (sc) { keep.push(sc.hidden); sc.hidden = false; sc.style.position = 'absolute'; sc.style.visibility = 'hidden'; sc.style.left = '0'; sc.style.right = '0'; });
+    var cs = getComputedStyle(screenEl);
+    var pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    var max = 0;
+    scenes.forEach(function (sc) { sc.style.paddingLeft = cs.paddingLeft; sc.style.paddingRight = cs.paddingRight; max = Math.max(max, sc.offsetHeight); });
+    scenes.forEach(function (sc, i) { sc.hidden = keep[i]; sc.style.position = ''; sc.style.visibility = ''; sc.style.left = ''; sc.style.right = ''; sc.style.paddingLeft = ''; sc.style.paddingRight = ''; });
+    screenEl.style.minHeight = Math.ceil(max + pad) + 'px';
+  }
+  sizeScreen();
+  var rsz = null;
+  window.addEventListener('resize', function () { clearTimeout(rsz); rsz = setTimeout(sizeScreen, 150); });
+  var titleEl = document.getElementById('term-title');
+  var chapters = document.getElementById('chapters');
+  var timers = [];
+  var userPicked = false;
+  var demoVisible = true;
+  var pendingAdvance = false;
+  function later(ms, fn) { timers.push(setTimeout(fn, ms)); }
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+
+  function resetScene(scene) {
+    scene.querySelectorAll('[data-step]').forEach(function (s) { s.classList.remove('shown'); s.classList.remove('pending'); });
+    scene.querySelectorAll('.diff').forEach(function (d) { d.classList.remove('blocked'); });
+    scene.querySelectorAll('.stream').forEach(function (s) { s.classList.remove('live', 'collapsed'); s.style.maxHeight = ''; });
+    scene.querySelectorAll('[data-type] .tx').forEach(function (tx) { if (tx.dataset.full) tx.textContent = tx.dataset.full; });
+    stage.classList.remove('flash');
+    stageWrap.classList.remove('caught');
+  }
+  function fx(step, instant) {
+    var f = step.getAttribute('data-fx');
+    if (f === 'deny') {
+      var d = step.parentNode.querySelector('.diff');
+      if (d) d.classList.add('blocked');
+      if (!instant) {
+        stage.classList.add('flash'); stageWrap.classList.add('caught');
+        later(1400, function () { stage.classList.remove('flash'); stageWrap.classList.remove('caught'); });
+      }
+    } else if (f === 'stream' && !instant) {
+      step.classList.add('live');
+      step.style.maxHeight = step.scrollHeight + 'px';
+      Array.prototype.forEach.call(step.children, function (c, i) { c.style.animationDelay = (i * 95) + 'ms'; });
+    } else if (f === 'collapse') {
+      var s = step.parentNode.querySelector('.stream');
+      if (s) s.classList.add('collapsed');
+    }
+  }
+  function playScene(scene, instant) {
+    clearTimers();
+    resetScene(scene);
+    if (titleEl && scene.dataset.title) titleEl.textContent = scene.dataset.title;
+    var steps = Array.prototype.slice.call(scene.querySelectorAll('[data-step]'));
+    if (instant) { steps.forEach(function (s) { fx(s, true); }); return 0; }
+    steps.forEach(function (s) {
+      s.classList.add('pending');
+      var tx = s.hasAttribute('data-type') && s.querySelector('.tx');
+      if (tx) { tx.dataset.full = tx.dataset.full || tx.textContent; tx.textContent = ''; }
+    });
+    var t = 0;
+    steps.forEach(function (s) {
+      t += parseInt(s.getAttribute('data-d') || '300', 10);
+      var at = t;
+      later(at, function () {
+        s.classList.remove('pending'); s.classList.add('shown');
+        fx(s, false);
+      });
+      if (s.hasAttribute('data-type')) {
+        var tx = s.querySelector('.tx'); var full = tx.dataset.full;
+        for (var i = 1; i <= full.length; i++) {
+          (function (n) { later(at + n * 34, function () { tx.textContent = full.slice(0, n); }); })(i);
+        }
+        t += full.length * 34 + 150;
+      }
+    });
+    return t;
+  }
+
+  if (chapters) {
+    var HOLD = 5200;
+    var ctl = setupTabs(chapters, function (tab, byUser) {
+      if (byUser) userPicked = true;
+      var scene = document.getElementById(tab.getAttribute('aria-controls'));
+      var dur = playScene(scene, reduce);
+      chapters.querySelectorAll('.prog').forEach(function (p) { p.classList.remove('run'); });
+      if (reduce) return;
+      var prog = tab.querySelector('.prog');
+      if (!userPicked) {
+        prog.style.setProperty('--dur', (dur + HOLD) + 'ms');
+        void prog.offsetWidth; prog.classList.add('run');
+        later(dur + HOLD, advance);
+      } else {
+        prog.style.setProperty('--dur', dur + 'ms');
+        void prog.offsetWidth; prog.classList.add('run');
+      }
+    });
+    function advance() {
+      if (userPicked) return;
+      if (!demoVisible) { pendingAdvance = true; return; }
+      var i = ctl.tabs.findIndex(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+      // One pass, then stop.
+      if (i === ctl.tabs.length - 1) { userPicked = true; return; }
+      ctl.select(ctl.tabs[i + 1], false, false);
+    }
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          demoVisible = e.isIntersecting;
+          if (demoVisible && pendingAdvance) { pendingAdvance = false; advance(); }
+        });
+      }, { threshold: 0.2 }).observe(stage);
+    }
+    ctl.select(ctl.tabs[0], false, false);
+  }
+
+  /* ---------- Pause all animations ---------- */
+  var motionOff = false;
+  var demos = [];
+  var pauseBtn = document.getElementById('demo-pause');
+  if (pauseBtn && reduce) pauseBtn.hidden = true;
+  if (pauseBtn) pauseBtn.addEventListener('click', function () {
+    motionOff = !motionOff;
+    pauseBtn.setAttribute('aria-pressed', motionOff ? 'true' : 'false');
+    pauseBtn.textContent = motionOff ? 'Play animations' : 'Pause animations';
+    root.classList.toggle('motion-off', motionOff);
+    if (motionOff) {
+      userPicked = true;
+      clearTimers();
+      if (chapters) {
+        chapters.querySelectorAll('.prog').forEach(function (p) { p.classList.remove('run'); });
+        var cur = chapters.querySelector('[aria-selected="true"]');
+        if (cur) playScene(document.getElementById(cur.getAttribute('aria-controls')), true);
+      }
+    }
+    demos.forEach(function (d) {
+      if (motionOff && d.running) { d.running(); d.running = null; }
+      else if (!motionOff && d.visible && !d.running) d.running = d.start();
+    });
+  });
+
+  /* ---------- Scroll reveal ---------- */
+  var reveals = document.querySelectorAll('.reveal');
+  // What is already on screen at load shows at once, with no fade.
+  var vh = window.innerHeight || 800;
+  reveals = Array.prototype.filter.call(reveals, function (r) {
+    if (r.getBoundingClientRect().top < vh) { r.classList.add('in', 'now'); return false; }
+    return true;
+  });
+  if (!reduce && 'IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+    reveals.forEach(function (r) { io.observe(r); });
+    // Fallback: never leave a section hidden.
+    setTimeout(function () { reveals.forEach(function (r) { if (!r.classList.contains('in')) r.classList.add('in', 'now'); }); }, 2000);
+  } else {
+    reveals.forEach(function (r) { r.classList.add('in'); });
+  }
+
+  /* ---------- Scroll cue on wide code ---------- */
+  var wide = document.querySelectorAll('.win pre, .ibox pre, .steps .cmd code');
+  function cue(el) { el.classList.toggle('more-r', el.scrollWidth - el.clientWidth - el.scrollLeft > 4); }
+  function cueAll() { wide.forEach(cue); }
+  wide.forEach(function (el) { el.addEventListener('scroll', function () { cue(el); }, { passive: true }); });
+  cueAll();
+  window.addEventListener('resize', cueAll);
+  document.querySelectorAll('[role="tab"]').forEach(function (t) { t.addEventListener('click', function () { setTimeout(cueAll, 0); }); });
+
+  /* ---------- Micro-demos ---------- */
+  function whenVisible(el, start) {
+    if (!el) return;
+    if (reduce || !('IntersectionObserver' in window)) return;
+    var d = { start: start, running: null, visible: false };
+    demos.push(d);
+    new IntersectionObserver(function (es) {
+      es.forEach(function (e) {
+        d.visible = e.isIntersecting;
+        if (e.isIntersecting && !d.running && !motionOff) d.running = start();
+        else if (!e.isIntersecting && d.running) { d.running(); d.running = null; }
+      });
+    }, { threshold: 0.25 }).observe(el);
+  }
+
+  // Guard rules: a scanner passes over the six rules.
+  var rules = document.querySelectorAll('#rules li');
+  whenVisible(document.getElementById('rules'), function () {
+    var i = 0;
+    var id = setInterval(function () {
+      rules.forEach(function (r, j) { r.classList.toggle('hot', j === i); });
+      i = (i + 1) % rules.length;
+    }, 1100);
+    return function () { clearInterval(id); rules.forEach(function (r, j) { r.classList.toggle('hot', j === 2); }); };
+  });
+
+  // Loop counter: rounds fill, then belay speaks once.
+  var loopviz = document.getElementById('loopviz');
+  whenVisible(loopviz, function () {
+    var segsEl = loopviz.querySelectorAll('.seg');
+    var rows = loopviz.querySelectorAll('.rounds li');
+    var n = document.getElementById('loop-n');
+    var told = document.getElementById('told');
+    var ts = [];
+    function cycle() {
+      ts.forEach(clearTimeout); ts = [];
+      segsEl.forEach(function (s) { s.classList.add('off'); });
+      rows.forEach(function (r) { r.classList.remove('on'); r.classList.add('off'); });
+      told.classList.add('off'); n.textContent = '0';
+      [0, 1, 2].forEach(function (k) {
+        ts.push(setTimeout(function () {
+          segsEl[k].classList.remove('off'); rows[k].classList.remove('off'); rows[k].classList.add('on'); n.textContent = String(k + 1);
+        }, 700 + k * 1000));
+      });
+      ts.push(setTimeout(function () { told.classList.remove('off'); }, 3500));
+      ts.push(setTimeout(cycle, 7600));
+    }
+    cycle();
+    return function () {
+      ts.forEach(clearTimeout); ts = [];
+      segsEl.forEach(function (s) { s.classList.remove('off'); });
+      rows.forEach(function (r) { r.classList.remove('off'); r.classList.add('on'); });
+      told.classList.remove('off'); n.textContent = '3';
+    };
+  });
+
+  // Summary: the bars shrink to the real sizes, once. The numbers never change.
+  var lv = document.getElementById('linesvis');
+  var sumviz = document.getElementById('sumviz');
+  if (sumviz && !reduce && 'IntersectionObserver' in window) {
+    var bars = sumviz.querySelectorAll('.track i');
+    bars.forEach(function (b) { b.style.transition = 'none'; b.style.width = '100%'; });
+    lv.classList.remove('cut');
+    var sio = new IntersectionObserver(function (es) {
+      if (!es[0].isIntersecting) return;
+      sio.disconnect();
+      void sumviz.offsetWidth;
+      setTimeout(function () { bars.forEach(function (b) { b.style.transition = ''; b.style.width = ''; }); lv.classList.add('cut'); }, 300);
+    }, { threshold: 0.6 });
+    sio.observe(sumviz);
+    // Never stay at the start state.
+    setTimeout(function () { bars.forEach(function (b) { b.style.transition = ''; b.style.width = ''; }); lv.classList.add('cut'); }, 4000);
+  }
+
+  // Ledger ticks: a cursor walks the session; actions light up.
+  var ticks = document.getElementById('ticks');
+  whenVisible(ticks, function () {
+    var items = ticks.querySelectorAll('i');
+    var i = 0;
+    var id = setInterval(function () {
+      items.forEach(function (it, j) { it.classList.toggle('lit', j <= i); });
+      i = i >= items.length + 6 ? 0 : i + 1;
+    }, 140);
+    return function () { clearInterval(id); items.forEach(function (it) { it.classList.remove('lit'); }); };
+  });
+
+  // Learned fixes: the stages light up in order.
+  var flow = document.getElementById('flow');
+  whenVisible(flow, function () {
+    var st = flow.querySelectorAll('.step');
+    var ts = [];
+    function cycle() {
+      ts.forEach(clearTimeout); ts = [];
+      st.forEach(function (s) { s.classList.remove('lit'); });
+      st.forEach(function (s, k) { ts.push(setTimeout(function () { s.classList.add('lit'); }, 400 + k * 800)); });
+      ts.push(setTimeout(cycle, 400 + st.length * 800 + 2600));
+    }
+    cycle();
+    return function () { ts.forEach(clearTimeout); ts = []; st.forEach(function (s) { s.classList.add('lit'); }); };
+  });
+})();
+</script>
+</body>
+</html>

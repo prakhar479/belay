@@ -1,0 +1,23 @@
+# Fixtures
+
+| Path | Content | Status |
+|---|---|---|
+| `outputs/pytest_fail.txt` | pytest -v: 300 passed, 2 failed | Captured 2026-10-19 (pytest 8.3) |
+| `outputs/cargo_fail.txt` | cargo test: 148 passed, 2 failed (one `assert_eq!`, one `panic!`) | Captured 2026-10-19 (Rust 1.95) |
+| `outputs/pytest_cut_by_claude.txt` | A failing pytest run as Claude Code cut it (`... [N characters truncated] ...`) | Captured 2026-10-19 |
+| `outputs/go_test_fail.txt`, `go_test_v_fail.txt` | go test, plain and `-v`: 3 failures (one subtest, one panic) | Captured 2026-10-19 (go 1.22) |
+| `outputs/jest_fail.txt` | jest 29 `--verbose`: 3 failed, 30 passed | Captured 2026-10-19 |
+| `outputs/vitest_fail.txt` | vitest 2.1 `--reporter=verbose`: 3 failed, 30 passed | Captured 2026-10-19 |
+| `outputs/repeated_traces.txt` | Python worker: the same traceback 50 times | Captured 2026-10-19 |
+| `claude_code/*.json` | Claude Code hook payloads | Captured 2026-10-19, Claude Code 2.1.303 (docs/dev/TASKS.md S1) |
+| `claude_code/pre_tool_use_bash_auto.json` | PreToolUse Bash in auto mode (`python3 -m pytest -v tests`) | Captured 2026-10-20, Claude Code 2.1.304 (conformance run) |
+| `claude_code/post_tool_use_failure_wrapped.json` | PostToolUseFailure of a test run belay wrapped: the error text is belay's summary | Captured 2026-10-20, Claude Code 2.1.304, when the tool was named tend; the binary path replaced with `/usr/local/bin/belay`, and `tend` in the summary marker changed to `belay` |
+| `claude_code/permission_denied_bash.json` | PermissionDenied for a wrapped Bash call | **Synthetic**, from the 2.1.303 hook schema; replace with a capture when a denial happens (R3.7) |
+| `outputs/pytest_grep_e_lines.txt`, `outputs/pytest_summary_only.txt`, `outputs/go_test_grep_n.txt` | Output as an agent trims it (`grep -E`, `tail -1`, `grep -n`) | **Hand-made** from the captured runs above |
+| `transcripts/loop_session.jsonl` | Claude Code transcript: 4 failing runs, 3 edits | Captured 2026-10-19 (docs/dev/TASKS.md S5). Only user/assistant lines and the fields belay reads |
+
+Rules:
+
+- Every parser change needs a fixture here and a test.
+- Captured payloads come from `<session>/hooks.jsonl` (run the session with `BELAY_CAPTURE=1`). Make fixtures with `scripts/capture_fixtures.py`; it removes personal paths and ids and refuses output that still has `$HOME` or `$USER`. Read the result before you commit it.
+- In captures, paths are `/home/dev/shop`, the session id is `9b1d6f2e-0000-4000-8000-000000000001`, and tool-use ids are `toolu_0N`.

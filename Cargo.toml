@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/belay-core", "crates/belay-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# std::io::pipe (belay run) needs 1.87.
+rust-version = "1.87"
+publish = false
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/prakhar479/belay"
+homepage = "https://prakhar479.github.io/belay/"
+readme = "README.md"
+keywords = ["claude-code", "coding-agents", "supervisor", "testing", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[workspace.dependencies]
+belay-core = { path = "crates/belay-core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
