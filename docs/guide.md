@@ -309,6 +309,27 @@ belay notes                 # list; `belay notes approve n-2` or `drop n-2`
 
 A note you type in your terminal is kept. A note an agent writes waits until you approve it.
 
+## Memory
+
+Memory is one store for what sessions and you keep: facts, decisions, gotchas, fixes, handoffs, and notes. Each memory says where it came from: belay saw it, an agent said it, or you did. It lives in `<home>/memory/`: `user.jsonl` for yours across projects, and one `project-<key>.jsonl` per project.
+
+```sh
+belay memory                                  # this project's memories and yours, newest first
+belay memory search "pytest asyncio"          # the best matches
+belay memory add "the cache lives in tmp" --kind gotcha --tag cache --file src/cache.rs
+belay memory add "I review on Fridays" --scope user
+belay memory show m-3                         # every field
+belay memory approve m-3                      # vouch for an agent's memory (yours to run)
+belay memory drop m-3                         # retire one (yours to run)
+belay memory migrate                          # copy notes, fixes, findings, and handoffs in, once
+```
+
+Kinds are `fact`, `decision`, `gotcha`, `fix`, `handoff`, and `note` (the default). A memory you add in your terminal is yours. One added from an agent's shell is the agent's until you approve it. belay denies an agent's `belay memory approve` and `drop`.
+
+Search ranks a matching failure signature highest, then a word in a tag, a file path, and the text. This project and your approval add a little, and so does a recent memory. The same text twice in a project and kind keeps only the newer one. A project keeps at most 500 memories; past that, the least used are retired.
+
+Notes, learned fixes, findings, and the handoffs of ended sessions show up in `belay memory` as they are, with ids `note-N`, `fix-…`, `f-N`, and `h-…`. `belay memory migrate` copies them into the store and backs up the old files first. Running it again copies nothing new. The old commands keep working.
+
 ## Fleets
 
 A fleet is a team of headless Claude Code sessions that belay starts and manages for you. A hub process:
@@ -496,6 +517,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay share "…"` · `belay ask "…"` · `belay findings` | Findings |
 | `belay handoff ["text"]` | Leave or read a handoff |
 | `belay note "…"` · `belay notes` · `belay fixes` | Project notes and learned fixes |
+| `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
 | `belay fleet up\|status\|report\|merge\|down\|…` | Fleets |
 | `belay task add\|list\|show\|claim\|done\|blocked\|drop` | A fleet's task board |
 | `belay audit [range]` | (Experimental) what a diff did to tests and checks |

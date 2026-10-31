@@ -476,21 +476,7 @@ pub fn search(query: &str, findings: &[Finding], project: &str, here_only: bool)
         .iter()
         .filter(|f| !here_only || f.project == project)
         .filter_map(|f| {
-            let text = words(&f.text);
-            let paths: Vec<String> = f.files.iter().flat_map(|p| words(p)).collect();
-            let mut score = 0u32;
-            for w in &q {
-                if f.tags
-                    .iter()
-                    .any(|t| t.split('-').any(|p| p == w) || t == w)
-                {
-                    score += 3;
-                } else if paths.contains(w) {
-                    score += 2;
-                } else if text.contains(w) {
-                    score += 1;
-                }
-            }
+            let score = crate::memory::word_score(&q, &f.tags, &f.files, &f.text);
             if score == 0 {
                 return None;
             }

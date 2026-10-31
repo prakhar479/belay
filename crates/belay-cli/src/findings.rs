@@ -320,7 +320,7 @@ pub fn ask_as_user(query: &str, here: bool, json: bool) -> Result<String> {
     Ok(render_hits(query, &hits, &know, paths::now_ms()))
 }
 
-fn ago(ms: u64) -> String {
+pub(crate) fn ago(ms: u64) -> String {
     let m = ms / 60_000;
     match m {
         0 => "just now".into(),
