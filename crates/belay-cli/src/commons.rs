@@ -280,7 +280,7 @@ pub fn board(
     out
 }
 
-fn ago(ms: u64) -> String {
+pub(crate) fn ago(ms: u64) -> String {
     let s = ms / 1000;
     match s {
         0..=59 => format!("{s} s ago"),

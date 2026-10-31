@@ -45,7 +45,15 @@ struct State {
     /// How much of the machine's fix store this session has read, once it started:
     /// fixes other sessions learn while it runs reach it (a fleet's workers).
     fixes_seen: Option<u64>,
+    /// The session's directory: snapshots build their temporary index here (U6.2).
+    dir: PathBuf,
 }
+
+/// Snapshots decided but not yet recorded. Shutdown waits for them, so the last turn's
+/// snapshot is kept when the agent exits right after it (U6.2).
+static SNAPSHOTS_PENDING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+/// One snapshot at a time: each numbers itself from the refs the last one wrote.
+static SNAPSHOT_LOCK: Mutex<()> = Mutex::new(());
 
 /// This session's directory, when it keeps a commons card (C1): every exit marks the
 /// card ended.
@@ -211,6 +219,7 @@ pub fn run(
             .unwrap_or_default(),
         project: None,
         fixes_seen: None,
+        dir: dir.clone(),
     }));
     if crate::config::load().commons != belay_core::FleetSetting::Off {
         let _ = CARD_DIR.set(dir.clone());
@@ -966,6 +975,58 @@ fn decide_hook(
     (decisions, response)
 }
 
+/// A snapshot to take once the reply is sent: the session started, or a turn ended.
+struct SnapshotDue {
+    at: crate::undo::At,
+    cwd: PathBuf,
+    dir: PathBuf,
+    cause: u64,
+}
+
+/// Whether these decisions start the session or end a turn in a known directory. Counted
+/// as pending at once, before the reply, so a shutdown that follows waits for it.
+fn snapshot_due(st: &State, decisions: &[belay_core::Decision]) -> Option<SnapshotDue> {
+    // A hook without a cwd says nothing about where the files are.
+    let cwd = st.cwd.as_ref().filter(|c| !c.is_empty())?;
+    let (at, cause) = decisions
+        .iter()
+        .flat_map(|d| &d.entries)
+        .find_map(|e| match &e.body {
+            belay_core::Body::Event {
+                event: belay_core::Event::TurnEnded,
+            } => Some((crate::undo::At::TurnEnd, e.seq)),
+            belay_core::Body::Event {
+                event: belay_core::Event::SessionStarted { .. },
+            } => Some((crate::undo::At::Start, e.seq)),
+            _ => None,
+        })?;
+    SNAPSHOTS_PENDING.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Some(SnapshotDue {
+        at,
+        cwd: PathBuf::from(cwd),
+        dir: st.dir.clone(),
+        cause,
+    })
+}
+
+/// Take and record a snapshot (U6.2). Git runs outside the state lock, after the hook
+/// has its reply: the shim never waits for it (rule 7). Outside git, nothing happens.
+fn take_snapshot(state: &Mutex<State>, due: SnapshotDue) {
+    {
+        let _one = SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((id, commit, files)) = crate::undo::take(&due.dir, &due.cwd, due.at) {
+            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+            let d = st
+                .controller
+                .snapshot(&id, &commit, files, Some(due.cause), now_ms());
+            if let Err(e) = st.store.persist(&d) {
+                eprintln!("belayd: record snapshot {id}: {e:#}");
+            }
+        }
+    }
+    SNAPSHOTS_PENDING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn reply_to(mut stream: UnixStream, reply: &Reply) -> Result<()> {
     let mut line = serde_json::to_string(reply)?;
     line.push('\n');
@@ -995,11 +1056,13 @@ fn serve(
     LAST_REQUEST_MS.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
     let req: Request = serde_json::from_str(&line).context("bad request")?;
     let mut shutdown = false;
+    let mut snapshot = None;
 
     // Control requests must show the session token (R0.8).
     let given = match &req {
         Request::SetMode { token, .. }
         | Request::Allow { token, .. }
+        | Request::Undone { token, .. }
         | Request::Shutdown { token } => Some(token),
         _ => None,
     };
@@ -1150,6 +1213,7 @@ fn serve(
                     }
                 }
                 remember(st, &decisions)?;
+                snapshot = snapshot_due(st, &decisions);
                 if st.notify {
                     notify(&notifications(&decisions));
                 }
@@ -1179,6 +1243,16 @@ fn serve(
                     message: Some(message),
                 }
             }
+            Request::Undone {
+                id, before, files, ..
+            } => {
+                let d = st.controller.undone(&id, &before, files, now_ms());
+                st.store.persist(&d)?;
+                Reply {
+                    output: None,
+                    message: Some("recorded".into()),
+                }
+            }
             Request::Ping
             | Request::Filter { .. }
             | Request::Send { .. }
@@ -1195,8 +1269,19 @@ fn serve(
         }
     };
 
-    reply_to(stream.try_clone()?, &reply)?;
+    let sent = reply_to(stream.try_clone()?, &reply);
+    if let Some(due) = snapshot {
+        take_snapshot(state, due);
+    }
+    sent?;
     if shutdown {
+        // The last turn's snapshot first: the agent has exited, its files stay still.
+        let wait = std::time::Instant::now();
+        while SNAPSHOTS_PENDING.load(std::sync::atomic::Ordering::SeqCst) > 0
+            && wait.elapsed() < Duration::from_secs(30)
+        {
+            thread::sleep(Duration::from_millis(20));
+        }
         // Wait for any request that is writing the ledger, then exit (R0.6).
         let _done = state.lock().unwrap_or_else(|e| e.into_inner());
         card_ended();

@@ -26,6 +26,7 @@ mod run;
 mod sessions;
 mod shim;
 mod store;
+mod undo;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -290,9 +291,19 @@ enum Cmd {
         #[command(subcommand)]
         cmd: Option<FleetCmd>,
     },
-    /// Reverse an action (not built yet).
-    #[command(hide = true)]
-    Undo { id: String },
+    /// Roll the files back to a snapshot belay took at the end of an agent turn
+    /// (`t-N`; `t-0` is the start). Alone, it lists the snapshots. Your index, HEAD,
+    /// stash and branches are not touched. Run it yourself, in your own terminal.
+    Undo {
+        /// A snapshot: `t-N`, or `u-N` (the files as they were before undo N).
+        id: Option<String>,
+        /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
+        #[arg(long, allow_hyphen_values = true)]
+        session: Option<String>,
+        /// Do not ask before writing the files.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Run look mode over an existing Claude Code transcript, or over all of them.
     Retro {
         #[arg(required_unless_present = "all")]
@@ -673,7 +684,10 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Claude { mode, args } => launcher::run_claude(mode.into(), args),
         Cmd::Codex { .. } => bail!("`belay codex` is not built yet"),
         Cmd::Init { agent } => bail!("`belay init {agent}` is not built yet"),
-        Cmd::Undo { .. } => bail!("`belay undo` is not built yet"),
+        Cmd::Undo { id, session, yes } => {
+            let dir = sessions::resolve(session.as_deref(), false)?;
+            undo::run(&dir, id.as_deref(), yes)
+        }
         Cmd::Mode { mode, session } => {
             let dir = sessions::resolve(session.as_deref(), true)?;
             let req = ipc::Request::SetMode {
@@ -866,6 +880,7 @@ fn run(cli: Cli) -> Result<i32> {
                     if sessions::is_live(&dir) {
                         bail!("session {} is live; end it first", dir.display());
                     }
+                    undo::delete_refs(&dir);
                     std::fs::remove_dir_all(&dir)
                         .with_context(|| format!("remove {}", dir.display()))?;
                     vec![dir]

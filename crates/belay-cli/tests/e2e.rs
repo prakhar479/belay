@@ -1211,6 +1211,164 @@ fn session_audit_reports_what_the_agent_changed() {
     );
 }
 
+/// U6.2: belay keeps the working tree at each turn's end, and the user rolls files back
+/// to one with `belay undo`, also what a shell command wrote. The user's index stays.
+#[test]
+fn undo_rolls_files_back_to_a_turn_and_leaves_the_index() {
+    let dir = tmp("undo");
+    let repo = dir.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    fs::write(repo.join("a.txt"), "base\n").unwrap();
+    let git = |args: &[&str]| -> String {
+        let out = Command::new("git")
+            .args(["-c", "user.email=t@example.com", "-c", "user.name=t"])
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    git(&["init", "-q"]);
+    git(&["add", "-A"]);
+    git(&["commit", "-qm", "base"]);
+    let hook = |event: &str| {
+        format!(
+            "echo '{{\"cwd\":\"{}\",\"session_id\":\"s1\"}}' | belay hook {event} > /dev/null\n",
+            repo.display()
+        )
+    };
+    // Turn 1 edits a.txt; turn 2 writes through the shell, and tries `belay undo`.
+    // After each Stop, wait for the snapshot, as a real agent waits for the user.
+    let wait = |id: &str| {
+        format!(
+            "i=0; until grep -q '\"id\":\"{id}\"' \"$BELAY_SESSION_DIR/ledger.jsonl\" 2>/dev/null; do i=$((i+1)); [ $i -gt 200 ] && break; sleep 0.05; done\n"
+        )
+    };
+    let pre = serde_json::json!({
+        "cwd": repo, "session_id": "s1", "hook_event_name": "PreToolUse",
+        "tool_name": "Bash", "tool_use_id": "u1",
+        "tool_input": { "command": "belay undo t-1 --yes" },
+    });
+    fs::write(dir.join("pre.json"), pre.to_string()).unwrap();
+    let agent = dir.join("agent.sh");
+    fs::write(
+        &agent,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && echo '2.1.304 (Claude Code)' && exit 0\n\
+             {start}{w0}printf 'one\\n' > a.txt\n{stop}{w1}\
+             printf 'two\\n' > a.txt; mkdir -p new; echo made > new/b.txt\n\
+             belay hook PreToolUse < '{pre}' > '{d}/undo-pre.json'\n{stop}{w2}",
+            start = hook("UserPromptSubmit"),
+            stop = hook("Stop"),
+            w0 = wait("t-0"),
+            w1 = wait("t-1"),
+            w2 = wait("t-2"),
+            pre = dir.join("pre.json").display(),
+            d = dir.display(),
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&agent, fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new(bin())
+        .args(["claude", "--belay-mode", "optimize"])
+        .current_dir(&repo)
+        .env("BELAY_HOME", dir.join("home"))
+        .env("BELAY_CLAUDE_BIN", &agent)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let session = fs::read_dir(dir.join("home/sessions"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    // The agent's own `belay undo` was denied.
+    let denied = fs::read_to_string(dir.join("undo-pre.json")).unwrap();
+    assert!(
+        denied.contains("only the user rolls files back"),
+        "{denied}"
+    );
+    let ledger = fs::read_to_string(session.join("ledger.jsonl")).unwrap();
+    for id in ["t-0", "t-1", "t-2"] {
+        assert!(
+            ledger.contains(&format!("\"id\":\"{id}\"")),
+            "{id}: {ledger}"
+        );
+    }
+    let undo = |args: &[&str], terminal: bool| {
+        let mut c = Command::new(bin());
+        c.arg("undo").args(args).arg("--session").arg(&session);
+        if terminal {
+            c.env("BELAY_TEST_TERMINAL", "1"); // the user typing in their terminal
+        } else {
+            c.env("BELAY_SESSION_DIR", &session); // an agent's shell
+        }
+        c.output().unwrap()
+    };
+    // Only the user may roll back.
+    let refused = undo(&["t-1", "--yes"], false);
+    assert!(!refused.status.success());
+    assert_eq!(fs::read_to_string(repo.join("a.txt")).unwrap(), "two\n");
+    // The list names each snapshot and how far it is from now.
+    let listed = undo(&[], true);
+    let listed = String::from_utf8_lossy(&listed.stdout);
+    assert!(
+        listed.contains("t-1") && listed.contains("2 files differ from now"),
+        "{listed}"
+    );
+    assert!(
+        listed.contains("t-2") && listed.contains("same as now"),
+        "{listed}"
+    );
+    // Something the user staged stays staged; HEAD stays.
+    git(&["add", "new/b.txt"]);
+    let (index, head) = (git(&["ls-files", "-s"]), git(&["rev-parse", "HEAD"]));
+    let done = undo(&["t-1", "--yes"], true);
+    let said = String::from_utf8_lossy(&done.stdout);
+    assert!(
+        done.status.success(),
+        "{said}{}",
+        String::from_utf8_lossy(&done.stderr)
+    );
+    assert!(said.contains("Rolled 2 files back to t-1"), "{said}");
+    assert_eq!(fs::read_to_string(repo.join("a.txt")).unwrap(), "one\n");
+    assert!(
+        !repo.join("new").exists(),
+        "the file the shell made is gone"
+    );
+    assert_eq!(git(&["ls-files", "-s"]), index);
+    assert_eq!(git(&["rev-parse", "HEAD"]), head);
+    let ledger = fs::read_to_string(session.join("ledger.jsonl")).unwrap();
+    assert!(ledger.contains("\"undo\":true"), "{ledger}");
+    // The undo can be undone.
+    assert!(undo(&["u-1", "--yes"], true).status.success());
+    assert_eq!(fs::read_to_string(repo.join("a.txt")).unwrap(), "two\n");
+    assert_eq!(
+        fs::read_to_string(repo.join("new/b.txt")).unwrap(),
+        "made\n"
+    );
+    // Purging the session deletes its refs.
+    assert!(!git(&["for-each-ref", "refs/belay/"]).is_empty());
+    let purged = Command::new(bin())
+        .args(["purge", "--session"])
+        .arg(&session)
+        .env("BELAY_HOME", dir.join("home"))
+        .output()
+        .unwrap();
+    assert!(
+        purged.status.success(),
+        "{}",
+        String::from_utf8_lossy(&purged.stderr)
+    );
+    assert_eq!(git(&["for-each-ref", "refs/belay/"]), "");
+}
+
 /// E7: the daemon reads `.belay.toml` from the session's directory.
 #[test]
 fn repo_policy_is_loaded_from_the_project() {

@@ -42,6 +42,14 @@ pub enum Request {
         #[serde(default)]
         token: Option<String>,
     },
+    /// The user rolled the files back to snapshot `id` (`belay undo`): record it.
+    Undone {
+        id: String,
+        before: String,
+        files: Vec<String>,
+        #[serde(default)]
+        token: Option<String>,
+    },
     /// The agent's words for its commons card (`belay card`); unset fields stay.
     Card {
         #[serde(default)]
