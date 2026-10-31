@@ -16,7 +16,9 @@ use belay_core::text::sha256_hex;
 use belay_core::{Capabilities, Controller, Entry, Event, Mode};
 use serde_json::Value;
 
-use crate::connector::claude_code::{extract_output, runner_is_executable, HOOKED_TOOLS};
+use crate::connector::claude_code::{
+    extract_output, runner_is_executable, tool_kind, HOOKED_TOOLS,
+};
 use crate::report;
 
 pub fn run(transcript: &Path, full: bool) -> Result<String> {
@@ -105,6 +107,7 @@ pub fn analyze(transcript: &Path) -> Result<Vec<Entry>> {
                         let ev = Event::ToolRequested {
                             tool_use_id: id.clone(),
                             tool: name.clone(),
+                            kind: tool_kind(&name),
                             input: input.clone(),
                             rewrite_ok: runner_is_executable(cmd, &cwd),
                         };
@@ -145,6 +148,7 @@ pub fn analyze(transcript: &Path) -> Result<Vec<Entry>> {
                     }
                     let ev = Event::ToolCompleted {
                         tool_use_id: id.to_string(),
+                        kind: tool_kind(&tool),
                         tool,
                         input,
                         output: extract_output(&item["content"]),

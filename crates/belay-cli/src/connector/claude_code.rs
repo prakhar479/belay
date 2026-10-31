@@ -7,13 +7,28 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use belay_core::text::sha256_hex;
-use belay_core::{Capabilities, Event, Permission, Response};
+use belay_core::{Capabilities, Event, Permission, Response, ToolKind};
 use serde_json::{json, Value};
 
 use super::Connector;
 use crate::paths::now_ms;
 
 const EDIT_TOOLS: [&str; 3] = ["Edit", "MultiEdit", "Write"];
+
+/// Claude Code's tool names in the core's words.
+pub fn tool_kind(tool: &str) -> ToolKind {
+    match tool {
+        "Bash" => ToolKind::Shell,
+        "Edit" | "MultiEdit" => ToolKind::Edit,
+        "Write" => ToolKind::Write,
+        "Read" => ToolKind::Read,
+        "Grep" | "Glob" => ToolKind::Search,
+        "WebFetch" | "WebSearch" => ToolKind::Fetch,
+        "Task" | "Agent" => ToolKind::Subagent,
+        t if t.starts_with("mcp__") => ToolKind::Mcp,
+        _ => ToolKind::Other,
+    }
+}
 
 /// Tools belay hooks (see `settings`). Retro looks at the same tools, so its numbers
 /// match a live session's.
@@ -435,6 +450,7 @@ impl Connector for ClaudeCode {
                         && runner_is_executable(command, &cwd);
                     evs.push(Event::ToolRequested {
                         tool_use_id,
+                        kind: tool_kind(&tool),
                         tool,
                         input,
                         rewrite_ok,
@@ -494,6 +510,7 @@ impl Connector for ClaudeCode {
                 }
                 evs.push(Event::ToolCompleted {
                     tool_use_id,
+                    kind: tool_kind(&tool),
                     tool,
                     input,
                     output,
@@ -525,10 +542,22 @@ impl Connector for ClaudeCode {
     }
 
     fn encode(&self, hook_event: &str, payload: &Value, r: &Response) -> Option<Value> {
-        if r.is_empty() {
+        // Notices are for the user and take another channel (rule 5). `continue_turn` at
+        // Stop would be `{"decision":"block","reason":…}`: [Verify] live before encoding it.
+        let mut context = Vec::new();
+        if hook_event == "SessionStart" {
+            context.extend(r.start_context.iter().cloned());
+        }
+        context.extend(r.add_context.iter().cloned());
+        if r.replace_output.is_none()
+            && !r.wrap
+            && context.is_empty()
+            && r.permission.is_none()
+            && !r.retry
+        {
             return None;
         }
-        let context = (!r.add_context.is_empty()).then(|| r.add_context.join("\n"));
+        let context = (!context.is_empty()).then(|| context.join("\n"));
         let mut h = json!({ "hookEventName": hook_event });
         match hook_event {
             "PreToolUse" => {
@@ -1163,6 +1192,76 @@ mod tests {
             "other fields kept"
         );
         assert!(h.get("permissionDecision").is_none(), "never auto-allow");
+    }
+
+    #[test]
+    fn maps_tool_names_to_kinds() {
+        for (tool, kind) in [
+            ("Bash", ToolKind::Shell),
+            ("Edit", ToolKind::Edit),
+            ("MultiEdit", ToolKind::Edit),
+            ("Write", ToolKind::Write),
+            ("Read", ToolKind::Read),
+            ("Grep", ToolKind::Search),
+            ("Glob", ToolKind::Search),
+            ("WebFetch", ToolKind::Fetch),
+            ("WebSearch", ToolKind::Fetch),
+            ("mcp__github__create_issue", ToolKind::Mcp),
+            ("Task", ToolKind::Subagent),
+            ("Agent", ToolKind::Subagent),
+            ("TodoWrite", ToolKind::Other),
+            ("", ToolKind::Other),
+        ] {
+            assert_eq!(tool_kind(tool), kind, "{tool}");
+        }
+        let mut c = ClaudeCode::default();
+        let evs = c.map("PostToolUse", &fixture("post_tool_use_bash.json"));
+        assert!(matches!(
+            evs.last(),
+            Some(Event::ToolCompleted {
+                kind: ToolKind::Shell,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn encodes_start_context_only_at_session_start_and_never_notices() {
+        let c = ClaudeCode::default();
+        let r = Response {
+            start_context: vec!["peers".into()],
+            add_context: vec!["more".into()],
+            ..Default::default()
+        };
+        let out = c
+            .encode("SessionStart", &fixture("session_start.json"), &r)
+            .unwrap();
+        assert_eq!(
+            out["hookSpecificOutput"]["additionalContext"],
+            "peers\nmore"
+        );
+        let out = c
+            .encode("UserPromptSubmit", &fixture("user_prompt_submit.json"), &r)
+            .unwrap();
+        assert_eq!(out["hookSpecificOutput"]["additionalContext"], "more");
+
+        let user_only = Response {
+            notices: vec![belay_core::Notice {
+                level: belay_core::NoticeLevel::Info,
+                text: "for the user".into(),
+                action: None,
+            }],
+            continue_turn: Some("not yet encoded".into()),
+            start_context: vec!["only at start".into()],
+            ..Default::default()
+        };
+        for (event, file) in [
+            ("PostToolUse", "post_tool_use_bash.json"),
+            ("Stop", "stop.json"),
+            ("UserPromptSubmit", "user_prompt_submit.json"),
+        ] {
+            assert_eq!(c.encode(event, &fixture(file), &user_only), None, "{event}");
+        }
     }
 
     #[test]

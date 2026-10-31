@@ -11,13 +11,13 @@ type EditKey = (String, String, String);
 
 use crate::broker::{Answer, Broker, Question};
 use crate::capability::Capabilities;
-use crate::event::{Event, Mode};
+use crate::event::{Event, Mode, ToolKind};
 use crate::guard::{self, GuardDecision};
 use crate::loops::{LoopDetector, LoopSignal};
 use crate::perception::{
     classify, command_key, extract_failures, shell, writes_files, Failure, OutputKind,
 };
-use crate::record::{ActionKind, Body, Entry, SteerTrigger, LEDGER_FORMAT};
+use crate::record::{ActionKind, Body, Entry, Notice, SteerTrigger, LEDGER_FORMAT};
 use crate::session::{Change, SessionModel};
 use crate::shape::{shape, Shaped};
 use crate::text::{estimate_tokens, sha256_hex};
@@ -153,6 +153,12 @@ pub struct Response {
     pub permission: Option<Permission>,
     /// The agent may retry a denied call (R3.7).
     pub retry: bool,
+    /// For the user only (rule 5): the connector shows these through user channels.
+    pub notices: Vec<Notice>,
+    /// Keep the agent working at the end of its turn, with this reason.
+    pub continue_turn: Option<String>,
+    /// Context for the start of a session.
+    pub start_context: Vec<String>,
 }
 
 impl Response {
@@ -162,6 +168,9 @@ impl Response {
             && self.add_context.is_empty()
             && self.permission.is_none()
             && !self.retry
+            && self.notices.is_empty()
+            && self.continue_turn.is_none()
+            && self.start_context.is_empty()
     }
 
     pub fn merge(&mut self, other: Response) {
@@ -174,6 +183,11 @@ impl Response {
         if self.permission.is_none() {
             self.permission = other.permission;
         }
+        self.notices.extend(other.notices);
+        if self.continue_turn.is_none() {
+            self.continue_turn = other.continue_turn;
+        }
+        self.start_context.extend(other.start_context);
     }
 }
 
@@ -882,7 +896,13 @@ impl Controller {
             trigger: String::new(),
         });
         let mut d = Decision::default();
-        let is_bash = matches!(&event, Event::ToolCompleted { tool, .. } if tool == "Bash");
+        let is_bash = matches!(
+            &event,
+            Event::ToolCompleted {
+                kind: ToolKind::Shell,
+                ..
+            }
+        );
         // Fleet (F1): hook events can carry notices; this session's edits and failures
         // are what peers' activity is compared with.
         let delivers = matches!(
@@ -1251,6 +1271,7 @@ impl Controller {
         let Event::ToolCompleted {
             tool_use_id,
             tool,
+            kind,
             input,
             output,
             failed,
@@ -1284,6 +1305,7 @@ impl Controller {
         let stored = Event::ToolCompleted {
             tool_use_id,
             tool,
+            kind,
             input,
             output: format!("<blob:{hash}>"),
             failed,
@@ -1760,11 +1782,12 @@ impl Controller {
     fn on_tool_requested(&mut self, d: &mut Decision, event: Event, now: u64) {
         let (command, tool_use_id, rewrite_ok) = match &event {
             Event::ToolRequested {
-                tool,
+                kind: ToolKind::Shell,
                 input,
                 tool_use_id,
                 rewrite_ok,
-            } if tool == "Bash" => (
+                ..
+            } => (
                 input
                     .get("command")
                     .and_then(|v| v.as_str())
