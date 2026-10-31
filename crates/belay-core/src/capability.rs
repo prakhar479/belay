@@ -19,6 +19,16 @@ pub struct Capabilities {
     pub retry_denied: bool,
     /// Largest hook message the agent passes to the model, if it has a limit.
     pub hook_output_limit_tokens: Option<usize>,
+    /// Show a note to the user that the model does not see (rule 5).
+    pub notify_user: bool,
+    /// A status line belay can fill.
+    pub status_line: bool,
+    /// See file reads as tool calls.
+    pub observe_reads: bool,
+    /// Add context at the start of a session.
+    pub start_inject: bool,
+    /// Say whether a compaction was manual or automatic.
+    pub compact_source: bool,
 }
 
 impl Capabilities {
@@ -27,6 +37,8 @@ impl Capabilities {
     /// `additionalContext` (S2), so failed runs can be steered but not shaped.
     /// `ask` is false: the interactive prompt shows neither user nor agent the reason (S6),
     /// so the guard downgrades to deny, which the agent sees with its reason.
+    /// `notify_user` is `systemMessage`. [Verify] on which events the user sees it (R3.6).
+    /// `compact_source` is PreCompact `trigger` (manual or auto). [Verify] live.
     pub const CLAUDE_CODE: Self = Self {
         replace_output: true,
         replace_failed_output: false,
@@ -38,11 +50,17 @@ impl Capabilities {
         block_compaction: true,
         retry_denied: true,
         hook_output_limit_tokens: None,
+        notify_user: true,
+        status_line: true,
+        observe_reads: true,
+        start_inject: true,
+        compact_source: true,
     };
 
     /// Codex. Output replacement works only through PostToolUse `decision: "block"`.
     /// `ask` is parsed but not supported.
     /// [Verify] whether a failed call can be block-replaced (S10).
+    /// [Verify] `start_inject`: SessionStart context (S10).
     pub const CODEX: Self = Self {
         replace_output: true,
         replace_failed_output: false,
@@ -54,6 +72,11 @@ impl Capabilities {
         block_compaction: true,
         retry_denied: false,
         hook_output_limit_tokens: Some(2500),
+        notify_user: false,
+        status_line: false,
+        observe_reads: false,
+        start_inject: true,
+        compact_source: false,
     };
 
     /// Observe only (retro analysis of transcripts).
@@ -68,5 +91,10 @@ impl Capabilities {
         block_compaction: false,
         retry_denied: false,
         hook_output_limit_tokens: None,
+        notify_user: false,
+        status_line: false,
+        observe_reads: false,
+        start_inject: false,
+        compact_source: false,
     };
 }

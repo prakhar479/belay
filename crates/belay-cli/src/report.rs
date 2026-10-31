@@ -1127,6 +1127,7 @@ mod tests {
             event: Event::ToolCompleted {
                 tool_use_id: "t".into(),
                 tool: "Bash".into(),
+                kind: Default::default(),
                 input: serde_json::json!({ "command": "pytest" }),
                 output: "<blob:h>".into(),
                 failed,

@@ -220,6 +220,27 @@ pub enum SteerTrigger {
     },
 }
 
+/// A note for the user about what belay did or saw. Reporting shows it through
+/// user-only channels; it never reaches the model (rule 5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Notice {
+    pub level: NoticeLevel,
+    pub text: String,
+    /// The action id this notice is about, if any (`a-N`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticeLevel {
+    /// belay acted on the session.
+    Act,
+    /// Something the user should look at.
+    Warn,
+    Info,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
