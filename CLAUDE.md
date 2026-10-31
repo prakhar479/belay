@@ -2,7 +2,7 @@
 
 belay is a local supervisor for command-line coding agents.
 Design: `docs/belay-reference.md`. Work items: `docs/dev/TASKS.md` (kept locally; not in the public repo).
-Current scope: look and optimize modes for Claude Code, and fleets of sessions (docs/fleet-*.md). Codex waits for S10.
+Current scope: 0.2 (plan: `docs/dev/plan-0.2-2026-10-31.md`, tasks U0–U7). belay always acts within each agent's capabilities; there is no look mode. What belay does reaches the user through reporting. Claude Code first, with a harness-neutral core. Fleets (docs/fleet-*.md) are frozen: kept working, no new features. Codex waits for S10.
 
 ## Rules
 
@@ -12,7 +12,7 @@ Do not break these. If a task needs you to, stop and ask.
 2. **belay-core has no I/O.** No files, sockets, env vars, clocks, threads, or model calls. Time comes in as `now_ms`.
 3. **Never edit the past.** Act only on content before the agent sees it.
 4. **Every action is recorded** with a one-sentence reason and its causes.
-5. **Look mode never returns a hook response.**
+5. **Reporting never reaches the model.** Notices go to the user through user-only channels (status line, `systemMessage`, `belay watch`, the exit summary). Only actions reach the agent. (Replaces "look mode never returns a hook response"; look mode is removed in U2.1. Until then the old rule holds for code that still has `Mode::Look`.)
 6. **Deterministic.** Use `sha256_hex` for hashes. Do not let `HashMap` order reach output or the ledger.
 7. **Shim stays thin.** It only forwards. Target p95 < 20 ms (measured: ~5 ms).
 8. **Capability-honest.** Plan only with `Capabilities`. Downgrade; do not fail.
@@ -90,7 +90,7 @@ cargo test -p belay-core           # fast loop for core logic
 make e2e                            # end-to-end with fake agent
 cargo run -- retro fixtures/transcripts/loop_session.jsonl
 cargo run -- retro --all            # every transcript in ~/.claude/projects
-cargo build && ./target/debug/belay claude      # live, look mode
+cargo build && ./target/debug/belay claude      # live session under the dev build
 BELAY_CAPTURE=1 ./target/debug/belay claude          # also keep raw hook payloads
 jq . ~/.local/share/belay/sessions/<id>/hooks.jsonl   # raw payloads (with BELAY_CAPTURE=1)
 scripts/conformance.py --record     # live check of the Claude Code behaviors belay needs (one short session)
@@ -103,11 +103,49 @@ scripts/capture_fixtures.py hooks <hooks.jsonl> --event PostToolUse --match pyte
 
 ## How to work
 
-1. One task from `docs/dev/TASKS.md` at a time. Start in plan mode. Show the plan first.
-2. Write the test from the acceptance criteria first.
-3. Run `make check` before you say a task is done.
-4. Tick the task in `docs/dev/TASKS.md`. Add a short note if behavior changed.
-5. Keep ledger formats backward-compatible, or bump the format and say so.
+1. One task per session. A task comes from `docs/dev/TASKS.md`, or from a belay fleet task. In a worktree `docs/dev/` is absent, so the task body is the spec. Plan first for a task that changes behavior or touches more than 3 files. A small fix needs no plan.
+2. Say what you work on: `belay card --task "U1.1 tool kinds"`. When you stop, leave a handoff: `belay handoff "done: …; open: …; next: …"`.
+3. Write the test from the acceptance criteria first.
+4. Iterate on the narrowest loop, and widen it only at the end (see "Fast loop").
+5. Run `make check` before you say a task is done. It is the only gate.
+6. Commit each task on its own, with a message that says what changed and why. Tick it in `docs/dev/TASKS.md` when that file exists. Add a short note if behavior changed.
+7. Keep ledger formats backward-compatible, or bump the format and say so.
+8. Keep `docs/guide.md` and `CHANGELOG.md` in step with any change a user can see, in the same commit.
+
+### Fast loop
+
+Pick the narrowest command that covers your change. Run `make check` once at the end.
+
+```sh
+cargo check -p belay-core                                  # seconds: does it compile
+cargo test -p belay-core <filter>                          # one core test or module (controller::, memory::)
+cargo test -p belay-cli --lib <filter>                     # CLI unit tests, no e2e
+cargo test -p belay-cli --test e2e <name>                  # one end-to-end test
+cargo clippy -p belay-core --all-targets -- -D warnings    # lint one crate
+```
+
+`cargo test -p belay-core` has no I/O and runs in seconds, so put logic there and test it there. e2e tests start real daemons, so add one per user-visible behavior, not one per branch.
+
+### Keep the code clean
+
+- **New behavior goes in a new module** when its file is over ~1,500 lines of code, not counting tests. `controller.rs` and `hub.rs` are past that: add next to them (`controller/<topic>.rs`), and don't grow them.
+- **Tests go in `<module>/tests.rs`** once a module's tests pass ~300 lines (see `controller/tests.rs`, `fleet/model/tests.rs`).
+- **Reuse before you write.** Check `text.rs` (hashing, redaction, truncation), `perception/` (commands and failures), `commons::search` (ranking), and `audit.rs` (git snapshots) first.
+- **Delete what you replace** in the same change: no dead code, no `_old` copies, no commented-out code. Old ledger and config formats stay *readable* through serde defaults, not through parallel code paths.
+- **Harness-neutral core.** `belay-core` never names an agent's tools or hook events. It works with `ToolKind` and `Capabilities`. Agent words belong in `connector/<agent>.rs`.
+- **One feature, one config key**, with the default in one place (`Config::default`). Every key is in `docs/guide.md` § Config.
+- **Comments say why**, not what. A `[Verify]` mark names the spike that would confirm it.
+- No `#[allow(...)]` for clippy without a one-line reason next to it.
+
+### Parallel work (belay fleets, on belay itself)
+
+Independent tasks run as a belay fleet. Each worker gets its own worktree and branch, and a task is done only when its check passes.
+
+- The coordinator (a terminal session) writes `fleet.toml` (`preset = "pool"`, `check = "make check"`, `permission_mode = "auto"`). It adds each task with `belay task add --body-file`, `--scope`, and `--depends`. Then it follows progress with `belay task list`, `belay inbox`, and `belay fleet report`.
+- **Disjoint scopes.** Two parallel tasks never edit the same file, apart from `main.rs` subcommand lists and `docs/guide.md`. Those merge by hand. Changes to `controller.rs`, `event.rs`, and `record.rs` go in one chain of dependent tasks.
+- A task body is self-contained: goal, files, acceptance tests, and what not to touch. Workers can't see `docs/dev/`.
+- Workers talk through belay: a question goes to `belay msg user "…"`. A useful fact for other workers goes to `belay share "…"`, and they look before they start with `belay ask "…"`.
+- **After `belay fleet down`:** `belay fleet merge --yes`, then merge each branch into the working branch in dependency order. Run `make check` after each merge.
 
 ## Style
 

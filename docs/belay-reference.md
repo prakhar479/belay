@@ -403,16 +403,16 @@ Block, ask, or allow is policy applied to these answers. It is not a question.
 
 ---
 
-## 11. Modes
+## 11. Features and reporting
 
-| Mode | Function | Limit |
-|---|---|---|
-| Look | Observe. Report what belay would do. Change nothing. | Cannot show whether hidden data would hurt the agent. |
-| Optimize | Act. Start with conservative, reversible actions. | — |
+**Changed 2026-10-31 (0.2).** Look and optimize modes are removed. belay always acts, within the agent's capabilities.
 
-Both modes use the same pipeline. Only the executor is different.
+- **Features** are set one at a time: `guard = deny | warn | off`, `loops`, `shape`, `memory`, `handoff`, `commons`, `verify`. The default acts quietly: guard, loops, memory and handoffs are on, and summaries apply only to large test output.
+- **Reporting** shows the user what belay did. It never reaches the model. Each harness shows it its own way: on Claude Code, `systemMessage` and the status line; on any harness, `belay watch`, the exit summary and `belay report`. Verbosity: `report = quiet | normal | verbose`.
+- **Kill switch.** `belay pause [feature]` and `belay resume`, from the user's terminal only.
+- **Retro.** Old transcripts are replayed with `Capabilities::OBSERVE_ONLY`. "What belay would have done" is a capability downgrade, not a mode.
 
-**Retro look [New].** Run look mode on existing transcripts. The user gets a report without a change to the workflow.
+0.1 ledgers recorded in look mode stay readable.
 
 ---
 
@@ -497,6 +497,10 @@ Replay alone cannot prove that reduction is safe. The A/B gate is mandatory.
 | Nudges are permanent; use rarely | **New, proposed** |
 | Deciders go live only after offline evaluation | **New, proposed** |
 | Lead with loops and honesty; tokens second | **New, proposed** |
+| No modes: belay always acts; look becomes reporting plus an observe-only capability set (retro) | Decided 2026-10-31 |
+| Lead with memory and handoffs; honesty (guard, verify-before-done) is the trust story | Decided 2026-10-31 |
+| Core is harness-neutral (tool kinds, neutral effects, connector contract tests); Claude Code first | Decided 2026-10-31 |
+| Fleets frozen for 0.2 | Decided 2026-10-31 |
 
 ---
 
