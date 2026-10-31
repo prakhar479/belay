@@ -3783,7 +3783,7 @@ fn e1_daemon_runs_with_spaces_in_the_session_path() {
 
 #[test]
 fn memory_add_search_approve_and_migrate() {
-    let dir = tmp("memory");
+    let dir = tmp("memory-cli");
     let home = dir.join("home");
     // `agent`: a shell inside a belay session; else the user at their terminal.
     let run = |args: &[&str], agent: bool| {
