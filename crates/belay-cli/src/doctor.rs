@@ -8,7 +8,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::{config, paths, sessions};
+use crate::{config, install, paths, sessions};
 
 /// The report, and whether everything that must work does.
 pub fn run() -> (String, bool) {
@@ -109,18 +109,29 @@ pub fn run() -> (String, bool) {
         }
     }
 
-    let settings = env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join(".claude/settings.json"))
-        .and_then(|p| fs::read_to_string(p).ok())
-        .unwrap_or_default();
-    if settings.contains("belay status") {
-        line("ok", "status line shows `belay status`".into());
+    let claude_dir = install::claude_dir();
+    if install::plugin_installed(&claude_dir) {
+        line(
+            "ok",
+            format!("Claude Code plugin {} installed", install::PLUGIN_ID),
+        );
     } else {
         line(
             "info",
-            "status line not set to `belay status` (see docs/guide.md, Five minutes with belay)"
-                .into(),
+            "Claude Code plugin not installed (`belay install` adds it)".into(),
         );
+    }
+    let settings = fs::read_to_string(install::settings_path()).unwrap_or_default();
+    match install::statusline_of(&settings) {
+        Some((_, true)) => line("ok", "status line shows `belay status`".into()),
+        Some((cmd, false)) => line(
+            "info",
+            format!("status line runs `{cmd}`, not belay's (`belay install --statusline --force` replaces it)"),
+        ),
+        None => line(
+            "info",
+            "no status line (`belay install --statusline` sets it to `belay status`)".into(),
+        ),
     }
 
     let root = paths::sessions_dir();

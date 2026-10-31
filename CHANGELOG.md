@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **`belay install` / `belay uninstall`:** the Claude Code plugin, `belay status` as the status line (with a backup, never over another status line without `--force`), and a printed launcher alias, each shown and confirmed first. `belay doctor` says whether the plugin is installed and the status line is belay's.
+- **The plugin teaches the agent:** a `belay` skill (handoffs, findings, denied edits, `belay show`, `belay why`) and slash commands `/belay:report`, `/belay:handoff`, `/belay:recall`, `/belay:remember`. Plugin version 0.2.0.
+
 ## 0.1.0
 
 The first public release. belay supervises Claude Code through its hooks. It runs on Linux and WSL; macOS builds exist but are untested.
