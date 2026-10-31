@@ -482,6 +482,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 | Command | What it does |
 |---|---|
 | `belay claude [--belay-mode optimize] [args…]` | Start Claude Code under belay |
+| `belay launch <agent> [args…]` | Start an agent under belay. `belay launch claude-code` is `belay claude` |
 | `belay mode look\|optimize` | Change the mode of the live session |
 | `belay allow [a-N]` | Lift one guard block (yours to run) |
 | `belay report [--session S] [--full]` | What happened in a session |

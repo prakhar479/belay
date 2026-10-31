@@ -38,16 +38,8 @@ pub struct Config {
     pub tighten_after: u32,
     /// Loop time counts at most this much of any gap between events (idle time).
     pub idle_gap_minutes: u64,
-    /// `belay claude` deletes sessions with no activity for this many days (0: never).
-    pub keep_days: u64,
-    /// `belay claude` audits what the session changed in tests and checks (experimental).
-    pub experimental_audit: bool,
-    /// The mode of sessions the Claude Code plugin starts (no `--belay-mode` there).
-    pub plugin_mode: Mode,
-    /// A desktop notification when belay steers a loop or blocks an edit (unattended runs).
-    pub notify: bool,
-    /// Wrap test runs in `belay run` (optimize mode). In auto mode each wrapped call costs
-    /// Claude Code about 1-2 s of permission checking (benchmark, 2026-10-20).
+    /// Wrap test runs in `belay run` (optimize mode). A wrapped call can cost the agent
+    /// some permission checking, so this can be turned off.
     pub wrap_tests: bool,
     /// Awareness of other belay sessions on this machine (F1).
     pub fleet: FleetSetting,
@@ -57,6 +49,9 @@ pub struct Config {
     /// The commons (C1): off (no card), look (a card; nothing said), on (also tell the
     /// agent at start who else is here, in optimize mode).
     pub commons: FleetSetting,
+    /// Settings the core does not read (the launcher's), as `name → value`. Only their
+    /// overrides, so the session-start record names every setting the user changed.
+    pub other_overrides: BTreeMap<String, String>,
 }
 
 /// `fleet` config: off (no watching), look (record notices only, the default), or on
@@ -86,34 +81,24 @@ impl Default for Config {
             loop_threshold: 3,
             tighten_after: 5,
             idle_gap_minutes: 10,
-            keep_days: 30,
-            experimental_audit: false,
-            plugin_mode: Mode::Look,
-            notify: false,
             wrap_tests: true,
             fleet: FleetSetting::Look,
             learn: FleetSetting::Look,
             commons: FleetSetting::Look,
+            other_overrides: BTreeMap::new(),
         }
     }
 }
 
 impl Config {
-    /// Every knob as `name → value`, in a stable order.
+    /// Every core knob as `name → value`, in a stable order.
     pub fn fields(&self) -> BTreeMap<String, String> {
         [
             ("idle_gap_minutes", self.idle_gap_minutes.to_string()),
-            ("experimental_audit", self.experimental_audit.to_string()),
             ("fleet", self.fleet.name().to_string()),
             ("learn", self.learn.name().to_string()),
             ("commons", self.commons.name().to_string()),
-            ("keep_days", self.keep_days.to_string()),
-            ("notify", self.notify.to_string()),
             ("wrap_tests", self.wrap_tests.to_string()),
-            (
-                "plugin_mode",
-                format!("{:?}", self.plugin_mode).to_lowercase(),
-            ),
             ("loop_threshold", self.loop_threshold.to_string()),
             ("max_summary_ratio", self.max_summary_ratio.to_string()),
             (
@@ -127,13 +112,16 @@ impl Config {
         .collect()
     }
 
-    /// Knobs that differ from the defaults.
+    /// Knobs that differ from the defaults, with `other_overrides`.
     pub fn overrides(&self) -> BTreeMap<String, String> {
         let defaults = Config::default().fields();
-        self.fields()
+        let mut out: BTreeMap<String, String> = self
+            .fields()
             .into_iter()
             .filter(|(k, v)| defaults.get(k) != Some(v))
-            .collect()
+            .collect();
+        out.extend(self.other_overrides.clone());
+        out
     }
 }
 

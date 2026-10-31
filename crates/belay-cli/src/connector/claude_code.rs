@@ -10,8 +10,10 @@ use belay_core::text::sha256_hex;
 use belay_core::{Capabilities, Event, Permission, Response, ToolKind};
 use serde_json::{json, Value};
 
-use super::Connector;
+use super::{Connector, TranscriptSource};
 use crate::paths::now_ms;
+
+mod transcript;
 
 const EDIT_TOOLS: [&str; 3] = ["Edit", "MultiEdit", "Write"];
 
@@ -375,6 +377,10 @@ impl Connector for ClaudeCode {
         self.socket = Some(socket.to_path_buf());
     }
 
+    fn transcript(&self) -> Option<Box<dyn TranscriptSource>> {
+        Some(Box::new(transcript::ClaudeTranscripts))
+    }
+
     fn set_policy(&mut self, policy: &belay_core::policy::Policy) {
         self.policy = policy.clone();
     }
@@ -651,6 +657,22 @@ pub fn settings(exe: &Path) -> Value {
         }
     })
 }
+
+#[cfg(test)]
+connector_contract_tests!(
+    contract,
+    connector: crate::connector::claude_code::ClaudeCode::default(),
+    fixtures: "fixtures/claude_code",
+    hook_event: |v| v["hook_event_name"].as_str().map(String::from),
+    pre_tool: "PreToolUse",
+    post_tool: "PostToolUse",
+    denied: |v| v["hookSpecificOutput"]["permissionDecision"] == "deny",
+    replaced_output: |v| {
+        let o = &v["hookSpecificOutput"]["updatedToolOutput"];
+        o.as_str().or(o["stdout"].as_str()).map(String::from)
+    },
+    context: |v| v["hookSpecificOutput"]["additionalContext"].as_str().map(String::from),
+);
 
 #[cfg(test)]
 mod tests {

@@ -3780,3 +3780,60 @@ fn e1_daemon_runs_with_spaces_in_the_session_path() {
             .unwrap();
     assert_eq!(hook(&sock, "PostToolUse", &post), "");
 }
+
+/// U1b: retro output stays byte for byte what it was before transcripts moved behind
+/// the connector. Regenerate the golden files only for an intended report change.
+#[test]
+fn retro_output_matches_golden() {
+    let dir = tmp("retro-golden");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/transcripts");
+    for (flag, golden) in [
+        (None, "loop_session.retro.txt"),
+        (Some("--full"), "loop_session.retro-full.txt"),
+    ] {
+        let out = Command::new(bin())
+            .arg("retro")
+            .args(flag)
+            .arg(root.join("loop_session.jsonl"))
+            .env("BELAY_HOME", dir.join("home"))
+            .env("HOME", &dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let want = fs::read_to_string(root.join(golden)).unwrap();
+        assert_eq!(String::from_utf8(out.stdout).unwrap(), want, "{golden}");
+    }
+}
+
+/// U1b: `belay launch claude-code` is `belay claude`.
+#[test]
+fn launch_claude_code_is_belay_claude() {
+    let dir = tmp("launch");
+    let home = dir.join("home");
+    let status = Command::new(bin())
+        .args(["launch", "claude-code", "--resume", "abc"])
+        .env("BELAY_HOME", &home)
+        .env("BELAY_CLAUDE_BIN", fake_agent(&dir))
+        .env("BELAY_HOOK_TIMEOUT_MS", "2000")
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let args = fs::read_to_string(dir.join("args.txt")).unwrap();
+    assert!(args.contains("--resume abc"), "{args}");
+    assert!(fs::read_dir(home.join("sessions")).unwrap().count() == 1);
+    let bad = Command::new(bin())
+        .args(["launch", "no-such-agent"])
+        .env("BELAY_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("no connector for agent `no-such-agent`"),
+        "{}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+}

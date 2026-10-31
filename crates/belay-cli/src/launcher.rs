@@ -1,4 +1,4 @@
-//! `belay claude`: start the daemon, then run Claude Code with belay hooks.
+//! `belay claude` (`belay launch claude-code`): start the daemon, then run Claude Code with belay hooks.
 //! If anything of belay's own fails (setup, daemon), run Claude Code without belay
 //! (fail open, rule 1).
 
@@ -28,6 +28,16 @@ struct Session {
     token: String,
     settings: PathBuf,
     daemon: Child,
+}
+
+/// `belay launch <agent>`: the agent's connector says whether belay can run it.
+/// belay's own flags (`--belay-mode`, `--belay-fleet`, …) come in `args`.
+pub fn launch(agent: &str, args: Vec<String>) -> Result<i32> {
+    let connector = crate::connector::for_agent(agent)?;
+    match connector.agent() {
+        "claude-code" => run_claude(Mode::Look, args),
+        other => bail!("belay cannot launch `{other}` yet"),
+    }
 }
 
 pub fn run_claude(mode: Mode, args: Vec<String>) -> Result<i32> {

@@ -21,8 +21,90 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use std::collections::BTreeMap;
+
 use anyhow::{anyhow, bail, Result};
-use belay_core::{Config, FleetSetting};
+use belay_core::{FleetSetting, Mode};
+
+/// The whole config file: the core's knobs, and those only the launcher, the plugin
+/// and the daemon read. Derefs to the core's, so `cfg.loop_threshold` works.
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub core: belay_core::Config,
+    /// `belay claude` deletes sessions with no activity for this many days (0: never).
+    pub keep_days: u64,
+    /// `belay claude` audits what the session changed in tests and checks (experimental).
+    pub experimental_audit: bool,
+    /// The mode of sessions the Claude Code plugin starts (no `--belay-mode` there).
+    pub plugin_mode: Mode,
+    /// A desktop notification when belay steers a loop or blocks an edit (unattended runs).
+    pub notify: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            core: belay_core::Config::default(),
+            keep_days: 30,
+            experimental_audit: false,
+            plugin_mode: Mode::Look,
+            notify: false,
+        }
+    }
+}
+
+impl std::ops::Deref for Config {
+    type Target = belay_core::Config;
+    fn deref(&self) -> &belay_core::Config {
+        &self.core
+    }
+}
+
+impl Config {
+    fn own_fields(&self) -> BTreeMap<String, String> {
+        [
+            ("experimental_audit", self.experimental_audit.to_string()),
+            ("keep_days", self.keep_days.to_string()),
+            ("notify", self.notify.to_string()),
+            (
+                "plugin_mode",
+                format!("{:?}", self.plugin_mode).to_lowercase(),
+            ),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
+    }
+
+    /// Every key as `name → value`, in a stable order.
+    pub fn fields(&self) -> BTreeMap<String, String> {
+        let mut out = self.core.fields();
+        out.extend(self.own_fields());
+        out
+    }
+
+    /// Keys that differ from the defaults.
+    pub fn overrides(&self) -> BTreeMap<String, String> {
+        let defaults = Config::default().fields();
+        self.fields()
+            .into_iter()
+            .filter(|(k, v)| defaults.get(k) != Some(v))
+            .collect()
+    }
+
+    /// The controller's config: the core's knobs, and this side's overrides so the
+    /// session-start record still names every key the user set.
+    pub fn session(&self) -> belay_core::Config {
+        let defaults = Config::default().own_fields();
+        let mut core = self.core.clone();
+        core.other_overrides = self
+            .own_fields()
+            .into_iter()
+            .filter(|(k, v)| defaults.get(k) != Some(v))
+            .collect();
+        core
+    }
+}
 
 /// $BELAY_CONFIG, then $XDG_CONFIG_HOME/belay/config.toml, then ~/.config/belay/config.toml.
 pub fn path() -> PathBuf {
@@ -116,27 +198,27 @@ fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<Strin
         Ok(v)
     };
     match key {
-        "shape_threshold_tokens" => c.shape_threshold_tokens = int(100, 10_000_000)? as usize,
+        "shape_threshold_tokens" => c.core.shape_threshold_tokens = int(100, 10_000_000)? as usize,
         "max_summary_ratio" => {
             let v: f32 = value.parse().map_err(|e| anyhow!("{key}: {e}"))?;
             if !(v > 0.0 && v <= 1.0) {
                 bail!("max_summary_ratio must be in (0, 1], got {v}");
             }
-            c.max_summary_ratio = v;
+            c.core.max_summary_ratio = v;
         }
-        "loop_threshold" => c.loop_threshold = int(1, 100)?,
-        "tighten_after" => c.tighten_after = int(1, 1000)? as u32,
-        "idle_gap_minutes" => c.idle_gap_minutes = int(1, 24 * 60)?,
+        "loop_threshold" => c.core.loop_threshold = int(1, 100)?,
+        "tighten_after" => c.core.tighten_after = int(1, 1000)? as u32,
+        "idle_gap_minutes" => c.core.idle_gap_minutes = int(1, 24 * 60)?,
         "keep_days" => c.keep_days = int(0, 36_500)?,
         "plugin_mode" => {
             c.plugin_mode = match value {
-                "look" => belay_core::Mode::Look,
-                "optimize" => belay_core::Mode::Optimize,
+                "look" => Mode::Look,
+                "optimize" => Mode::Optimize,
                 v => bail!("{key} must be look or optimize, got {v}"),
             }
         }
         "fleet" => {
-            c.fleet = match value {
+            c.core.fleet = match value {
                 "off" => FleetSetting::Off,
                 "look" => FleetSetting::Look,
                 "on" => FleetSetting::On,
@@ -144,7 +226,7 @@ fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<Strin
             }
         }
         "commons" => {
-            c.commons = match value {
+            c.core.commons = match value {
                 "off" => FleetSetting::Off,
                 "look" => FleetSetting::Look,
                 "on" => FleetSetting::On,
@@ -152,7 +234,7 @@ fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<Strin
             }
         }
         "learn" => {
-            c.learn = match value {
+            c.core.learn = match value {
                 "off" => FleetSetting::Off,
                 "look" => FleetSetting::Look,
                 "on" => FleetSetting::On,
@@ -160,7 +242,7 @@ fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<Strin
             }
         }
         "wrap_tests" => {
-            c.wrap_tests = match value {
+            c.core.wrap_tests = match value {
                 "true" => true,
                 "false" => false,
                 v => bail!("{key} must be true or false, got {v}"),
@@ -280,6 +362,25 @@ mod tests {
         assert_eq!(c.fleet, FleetSetting::On);
         assert!(c.notify);
         assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    /// Keys the core does not read are still recorded at session start (U1b split).
+    #[test]
+    fn launcher_keys_reach_the_session_record() {
+        let (c, w) = parse("keep_days = 7\nloop_threshold = 4\nplugin_mode = optimize\n");
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(c.keep_days, 7);
+        let want: BTreeMap<String, String> = [
+            ("keep_days", "7"),
+            ("loop_threshold", "4"),
+            ("plugin_mode", "optimize"),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        assert_eq!(c.overrides(), want);
+        assert_eq!(c.session().overrides(), want);
+        assert_eq!(c.session().loop_threshold, 4);
     }
 
     #[test]

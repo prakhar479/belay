@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `belay launch <agent> [args…]` starts any agent belay has a connector for. `belay launch claude-code` is the same as `belay claude`, which stays.
+
 ## 0.1.0
 
 The first public release. belay supervises Claude Code through its hooks. It runs on Linux and WSL; macOS builds exist but are untested.

@@ -51,11 +51,21 @@ enum Cmd {
     ///
     /// belay's own flags may come anywhere: `--belay-mode look|optimize`; to join a fleet
     /// from this terminal, `--belay-fleet [ID]` with `--belay-role R` and `--belay-name N`.
-    /// `belay help claude` shows this text.
+    /// The same as `belay launch claude-code`. `belay help claude` shows this text.
     #[command(disable_help_flag = true)]
     Claude {
         #[arg(long = "belay-mode", value_enum, default_value = "look")]
         mode: ModeArg,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Start an agent under belay: `belay launch claude-code [args…]` is `belay claude`.
+    ///
+    /// Arguments after the agent go to it, `--help` included; belay's own flags work as
+    /// for `belay claude`. Agents: claude-code. `belay help launch` shows this text.
+    #[command(disable_help_flag = true)]
+    Launch {
+        agent: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -671,6 +681,7 @@ fn short(s: &str) -> String {
 fn run(cli: Cli) -> Result<i32> {
     match cli.cmd {
         Cmd::Claude { mode, args } => launcher::run_claude(mode.into(), args),
+        Cmd::Launch { agent, args } => launcher::launch(&agent, args),
         Cmd::Codex { .. } => bail!("`belay codex` is not built yet"),
         Cmd::Init { agent } => bail!("`belay init {agent}` is not built yet"),
         Cmd::Undo { .. } => bail!("`belay undo` is not built yet"),
