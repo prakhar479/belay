@@ -1,0 +1,4 @@
+{"seq":0,"ts_ms":1792616789373,"body":{"kind":"format","version":1}}
+{"seq":1,"ts_ms":1792616789373,"body":{"kind":"event","event":{"type":"session_started","agent":"claude-code","cwd":"/home/dev/shop","transcript_path":"/home/dev/.claude/projects/-home-dev-shop/x.jsonl","mode":"optimize"}}}
+{"seq":2,"ts_ms":1792616790000,"causes":[1],"body":{"kind":"output","id":"o-1","blob":"c512d7f500b9bb58ad253d2bb23a4648581b396771e73721850a2965bc43029f","output_kind":"test","lines":3,"tokens":20}}
+{"seq":3,"ts_ms":1792616790001,"causes":[2],"body":{"kind":"action","id":"a-1","action":{"type":"shape","output_id":"o-1","from_tokens":20,"to_tokens":12,"from_lines":3,"to_lines":2},"reason":"Cut the passing lines of a test run.","applied":true}}

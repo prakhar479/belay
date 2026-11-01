@@ -16,6 +16,7 @@
 | `outputs/pytest_grep_e_lines.txt`, `outputs/pytest_summary_only.txt`, `outputs/go_test_grep_n.txt` | Output as an agent trims it (`grep -E`, `tail -1`, `grep -n`) | **Hand-made** from the captured runs above |
 | `ledgers/v1_look_session.jsonl` | A 0.1 ledger (format 1): a look-mode session with a shape, a guard flag, and a mode change | **Hand-made** in the 0.1 format (U2a), to keep old ledgers readable |
 | `transcripts/loop_session.jsonl` | Claude Code transcript: 4 failing runs, 3 edits | Captured 2026-10-19 (docs/dev/TASKS.md S5). Only user/assistant lines and the fields belay reads |
+| `sessions/mcp/` | A session dir: ledger with one test output `o-1` (and its blob) and the shape action `a-1` | **Hand-made** in ledger format 1, for `belay mcp` |
 
 Rules:
 

@@ -1,0 +1,3 @@
+test_a PASSED
+test_b FAILED: assert 1 == 2
+1 failed, 1 passed
