@@ -335,7 +335,6 @@ fn record(dir: &Path, id: &str, before: &str, files: Vec<String>) -> Result<()> 
     let mut c = belay_core::Controller::new(
         belay_core::Config::default(),
         belay_core::Capabilities::CLAUDE_CODE,
-        belay_core::Mode::Optimize,
     );
     c.resume_ids(next, 1, 1);
     let d = c.undone(id, before, files, crate::paths::now_ms());

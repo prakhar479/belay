@@ -149,7 +149,7 @@ pub struct Totals {
     /// Bash output tokens by output kind.
     pub by_kind: BTreeMap<OutputKind, u64>,
     pub test_runs: u64,
-    /// Test runs belay wrapped (or would wrap, in look mode or retro).
+    /// Test runs belay wrapped (or would wrap, in retro).
     pub wrapped: u64,
     /// Edits through Edit/Write (the test guard sees these).
     pub tool_edits: u64,
@@ -340,20 +340,49 @@ pub fn one_line(entries: &[Entry]) -> String {
     parts.join(" · ")
 }
 
-/// `belay status`: "belay look · 12 tool calls · …" (R3.5).
+/// `belay status`: "belay · 12 tool calls · …", or "belay paused (guard) · …" (R3.5).
 pub fn status_line(entries: &[Entry]) -> String {
-    let mut mode = None;
+    let state = match (recorded_in_look(entries), paused(entries)) {
+        (true, _) => " (look mode, 0.1)".to_string(),
+        (_, p) if p.is_empty() => String::new(),
+        (_, p) if p.iter().any(|f| f == belay_core::ALL_FEATURES) => " paused".to_string(),
+        (_, p) => format!(" paused ({})", p.join(", ")),
+    };
+    format!("belay{state} · {}", one_line(entries))
+}
+
+/// A 0.1 session that ran in look mode, for all or part of it: belay acted on nothing
+/// then, so its `[would …]` lines are not what a 0.2 session would show.
+pub(crate) fn recorded_in_look(entries: &[Entry]) -> bool {
+    entries.iter().any(|e| match &e.body {
+        Body::Event {
+            event: Event::SessionStarted { mode: Some(m), .. },
+        } => m == "look",
+        Body::ModeChanged { from, to } => from == "look" || to == "look",
+        _ => false,
+    })
+}
+
+/// What the user has paused at the end of `entries`: feature names, or `all`.
+fn paused(entries: &[Entry]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
     for e in entries {
-        match &e.body {
-            Body::Event {
-                event: Event::SessionStarted { mode: Some(m), .. },
-            } => mode = Some(*m),
-            Body::ModeChanged { to, .. } => mode = Some(*to),
-            _ => {}
+        if let Body::FeatureChanged {
+            feature, from, to, ..
+        } = &e.body
+        {
+            if to == "paused" {
+                out.push(feature.clone());
+            } else if from == "paused" {
+                if feature == belay_core::ALL_FEATURES {
+                    out.clear();
+                } else {
+                    out.retain(|f| f != feature);
+                }
+            }
         }
     }
-    let mode = mode.map_or("?".to_string(), |m| format!("{m:?}").to_lowercase());
-    format!("belay {mode} · {}", one_line(entries))
+    out
 }
 
 /// How often the guard and the loop nudges were right, as far as the ledger shows (R2.3).
@@ -405,14 +434,13 @@ pub fn kind_shares(by_kind: &BTreeMap<OutputKind, u64>) -> String {
 pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String {
     let mut agent = String::from("?");
     let mut cwd = String::new();
-    let mut mode = String::from("?");
     let mut transcripts: Vec<String> = Vec::new();
     let (mut conversations, mut ignored) = (1u64, 0u64);
     let t = totals(entries);
     let (mut tools, mut bash, mut reopens, mut judgments) = (0u64, 0u64, 0u64, 0u64);
     let (mut shaped, mut before, mut after, mut shaped_applied) = (0u64, 0u64, 0u64, 0u64);
     let (mut unshapeable, mut wrapped, mut denied, mut undelivered) = (0u64, 0u64, 0u64, 0u64);
-    let (mut loops, mut cycles, mut guards, mut adaptations, mut modes) =
+    let (mut loops, mut cycles, mut guards, mut adaptations, mut switches) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut config = Vec::new();
     let defaults = crate::config::Config::default().fields();
@@ -485,15 +513,12 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                 Event::SessionStarted {
                     agent: a,
                     transcript_path,
-                    mode: m,
                     cwd: c,
+                    ..
                 } => {
                     agent = a.clone();
                     cwd = c.clone();
                     transcripts.extend(transcript_path.clone());
-                    if let Some(m) = m {
-                        mode = format!("{m:?}").to_lowercase();
-                    }
                 }
                 Event::ConversationChanged {
                     transcript_path, ..
@@ -616,10 +641,14 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                 files.join(", "),
                 change_start(change.as_deref())
             )),
-            Body::ModeChanged { to, .. } => {
-                mode = format!("{to:?}").to_lowercase();
-                modes.push(mode.clone());
-            }
+            Body::ModeChanged { to, .. } => switches.push(format!("mode {to} (0.1)")),
+            Body::FeatureChanged {
+                feature, to, by, ..
+            } => switches.push(if to == "paused" {
+                format!("{by} paused {feature}")
+            } else {
+                format!("{by} resumed {feature}")
+            }),
             Body::Config { overrides } => {
                 config = overrides
                     .iter()
@@ -645,10 +674,13 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
     } else {
         String::new()
     };
-    let _ = writeln!(
-        out,
-        "Session {label} · {agent} · {duration} · mode: {mode}{convs}"
-    );
+    // 0.1 sessions ran in a mode; a look one acted on nothing.
+    let old = if recorded_in_look(entries) {
+        " · recorded in look mode (0.1)"
+    } else {
+        ""
+    };
+    let _ = writeln!(out, "Session {label} · {agent} · {duration}{old}{convs}");
     if !cwd.is_empty() {
         let _ = writeln!(out, "Project: {cwd}");
     }
@@ -805,7 +837,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
         ("Learned fixes", &learned),
         ("Commons", &commons),
         ("Adaptations", &adaptations),
-        ("Mode changes", &modes),
+        ("Pauses", &switches),
     ];
     if full {
         rest.splice(0..0, attention);
@@ -891,7 +923,13 @@ fn describe(e: &Entry) -> String {
             to,
             reason,
         } => format!("adaptation {knob} {from} → {to}: {reason}"),
-        Body::ModeChanged { from, to } => format!("mode {from:?} → {to:?}"),
+        Body::ModeChanged { from, to } => format!("mode {from} → {to} (0.1)"),
+        Body::FeatureChanged {
+            feature,
+            from,
+            to,
+            by,
+        } => format!("{feature} {from} → {to}, by the {by}"),
         Body::Undelivered { actions, reason } => {
             format!("undelivered {}: {reason}", actions.join(", "))
         }
@@ -1044,6 +1082,67 @@ fn failure_name<'a>(message: &'a str, test: Option<&'a str>) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn v1_look() -> Vec<Entry> {
+        include_str!("../../../fixtures/ledgers/v1_look_session.jsonl")
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    }
+
+    /// U2a: a 0.1 ledger (format 1, look mode, a mode change) still reads, and says
+    /// how it was recorded.
+    #[test]
+    fn a_look_mode_ledger_from_0_1_renders() {
+        let entries = v1_look();
+        let r = render("old", &entries, true, true);
+        assert!(
+            r.lines()
+                .next()
+                .unwrap()
+                .ends_with("· recorded in look mode (0.1)"),
+            "{r}"
+        );
+        assert!(r.contains("[would deny]"), "{r}");
+        assert!(r.contains("Pauses: 1"), "{r}");
+        assert!(r.contains("mode optimize (0.1)"), "{r}");
+        assert!(
+            r.contains("fleet = look") && r.contains("plugin_mode = look"),
+            "{r}"
+        );
+        let why = why(&entries, "a-2").unwrap();
+        assert!(why.contains("action a-2 (guard, not applied)"), "{why}");
+        assert!(why.contains("judgment"), "{why}");
+        let why = why_seq(&entries, 9);
+        assert!(why.contains("mode look → optimize (0.1)"), "{why}");
+        assert!(status_line(&entries).starts_with("belay (look mode, 0.1) · "));
+    }
+
+    fn why_seq(entries: &[Entry], seq: u64) -> String {
+        describe(entries.iter().find(|e| e.seq == seq).unwrap())
+    }
+
+    #[test]
+    fn pauses_show_in_the_status_line_and_the_report() {
+        let mut c = belay_core::Controller::new(
+            belay_core::Config::default(),
+            belay_core::Capabilities::CLAUDE_CODE,
+        );
+        let mut entries = c
+            .pause(Some(belay_core::Feature::Guard), "user", 1)
+            .unwrap()
+            .entries;
+        assert!(status_line(&entries).starts_with("belay paused (guard) · "));
+        entries.extend(c.pause(None, "user", 2).unwrap().entries);
+        assert!(status_line(&entries).starts_with("belay paused · "));
+        entries.extend(c.resume(None, "user", 3).unwrap().entries);
+        assert!(status_line(&entries).starts_with("belay · "));
+        let r = render("s", &entries, true, true);
+        assert!(r.contains("Pauses: 3"), "{r}");
+        assert!(r.contains("user paused guard"), "{r}");
+        assert!(r.contains("user resumed all"), "{r}");
+        assert!(!r.contains("look mode"), "{r}");
+    }
 
     /// A resumed conversation whose project folder was renamed: the reported path does
     /// not exist, the same file under another project dir does.

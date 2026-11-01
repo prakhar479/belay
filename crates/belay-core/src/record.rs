@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::broker::{Answer, Source};
-use crate::event::{Event, Mode};
+use crate::event::Event;
 use crate::guard::GuardDecision;
 use crate::perception::OutputKind;
 
@@ -25,19 +25,17 @@ pub struct Entry {
 
 /// Ledger format version. A ledger without a `format` entry is version 1.
 /// Bump it only for a change that older readers would misread, and say so.
-pub const LEDGER_FORMAT: u32 = 1;
+/// 2 (0.2): no modes. `FeatureChanged` replaces `ModeChanged`; `SessionStarted.mode`
+/// is gone (both still read).
+pub const LEDGER_FORMAT: u32 = 2;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Body {
     /// Always the first entry (seq 0). Keep this shape stable: readers check it first.
-    Format {
-        version: u32,
-    },
+    Format { version: u32 },
     /// An event as received. Large text is replaced with `<blob:HASH>`.
-    Event {
-        event: Event,
-    },
+    Event { event: Event },
     /// A stored original tool output. `id` is what `belay show` takes.
     Output {
         id: String,
@@ -53,8 +51,8 @@ pub enum Body {
         answer: Answer,
         source: Source,
     },
-    /// `applied` is false in look mode or when the agent lacks the capability.
-    /// `unsupported` is true when the agent lacks the capability, so no mode can apply it.
+    /// `applied` is false when the agent lacks the capability (`unsupported`), or when the
+    /// reply reached no one (D9). 0.1 ledgers also have it false in look mode.
     Action {
         id: String,
         action: ActionKind,
@@ -69,14 +67,18 @@ pub enum Body {
         to: String,
         reason: String,
     },
-    ModeChanged {
-        from: Mode,
-        to: Mode,
+    /// A 0.1 mode change (`look`, `optimize`). Read from old ledgers; never written.
+    ModeChanged { from: String, to: String },
+    /// The user paused or resumed a feature (`belay pause`, `belay resume`). `feature`
+    /// is a config key or `all`; `from` and `to` are values or `paused`.
+    FeatureChanged {
+        feature: String,
+        from: String,
+        to: String,
+        by: String,
     },
     /// The user allowed, once, the edit that guard action `action` blocked.
-    Override {
-        action: String,
-    },
+    Override { action: String },
     /// The reply carrying these applied actions came after the shim gave up, so the
     /// agent never got them (D9). Readers treat them as not applied.
     Undelivered {
@@ -84,9 +86,7 @@ pub enum Body {
         reason: String,
     },
     /// Config values that differ from the defaults, recorded at session start.
-    Config {
-        overrides: BTreeMap<String, String>,
-    },
+    Config { overrides: BTreeMap<String, String> },
     /// A failure went away after edits: a fix this session learned (F2, L1).
     Learned {
         signature: String,

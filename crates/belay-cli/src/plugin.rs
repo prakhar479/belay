@@ -139,13 +139,12 @@ fn alive(sock: &Path) -> bool {
     ipc::send(sock, &Request::Ping, Duration::from_millis(100)).is_ok()
 }
 
-/// Start this session's daemon in the configured plugin mode; true once it answers.
+/// Start this session's daemon; true once it answers.
 fn start(dir: &Path, sock: &Path) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
-    let mode = config::load().plugin_mode;
-    launcher::start_daemon(&exe, dir, mode, None, Some(IDLE_EXIT_MINUTES)).is_ok()
+    launcher::start_daemon(&exe, dir, None, Some(IDLE_EXIT_MINUTES)).is_ok()
         && launcher::wait_for(sock)
 }
 

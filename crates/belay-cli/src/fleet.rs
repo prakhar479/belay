@@ -228,6 +228,7 @@ fn activity_of(e: &Entry, tail: &mut Tail, my_common: &str) -> Option<PeerActivi
 struct Row {
     id: String,
     agent: String,
+    /// What the row says of belay's state: a pause, or a 0.1 session's look mode.
     mode: String,
     workspace: Workspace,
     tools: u64,
@@ -237,13 +238,23 @@ struct Row {
     notices: u64,
 }
 
+/// A card's or ledger's mode as the user reads it: 0.1 sessions ran in look or
+/// optimize mode; 0.2 cards say what is paused, if anything.
+pub(crate) fn state_label(mode: &str) -> String {
+    match mode {
+        "look" => "recorded in look mode (0.1)".into(),
+        "optimize" => String::new(),
+        m => m.into(),
+    }
+}
+
 fn row(dir: &Path) -> Option<Row> {
     // A card (C1) has what the row needs, without reading the whole ledger.
     if let Some(c) = crate::commons::read_card(dir) {
         return Some(Row {
             id: c.id,
             agent: c.agent,
-            mode: c.mode,
+            mode: state_label(&c.mode),
             workspace: Workspace {
                 top: c.top,
                 common: format!("{}/.git", c.repo),
@@ -259,7 +270,7 @@ fn row(dir: &Path) -> Option<Row> {
     let mut r = Row {
         id: dir.file_name()?.to_string_lossy().to_string(),
         agent: "?".into(),
-        mode: "?".into(),
+        mode: String::new(),
         workspace: Workspace {
             top: String::new(),
             common: String::new(),
@@ -275,17 +286,9 @@ fn row(dir: &Path) -> Option<Row> {
         match &e.body {
             Body::Event { event } => match event {
                 Event::Peer { .. } => continue,
-                Event::SessionStarted {
-                    agent,
-                    cwd: c,
-                    mode,
-                    ..
-                } => {
+                Event::SessionStarted { agent, cwd: c, .. } => {
                     r.agent = agent.clone();
                     cwd = Some(c.clone());
-                    if let Some(m) = mode {
-                        r.mode = format!("{m:?}").to_lowercase();
-                    }
                 }
                 Event::Workspace { top, common } => {
                     r.workspace = Workspace {
@@ -296,7 +299,6 @@ fn row(dir: &Path) -> Option<Row> {
                 Event::ToolCompleted { .. } => r.tools += 1,
                 _ => {}
             },
-            Body::ModeChanged { to, .. } => r.mode = format!("{to:?}").to_lowercase(),
             Body::Action {
                 action, applied, ..
             } => match action {
@@ -312,6 +314,9 @@ fn row(dir: &Path) -> Option<Row> {
             _ => {}
         }
         r.last_ms = r.last_ms.max(e.ts_ms);
+    }
+    if crate::report::recorded_in_look(&entries) {
+        r.mode = state_label("look");
     }
     // A session with `fleet = off` records no workspace: find it now.
     if r.workspace.common.is_empty() {
@@ -359,11 +364,12 @@ pub fn view(root: &Path, now: u64) -> String {
                 facts.push(format!("{count} {}", if count == 1 { one } else { many }));
             }
         }
-        let _ = writeln!(
-            out,
-            "  {}  {}  {}  {}",
-            r.id, r.agent, r.mode, r.workspace.top
-        );
+        let mode = if r.mode.is_empty() {
+            String::new()
+        } else {
+            format!("  {}", r.mode)
+        };
+        let _ = writeln!(out, "  {}  {}{mode}  {}", r.id, r.agent, r.workspace.top);
         let _ = writeln!(out, "      {}", facts.join(" · "));
     }
     out
@@ -414,6 +420,23 @@ mod tests {
             .unwrap()
             .success();
         assert!(ok, "git {args:?}");
+    }
+
+    /// A 0.1 session's ledger (no card) says it was recorded in look mode.
+    #[test]
+    fn a_look_mode_ledger_from_0_1_is_labeled() {
+        let d = tmp("v1");
+        std::fs::write(
+            d.join("ledger.jsonl"),
+            include_str!("../../../fixtures/ledgers/v1_look_session.jsonl"),
+        )
+        .unwrap();
+        let r = row(&d).unwrap();
+        assert_eq!(r.mode, "recorded in look mode (0.1)");
+        assert_eq!(r.agent, "claude-code");
+        assert_eq!(state_label("optimize"), "");
+        assert_eq!(state_label("paused: guard"), "paused: guard");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

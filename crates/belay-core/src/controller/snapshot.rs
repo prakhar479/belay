@@ -55,11 +55,11 @@ impl Controller {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Capabilities, Config, Controller, Event, Mode, Permission, ToolKind};
+    use crate::{Capabilities, Config, Controller, Event, Permission, ToolKind};
 
     #[test]
     fn snapshots_and_undos_are_recorded_with_a_reason_and_cause() {
-        let mut c = Controller::new(Config::default(), Capabilities::CLAUDE_CODE, Mode::Optimize);
+        let mut c = Controller::new(Config::default(), Capabilities::CLAUDE_CODE);
         let turn = c.handle(Event::TurnEnded, 1);
         let cause = turn.entries.last().unwrap().seq;
         let d = c.snapshot("t-1", "abc", vec!["a.txt".into()], Some(cause), 2);
@@ -86,8 +86,7 @@ mod tests {
             "cd x && /usr/bin/belay undo",
             "git log; belay undo",
         ] {
-            let mut c =
-                Controller::new(Config::default(), Capabilities::CLAUDE_CODE, Mode::Optimize);
+            let mut c = Controller::new(Config::default(), Capabilities::CLAUDE_CODE);
             let d = c.handle(
                 Event::ToolRequested {
                     tool_use_id: "u".into(),

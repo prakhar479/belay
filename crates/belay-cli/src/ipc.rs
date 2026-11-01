@@ -6,7 +6,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use belay_core::Mode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -23,8 +22,12 @@ pub enum Request {
         deadline_ms: Option<u64>,
     },
     // Control requests carry the session's control token (see paths::read_token).
-    SetMode {
-        mode: Mode,
+    /// The user pauses (or resumes) one feature, or all of them (`feature` None).
+    Pause {
+        #[serde(default)]
+        feature: Option<String>,
+        #[serde(default)]
+        resume: bool,
         #[serde(default)]
         token: Option<String>,
     },

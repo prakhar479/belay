@@ -36,7 +36,8 @@ pub mod text;
 
 pub use capability::Capabilities;
 pub use controller::{
-    prepare, Blob, Config, Controller, Decision, FleetSetting, Permission, Prepared, Response,
+    prepare, Blob, Config, Controller, Decision, Feature, GuardSetting, Permission, Prepared,
+    ReportLevel, Response, ALL_FEATURES,
 };
-pub use event::{Event, Mode, PeerActivity, ToolKind};
+pub use event::{Event, PeerActivity, ToolKind};
 pub use record::{ActionKind, Body, Entry, Notice, NoticeLevel, SteerTrigger, LEDGER_FORMAT};

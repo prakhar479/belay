@@ -261,7 +261,11 @@ pub fn board(
             "active {}",
             ago(now.saturating_sub(c.last_activity_ms))
         ));
-        let mut who = format!("{} · {}", c.agent, c.mode);
+        let mut who = c.agent.clone();
+        let state = crate::fleet::state_label(&c.mode);
+        if !state.is_empty() {
+            let _ = write!(who, " · {state}");
+        }
         if let Some(s) = &c.slot {
             let _ = write!(who, " · fleet slot {s}");
         }

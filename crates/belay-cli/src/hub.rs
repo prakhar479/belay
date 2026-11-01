@@ -4,7 +4,7 @@
 //! stdin, watches their output and exits, and makes and keeps their worktrees.
 //!
 //! Layout: <home>/fleets/<id>/
-//!   meta.json         the resolved fleet file, repo, base commit, mode
+//!   meta.json         the resolved fleet file, repo, base commit
 //!   ledger.jsonl      fleet records (events and commands)
 //!   inbox.jsonl       what the fleet tells the user
 //!   slots/<slot>.jsonl, .err   each slot's agent output
@@ -30,7 +30,6 @@ use belay_core::fleet::model::{
     Actor, Address, Command as Cmd, FleetBody, FleetEvent, FleetRecord, Model, SlotState, Work,
 };
 use belay_core::fleet::spec::{self, Preset, Run, Spec, SpecFile, Workspace};
-use belay_core::Mode;
 use serde::{Deserialize, Serialize};
 
 use crate::ipc::Reply;
@@ -57,7 +56,9 @@ pub struct Meta {
     pub repo: Option<String>,
     pub base: Option<String>,
     pub cwd: String,
-    pub mode: Mode,
+    /// The 0.1 mode of the fleet's sessions, read from old fleets; never written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
     pub created_ms: u64,
     pub spec: Spec,
 }
@@ -209,7 +210,7 @@ fn fit_sessions(spec: &Spec) -> Option<u32> {
 }
 
 /// Start a fleet: write its dir, start its hub, wait for it. Returns the fleet id.
-pub fn up(file: Option<&Path>, preset: Option<Preset>, mode: Mode) -> Result<String> {
+pub fn up(file: Option<&Path>, preset: Option<Preset>) -> Result<String> {
     let (mut spec, f) = load_spec(file, preset)?;
     let mut notes = Vec::new();
     let bare = spec::roles_without_mode(&spec);
@@ -250,7 +251,7 @@ pub fn up(file: Option<&Path>, preset: Option<Preset>, mode: Mode) -> Result<Str
         repo,
         base,
         cwd: cwd.display().to_string(),
-        mode,
+        mode: None,
         created_ms: now_ms(),
         spec,
     };
@@ -898,14 +899,13 @@ impl Hub {
                 };
                 let kind = format!("{kind:?}").to_lowercase();
                 match to {
-                    // A message (not a task) for a session that is busy, or in a terminal,
-                    // waits in its inbox; its daemon shows it at the next hook (F4). In look
-                    // mode a headless session gets it as a turn, since hooks show nothing.
+                    // A message (not a task) for a session in a terminal waits in its
+                    // inbox; its daemon shows it at the next hook (F4). A headless session
+                    // gets it as its next turn, as 0.1's default (look) fleets did: fleets
+                    // are frozen.
                     Address::Slot { id }
                         if kind != "task"
-                            && (self.procs.get(id).is_none_or(|p| p.stdin.is_none())
-                                || (self.meta.mode == Mode::Optimize
-                                    && self.model.slots().get(id).is_some_and(|s| s.busy))) =>
+                            && self.procs.get(id).is_none_or(|p| p.stdin.is_none()) =>
                     {
                         let line = serde_json::json!({"ts_ms": now_ms(), "from": from, "kind": kind, "text": text});
                         let path = self.dir.join("slots").join(format!("{}.inbox.jsonl", file_name(id)));
@@ -978,12 +978,8 @@ impl Hub {
             .create(true)
             .append(true)
             .open(files.join(format!("{name}.err")))?;
-        let mode = match self.meta.mode {
-            Mode::Look => "look",
-            Mode::Optimize => "optimize",
-        };
         let mut cmd = Command::new(exe);
-        cmd.args(["claude", "--belay-mode", mode, "-p"])
+        cmd.args(["claude", "-p"])
             .args([
                 "--input-format",
                 "stream-json",
@@ -2385,19 +2381,20 @@ pub fn status(spec: Option<&str>) -> Result<String> {
 
 fn render_status(meta: &Meta, model: &Model, procs: &BTreeMap<String, Proc>, up: bool) -> String {
     let mut out = String::new();
-    let mode = match meta.mode {
-        Mode::Look => "look",
-        Mode::Optimize => "optimize",
-    };
     let preset = serde_json::to_value(meta.spec.preset)
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_default();
     let _ = writeln!(
         out,
-        "fleet {} · {} · {preset} · {mode} mode · {}",
+        "fleet {} · {} · {preset}{} · {}",
         meta.id,
         if up { "up" } else { "hub not running" },
+        if meta.mode.as_deref() == Some("look") {
+            " · recorded in look mode (0.1)"
+        } else {
+            ""
+        },
         meta.repo.as_deref().unwrap_or(&meta.cwd)
     );
     let width = model.slots().keys().map(|k| k.len()).max().unwrap_or(4);

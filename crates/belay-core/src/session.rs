@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::event::Mode;
 use crate::guard::GuardDecision;
 use crate::perception::OutputKind;
 
@@ -21,7 +20,6 @@ pub struct Change {
 
 #[derive(Debug, Clone)]
 pub struct SessionModel {
-    pub mode: Mode,
     /// Wanted test-guard strictness. The controller downgrades it per capabilities.
     pub guard: GuardDecision,
     levels: BTreeMap<OutputKind, u8>,
@@ -30,9 +28,8 @@ pub struct SessionModel {
 }
 
 impl SessionModel {
-    pub fn new(mode: Mode, tighten_after: u32) -> Self {
+    pub fn new(tighten_after: u32) -> Self {
         Self {
-            mode,
             guard: GuardDecision::Ask,
             // Only test, build, and install output starts on: summarizing code, diffs, or
             // search hits the agent asked to read would hide what it needs (C1; R1.5 and
@@ -124,7 +121,7 @@ mod tests {
 
     #[test]
     fn tightens_after_quiet_summaries() {
-        let mut s = SessionModel::new(Mode::Optimize, 3);
+        let mut s = SessionModel::new(3);
         assert!(s.on_shaped(OutputKind::Test).is_none());
         assert!(s.on_shaped(OutputKind::Test).is_none());
         let c = s.on_shaped(OutputKind::Test).unwrap();
@@ -135,7 +132,7 @@ mod tests {
 
     #[test]
     fn reopen_loosens_and_resets_count() {
-        let mut s = SessionModel::new(Mode::Optimize, 2);
+        let mut s = SessionModel::new(2);
         s.on_shaped(OutputKind::Test);
         let c = s.on_reopen(OutputKind::Test, "re-opened o-4").unwrap();
         assert!(c.reason.contains("o-4"));

@@ -13,7 +13,6 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use belay_core::Mode;
 use serde_json::Value;
 
 use crate::connector::claude_code;
@@ -31,17 +30,17 @@ struct Session {
 }
 
 /// `belay launch <agent>`: the agent's connector says whether belay can run it.
-/// belay's own flags (`--belay-mode`, `--belay-fleet`, …) come in `args`.
+/// belay's own flags (`--belay-fleet`, …) come in `args`.
 pub fn launch(agent: &str, args: Vec<String>) -> Result<i32> {
     let connector = crate::connector::for_agent(agent)?;
     match connector.agent() {
-        "claude-code" => run_claude(Mode::Look, args),
+        "claude-code" => run_claude(args),
         other => bail!("belay cannot launch `{other}` yet"),
     }
 }
 
-pub fn run_claude(mode: Mode, args: Vec<String>) -> Result<i32> {
-    let (mode, args) = take_mode(mode, args);
+pub fn run_claude(args: Vec<String>) -> Result<i32> {
+    let args = drop_mode(args);
     let (join, args) = take_fleet(args);
     let bin = env::var("BELAY_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
     // A missing agent is the user's to fix; set nothing up for it.
@@ -72,7 +71,7 @@ pub fn run_claude(mode: Mode, args: Vec<String>) -> Result<i32> {
         thread::spawn(move || unchecked_version(&bin))
     };
 
-    let session = match setup(&exe, mode, user_settings.as_deref()) {
+    let session = match setup(&exe, user_settings.as_deref()) {
         Ok(s) => Some(s),
         Err(e) => {
             eprintln!("belay: {e:#}; running {bin} without belay");
@@ -117,7 +116,7 @@ pub fn run_claude(mode: Mode, args: Vec<String>) -> Result<i32> {
 }
 
 /// Session dir, token, settings, daemon. Any error here means: run without belay.
-fn setup(exe: &Path, mode: Mode, user_settings: Option<&str>) -> Result<Session> {
+fn setup(exe: &Path, user_settings: Option<&str>) -> Result<Session> {
     let root = paths::sessions_dir();
     // A crashed daemon leaves its socket behind. Clean up before starting a new one.
     let _ = crate::sessions::remove_stale_sockets(&root);
@@ -152,7 +151,7 @@ fn setup(exe: &Path, mode: Mode, user_settings: Option<&str>) -> Result<Session>
         }
     }
     let sock = paths::socket_path(&dir);
-    let mut daemon = start_daemon(exe, &dir, mode, Some(std::process::id()), None)?;
+    let mut daemon = start_daemon(exe, &dir, Some(std::process::id()), None)?;
     if !wait_for(&sock) {
         let _ = daemon.kill();
         let _ = daemon.wait();
@@ -299,31 +298,28 @@ fn mark_version_seen(version: &str) {
     let _ = fs::write(&seen, format!("{known}{version}\n"));
 }
 
-/// `--belay-mode X` or `--belay-mode=X` anywhere in the arguments (clap only sees it
-/// before the first argument for claude).
-fn take_mode(mut mode: Mode, args: Vec<String>) -> (Mode, Vec<String>) {
+/// The 0.1 `--belay-mode X` (or `--belay-mode=X`) anywhere in the arguments: dropped,
+/// with a warning, so an old script still starts.
+fn drop_mode(args: Vec<String>) -> Vec<String> {
     let mut out = Vec::with_capacity(args.len());
     let mut it = args.into_iter();
     while let Some(a) = it.next() {
-        let value = if a == "--belay-mode" {
-            it.next()
-        } else if let Some(v) = a.strip_prefix("--belay-mode=") {
-            Some(v.to_string())
-        } else {
+        if a == "--belay-mode" {
+            it.next();
+        } else if !a.starts_with("--belay-mode=") {
             out.push(a);
             continue;
-        };
-        match value.as_deref() {
-            Some("look") => mode = Mode::Look,
-            Some("optimize") => mode = Mode::Optimize,
-            other => eprintln!(
-                "belay: --belay-mode takes look or optimize, got {}; using {}",
-                other.unwrap_or("nothing"),
-                mode_name(mode)
-            ),
         }
+        warn_mode_flag();
     }
-    (mode, out)
+    out
+}
+
+/// What an old `--belay-mode` (or `--mode`) flag gets.
+pub(crate) fn warn_mode_flag() {
+    eprintln!(
+        "belay: --belay-mode is ignored: belay has no modes now. It acts within what the agent supports; `belay pause` stops it."
+    );
 }
 
 /// `--belay-fleet [ID]`, `--belay-role R`, `--belay-name N`: join a fleet (F4). The id is
@@ -417,20 +413,12 @@ fn merge_settings(belay: &mut Value, user: &Value) {
     *belay = merged;
 }
 
-pub(crate) fn mode_name(mode: Mode) -> &'static str {
-    match mode {
-        Mode::Look => "look",
-        Mode::Optimize => "optimize",
-    }
-}
-
 /// Start a session daemon. `parent`: exit when this process is gone (the launcher).
 /// `idle_exit_minutes`: exit after this long without a request (plugin mode, where no
 /// launcher waits for the agent).
 pub(crate) fn start_daemon(
     exe: &Path,
     dir: &Path,
-    mode: Mode,
     parent: Option<u32>,
     idle_exit_minutes: Option<u64>,
 ) -> Result<Child> {
@@ -439,11 +427,7 @@ pub(crate) fn start_daemon(
         .append(true)
         .open(dir.join("daemon.log"))?;
     let mut cmd = Command::new(exe);
-    cmd.arg("daemon")
-        .arg("--session-dir")
-        .arg(dir)
-        .arg("--mode")
-        .arg(mode_name(mode));
+    cmd.arg("daemon").arg("--session-dir").arg(dir);
     if let Some(pid) = parent {
         cmd.arg("--parent-pid").arg(pid.to_string());
     }
@@ -564,15 +548,10 @@ mod tests {
     }
 
     #[test]
-    fn belay_mode_is_found_anywhere() {
-        let (m, rest) = take_mode(
-            Mode::Look,
-            strings(&["-p", "hi", "--belay-mode", "optimize"]),
-        );
-        assert!(matches!(m, Mode::Optimize));
+    fn an_old_belay_mode_flag_is_dropped_anywhere() {
+        let rest = drop_mode(strings(&["-p", "hi", "--belay-mode", "optimize"]));
         assert_eq!(rest, strings(&["-p", "hi"]));
-        let (m, rest) = take_mode(Mode::Optimize, strings(&["--belay-mode=look", "--resume"]));
-        assert!(matches!(m, Mode::Look));
+        let rest = drop_mode(strings(&["--belay-mode=look", "--resume"]));
         assert_eq!(rest, strings(&["--resume"]));
     }
 

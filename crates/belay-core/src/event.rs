@@ -3,15 +3,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    /// Observe and record. Never change the session.
-    Look,
-    /// Apply actions the agent supports.
-    Optimize,
-}
-
 /// What a tool does, in words every agent shares. The connector maps the agent's own
 /// tool names to these; the core plans only with the kind and keeps `tool` for display.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,13 +24,14 @@ pub enum ToolKind {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    /// First event of a session. The controller fills `mode` when it records the event.
+    /// First event of a session.
     SessionStarted {
         agent: String,
         cwd: String,
         transcript_path: Option<String>,
-        #[serde(default)]
-        mode: Option<Mode>,
+        /// The 0.1 mode (`look` or `optimize`), read from old ledgers; never written.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<String>,
     },
     /// The agent switched conversations in the same process (`/clear`, `/resume`): a new
     /// transcript, and earlier failures and edits belong to another conversation (I6, R3).

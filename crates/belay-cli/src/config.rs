@@ -10,12 +10,19 @@
 //! idle_gap_minutes = 10
 //! keep_days = 30            # belay claude deletes older sessions; 0 keeps all
 //! experimental_audit = false  # audit what each session changed in tests and checks
-//! plugin_mode = look         # mode of sessions the Claude Code plugin starts
 //! notify = false             # desktop notification on a loop or a blocked edit
-//! wrap_tests = true          # optimize: run tests through `belay run` (costs ~1-2 s each in auto mode)
-//! fleet = look               # other belay sessions here: off, look (record), on (also tell the agent)
-//! learn = look               # recall fixes other sessions learned, and project notes: off, look, on
+//! guard = deny               # test guard: deny, warn, or off
+//! loops = on                 # tell the agent when a failure loops
+//! shape = on                 # summarize large test output
+//! wrap_tests = false         # run tests through `belay run` (costs ~1-2 s each in auto mode)
+//! memory = on                # recall fixes other sessions learned, and project notes
+//! awareness = on             # tell the agent what other belay sessions here did
+//! commons = off              # pass other sessions' messages to the agent
+//! report = quiet             # how much belay tells the user: quiet, normal, verbose
 //! ```
+//!
+//! 0.1 keys still load, with a warning: `look` reads as `on`; `fleet` is `awareness`,
+//! `learn` is `memory`; `plugin_mode` is ignored.
 
 use std::env;
 use std::fs;
@@ -24,7 +31,7 @@ use std::path::{Path, PathBuf};
 use std::collections::BTreeMap;
 
 use anyhow::{anyhow, bail, Result};
-use belay_core::{FleetSetting, Mode};
+use belay_core::{GuardSetting, ReportLevel};
 
 /// The whole config file: the core's knobs, and those only the launcher, the plugin
 /// and the daemon read. Derefs to the core's, so `cfg.loop_threshold` works.
@@ -35,8 +42,6 @@ pub struct Config {
     pub keep_days: u64,
     /// `belay claude` audits what the session changed in tests and checks (experimental).
     pub experimental_audit: bool,
-    /// The mode of sessions the Claude Code plugin starts (no `--belay-mode` there).
-    pub plugin_mode: Mode,
     /// A desktop notification when belay steers a loop or blocks an edit (unattended runs).
     pub notify: bool,
 }
@@ -47,7 +52,6 @@ impl Default for Config {
             core: belay_core::Config::default(),
             keep_days: 30,
             experimental_audit: false,
-            plugin_mode: Mode::Look,
             notify: false,
         }
     }
@@ -66,10 +70,6 @@ impl Config {
             ("experimental_audit", self.experimental_audit.to_string()),
             ("keep_days", self.keep_days.to_string()),
             ("notify", self.notify.to_string()),
-            (
-                "plugin_mode",
-                format!("{:?}", self.plugin_mode).to_lowercase(),
-            ),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -130,18 +130,23 @@ pub fn load_from(path: &Path) -> (Config, Vec<String>) {
     }
 }
 
-/// Never fails. Warnings go to stderr: the launcher's reaches the user before claude
-/// starts; the daemon's goes to `daemon.log`.
+/// Never fails. Warnings go to stderr, each once per process: the launcher's reaches
+/// the user before claude starts; the daemon's goes to `daemon.log`.
 pub fn load() -> Config {
+    static SAID: std::sync::Mutex<std::collections::BTreeSet<String>> =
+        std::sync::Mutex::new(std::collections::BTreeSet::new());
     let p = path();
     let (c, warnings) = load_from(&p);
+    let mut said = SAID.lock().unwrap_or_else(|e| e.into_inner());
     for w in warnings {
-        eprintln!("belay: config {}: {w}", p.display());
+        if said.insert(w.clone()) {
+            eprintln!("belay: config {}: {w}", p.display());
+        }
     }
     c
 }
 
-const KEYS: [&str; 13] = [
+const KEYS: [&str; 19] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -149,12 +154,19 @@ const KEYS: [&str; 13] = [
     "idle_gap_minutes",
     "keep_days",
     "experimental_audit",
-    "plugin_mode",
     "notify",
+    "guard",
+    "loops",
+    "shape",
     "wrap_tests",
+    "memory",
+    "awareness",
+    "commons",
+    "report",
+    // 0.1 keys: read with a warning.
+    "plugin_mode",
     "fleet",
     "learn",
-    "commons",
 ];
 
 fn parse(text: &str) -> (Config, Vec<String>) {
@@ -167,14 +179,22 @@ fn parse(text: &str) -> (Config, Vec<String>) {
         if line.is_empty() {
             continue;
         }
-        if let Err(e) = apply(&mut c, line, &mut seen) {
-            warnings.push(format!("line {}: {e}; line ignored", n + 1));
+        match apply(&mut c, line, &mut seen) {
+            Ok(Some(note)) => warnings.push(format!("line {}: {note}", n + 1)),
+            Ok(None) => {}
+            Err(e) => warnings.push(format!("line {}: {e}; line ignored", n + 1)),
         }
     }
     (c, warnings)
 }
 
-fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<String>) -> Result<()> {
+/// Apply one `key = value` line. `Ok(Some(note))`: applied, with a warning for the user
+/// (a 0.1 key or value).
+fn apply(
+    c: &mut Config,
+    line: &str,
+    seen: &mut std::collections::BTreeSet<String>,
+) -> Result<Option<String>> {
     let (key, value) = line
         .split_once('=')
         .ok_or_else(|| anyhow!("expected `key = value`"))?;
@@ -185,17 +205,57 @@ fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<Strin
             None => bail!("unknown key `{key}`"),
         }
     }
+    let mut notes = Vec::new();
+    // 0.1 names (owner, 2026-10-31: modes are gone; features replace them).
+    let key = match key {
+        "plugin_mode" => {
+            return Ok(Some(
+                "`plugin_mode` is ignored: belay has no modes now (see `belay pause`)".into(),
+            ))
+        }
+        "fleet" => {
+            notes.push("`fleet` is now `awareness`".to_string());
+            "awareness"
+        }
+        "learn" => {
+            notes.push("`learn` is now `memory`".to_string());
+            "memory"
+        }
+        k => k,
+    };
     if seen.contains(key) {
         bail!("`{key}` is set twice; the first value stays");
     }
     // Quotes are allowed on any value, as in TOML.
     let value = value.trim_matches('"');
+    let value = if value == "look" && matches!(key, "awareness" | "memory" | "commons") {
+        notes.push(format!(
+            "`{key} = look` reads as `{key} = on`: look mode is gone"
+        ));
+        "on"
+    } else {
+        value
+    };
     let int = |min: u64, max: u64| -> Result<u64> {
         let v: u64 = value.parse().map_err(|e| anyhow!("{key}: {e}"))?;
         if !(min..=max).contains(&v) {
             bail!("{key} must be in {min}..={max}, got {v}");
         }
         Ok(v)
+    };
+    let on_off = || -> Result<bool> {
+        match value {
+            "on" | "true" => Ok(true),
+            "off" | "false" => Ok(false),
+            v => bail!("{key} must be on or off, got {v}"),
+        }
+    };
+    let boolean = || -> Result<bool> {
+        match value {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            v => bail!("{key} must be true or false, got {v}"),
+        }
     };
     match key {
         "shape_threshold_tokens" => c.core.shape_threshold_tokens = int(100, 10_000_000)? as usize,
@@ -210,62 +270,26 @@ fn apply(c: &mut Config, line: &str, seen: &mut std::collections::BTreeSet<Strin
         "tighten_after" => c.core.tighten_after = int(1, 1000)? as u32,
         "idle_gap_minutes" => c.core.idle_gap_minutes = int(1, 24 * 60)?,
         "keep_days" => c.keep_days = int(0, 36_500)?,
-        "plugin_mode" => {
-            c.plugin_mode = match value {
-                "look" => Mode::Look,
-                "optimize" => Mode::Optimize,
-                v => bail!("{key} must be look or optimize, got {v}"),
-            }
+        "guard" => {
+            c.core.guard = GuardSetting::parse(value)
+                .ok_or_else(|| anyhow!("{key} must be deny, warn, or off, got {value}"))?
         }
-        "fleet" => {
-            c.core.fleet = match value {
-                "off" => FleetSetting::Off,
-                "look" => FleetSetting::Look,
-                "on" => FleetSetting::On,
-                v => bail!("{key} must be off, look, or on, got {v}"),
-            }
+        "report" => {
+            c.core.report = ReportLevel::parse(value)
+                .ok_or_else(|| anyhow!("{key} must be quiet, normal, or verbose, got {value}"))?
         }
-        "commons" => {
-            c.core.commons = match value {
-                "off" => FleetSetting::Off,
-                "look" => FleetSetting::Look,
-                "on" => FleetSetting::On,
-                v => bail!("{key} must be off, look, or on, got {v}"),
-            }
-        }
-        "learn" => {
-            c.core.learn = match value {
-                "off" => FleetSetting::Off,
-                "look" => FleetSetting::Look,
-                "on" => FleetSetting::On,
-                v => bail!("{key} must be off, look, or on, got {v}"),
-            }
-        }
-        "wrap_tests" => {
-            c.core.wrap_tests = match value {
-                "true" => true,
-                "false" => false,
-                v => bail!("{key} must be true or false, got {v}"),
-            }
-        }
-        "notify" => {
-            c.notify = match value {
-                "true" => true,
-                "false" => false,
-                v => bail!("{key} must be true or false, got {v}"),
-            }
-        }
-        "experimental_audit" => {
-            c.experimental_audit = match value {
-                "true" => true,
-                "false" => false,
-                v => bail!("{key} must be true or false, got {v}"),
-            }
-        }
+        "loops" => c.core.loops = on_off()?,
+        "shape" => c.core.shape = on_off()?,
+        "memory" => c.core.memory = on_off()?,
+        "awareness" => c.core.awareness = on_off()?,
+        "commons" => c.core.commons = on_off()?,
+        "wrap_tests" => c.core.wrap_tests = boolean()?,
+        "notify" => c.notify = boolean()?,
+        "experimental_audit" => c.experimental_audit = boolean()?,
         _ => unreachable!("checked against KEYS"),
     }
     seen.insert(key.to_string());
-    Ok(())
+    Ok((!notes.is_empty()).then(|| notes.join("; ")))
 }
 
 /// Levenshtein distance, for "did you mean".
@@ -345,21 +369,49 @@ mod tests {
     }
 
     #[test]
-    fn fleet_setting() {
-        assert_eq!(parse("fleet = on").0.fleet, FleetSetting::On);
-        assert_eq!(parse("fleet = off").0.fleet, FleetSetting::Off);
-        let (c, w) = parse("fleet = yes");
-        assert_eq!(c.fleet, FleetSetting::Look);
-        assert!(w[0].contains("off, look, or on"), "{w:?}");
+    fn feature_keys() {
+        let (c, w) = parse("guard = warn\nloops = off\nshape = off\nmemory = off\nawareness = off\ncommons = on\nreport = verbose\nwrap_tests = true\n");
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(c.guard, GuardSetting::Warn);
+        assert!(!c.loops && !c.shape && !c.memory && !c.awareness);
+        assert!(c.commons && c.wrap_tests);
+        assert_eq!(c.report, ReportLevel::Verbose);
+        let (c, w) = parse("guard = yes");
+        assert_eq!(c.guard, GuardSetting::Deny);
+        assert!(w[0].contains("deny, warn, or off"), "{w:?}");
+    }
+
+    /// 0.1 config files keep working, and say once what changed.
+    #[test]
+    fn old_keys_and_look_values_load_with_a_warning() {
+        let (c, w) = parse("fleet = look\n");
+        assert!(c.awareness);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("`fleet` is now `awareness`"), "{w:?}");
+        assert!(
+            w[0].contains("`awareness = look` reads as `awareness = on`"),
+            "{w:?}"
+        );
+        let (c, w) = parse("learn = off\ncommons = look\nplugin_mode = optimize\n");
+        assert!(!c.memory && c.commons);
+        assert_eq!(w.len(), 3, "{w:?}");
+        assert!(w[0].contains("`learn` is now `memory`"), "{w:?}");
+        assert!(w[1].contains("`commons = look`"), "{w:?}");
+        assert!(w[2].contains("`plugin_mode` is ignored"), "{w:?}");
+        assert!(c.overrides().keys().all(|k| k != "plugin_mode"));
+        // Old and new name for one key: the first stays.
+        let (c, w) = parse("fleet = off\nawareness = on\n");
+        assert!(!c.awareness);
+        assert!(w[1].contains("set twice"), "{w:?}");
     }
 
     /// A rejected line does not count as the first value, and quotes work everywhere.
     #[test]
     fn rejected_first_value_is_not_the_first() {
         let (c, w) =
-            parse("loop_threshold = 0\nloop_threshold = 4\nfleet = \"on\"\nnotify = \"true\"\n");
+            parse("loop_threshold = 0\nloop_threshold = 4\ncommons = \"on\"\nnotify = \"true\"\n");
         assert_eq!(c.loop_threshold, 4);
-        assert_eq!(c.fleet, FleetSetting::On);
+        assert!(c.commons);
         assert!(c.notify);
         assert_eq!(w.len(), 1, "{w:?}");
     }
@@ -367,13 +419,13 @@ mod tests {
     /// Keys the core does not read are still recorded at session start (U1b split).
     #[test]
     fn launcher_keys_reach_the_session_record() {
-        let (c, w) = parse("keep_days = 7\nloop_threshold = 4\nplugin_mode = optimize\n");
+        let (c, w) = parse("keep_days = 7\nloop_threshold = 4\nnotify = true\n");
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(c.keep_days, 7);
         let want: BTreeMap<String, String> = [
             ("keep_days", "7"),
             ("loop_threshold", "4"),
-            ("plugin_mode", "optimize"),
+            ("notify", "true"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
