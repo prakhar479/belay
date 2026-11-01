@@ -67,17 +67,21 @@ fn fake_agent(dir: &Path) -> PathBuf {
     script
 }
 
-fn run_session(name: &str, mode: &str) -> (PathBuf, PathBuf) {
+/// A `belay claude` session with the fake agent. `config` goes after `loop_threshold = 4`;
+/// `flags` go before the agent's own.
+fn run_session(name: &str, config: &str, flags: &[&str]) -> (PathBuf, PathBuf) {
     let dir = tmp(name);
     let home = dir.join("home");
-    let config = dir.join("config.toml");
-    fs::write(&config, "loop_threshold = 4\n").unwrap();
+    let file = dir.join("config.toml");
+    fs::write(&file, format!("loop_threshold = 4\n{config}")).unwrap();
     let status = Command::new(bin())
-        .args(["claude", "--belay-mode", mode, "--resume", "abc"])
+        .arg("claude")
+        .args(flags)
+        .args(["--resume", "abc"])
         .env("BELAY_HOME", &home)
         .env("BELAY_CLAUDE_BIN", fake_agent(&dir))
         .env("BELAY_HOOK_TIMEOUT_MS", "2000")
-        .env("BELAY_CONFIG", &config)
+        .env("BELAY_CONFIG", &file)
         .status()
         .unwrap();
     assert!(status.success());
@@ -143,9 +147,10 @@ fn socket_gone(session: &Path) -> bool {
     false
 }
 
+/// Features the user turned off take no action, and record none.
 #[test]
-fn look_mode_records_and_changes_nothing() {
-    let (dir, session) = run_session("look", "look");
+fn features_off_change_nothing() {
+    let (dir, session) = run_session("off", "guard = off\nshape = off\n", &[]);
     let args = fs::read_to_string(dir.join("args.txt")).unwrap();
     assert!(
         args.starts_with("--settings ") && args.trim_end().ends_with("--resume abc"),
@@ -155,26 +160,32 @@ fn look_mode_records_and_changes_nothing() {
     assert_eq!(fs::read_to_string(dir.join("pre-out.json")).unwrap(), "");
 
     let report = belay(&["report"], &session);
-    assert!(report.contains("mode: look"), "{report}");
+    assert!(!report.contains("look mode"), "{report}");
     assert!(
-        report.contains("Config: loop_threshold = 4 (default 3)"),
+        report.contains("Config: guard = off (default deny) · loop_threshold = 4 (default 3) · shape = off (default on)"),
         "{report}"
     );
-    assert!(report.contains("Shaping: 1 outputs"), "{report}");
-    assert!(report.contains("[would apply]"), "{report}");
-    // Look mode blocks nothing, so the retry is flagged again and there is nothing to allow.
-    assert!(report.contains("Test guard: 2"), "{report}");
-    assert!(report.contains("[would deny]"), "{report}");
+    assert!(!report.contains("[would"), "{report}");
     assert!(fs::read_to_string(dir.join("allow-out.txt"))
         .unwrap()
         .contains("No edit was blocked"));
-    assert!(report.contains("Not shapeable: 1 outputs"), "{report}");
     assert!(socket_gone(&session), "daemon must stop with the session");
 }
 
+/// 0.1's `--belay-mode` still starts a session: ignored, with a warning.
 #[test]
-fn optimize_mode_shapes_and_guards() {
-    let (dir, session) = run_session("optimize", "optimize");
+fn an_old_belay_mode_flag_is_ignored() {
+    let (dir, _session) = run_session("oldmode", "", &["--belay-mode", "look"]);
+    let args = fs::read_to_string(dir.join("args.txt")).unwrap();
+    assert!(!args.contains("belay-mode"), "{args}");
+    let pre = fs::read_to_string(dir.join("pre-out.json")).unwrap();
+    assert!(pre.contains("\"deny\""), "acts as by default: {pre}");
+}
+
+/// The defaults act, with no flags and no config: shape, and a guard deny.
+#[test]
+fn a_default_session_shapes_and_guards() {
+    let (dir, session) = run_session("default", "", &[]);
     let post: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(dir.join("post-out.json")).unwrap()).unwrap();
     let summary = post["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
@@ -231,7 +242,6 @@ fn concurrent_hooks_keep_the_ledger_ordered_and_whole() {
     let mut daemon = Command::new(bin())
         .args(["daemon", "--session-dir"])
         .arg(&session)
-        .args(["--mode", "optimize"])
         .env("BELAY_HOME", dir.join("home"))
         .env("BELAY_CAPTURE", "1")
         .stdout(Stdio::null())
@@ -317,13 +327,21 @@ fn wait_for_daemon(sock: &Path) {
     panic!("daemon at {} did not answer", sock.display());
 }
 
-/// Start a daemon for a session dir. Returns the guard and its socket.
-fn start_daemon(session: &Path, mode: &str) -> (Daemon, PathBuf) {
+/// The config most daemon tests use: the defaults, with test runs wrapped.
+const WRAPS: &str = "wrap_tests = true\n";
+/// A daemon with nothing to say about a passing run or a test edit.
+const QUIET: &str = "shape = off\nguard = off\n";
+
+/// Start a daemon for a session dir with `config` (TOML; "" for the defaults). Returns
+/// the guard and its socket.
+fn start_daemon(session: &Path, config: &str) -> (Daemon, PathBuf) {
     fs::create_dir_all(session).unwrap();
+    let file = session.with_extension("config.toml");
+    fs::write(&file, config).unwrap();
     let child = Command::new(bin())
         .args(["daemon", "--session-dir"])
         .arg(session)
-        .args(["--mode", mode])
+        .env("BELAY_CONFIG", &file)
         // Never the user's data dir (per-project memory, plugin maps).
         .env("BELAY_HOME", session.parent().unwrap().join("home"))
         .stdout(std::process::Stdio::null())
@@ -360,7 +378,7 @@ fn hook(sock: &Path, event: &str, payload: &serde_json::Value) -> String {
 fn failing_test_run_is_summarized_through_belay_run() {
     let dir = tmp("wrap");
     let session = dir.join("session");
-    let (daemon, sock) = start_daemon(&session, "optimize");
+    let (daemon, sock) = start_daemon(&session, WRAPS);
 
     let pytest_out =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/outputs/pytest_fail.txt");
@@ -486,7 +504,7 @@ extern "C" {
 fn large_filter_does_not_block_pings_or_hooks() {
     let dir = tmp("busy");
     let session = dir.join("session");
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let mut pre: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("post_tool_use_bash.json")).unwrap())
             .unwrap();
@@ -566,7 +584,7 @@ fn large_filter_does_not_block_pings_or_hooks() {
 fn shim_exits_zero_when_stdout_is_closed() {
     use std::io::Write;
     let dir = tmp("epipe");
-    let (_daemon, sock) = start_daemon(&dir.join("session"), "optimize");
+    let (_daemon, sock) = start_daemon(&dir.join("session"), WRAPS);
     let (reader, writer) = std::io::pipe().unwrap();
     drop(reader);
     let mut child = Command::new(bin())
@@ -592,7 +610,7 @@ fn control_requests_need_the_session_token() {
     let session = dir.join("session");
     fs::create_dir_all(&session).unwrap();
     fs::write(session.join("control.token"), "s3cret").unwrap();
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let raw = |req: &str| {
         let mut s = std::os::unix::net::UnixStream::connect(&sock).unwrap();
         writeln!(s, "{req}").unwrap();
@@ -602,7 +620,7 @@ fn control_requests_need_the_session_token() {
     };
     for req in [
         r#"{"type":"allow","action":null}"#,
-        r#"{"type":"set_mode","mode":"look"}"#,
+        r#"{"type":"pause"}"#,
         r#"{"type":"shutdown"}"#,
     ] {
         assert!(raw(req).contains("refused"), "{req}");
@@ -610,13 +628,56 @@ fn control_requests_need_the_session_token() {
     assert!(raw(r#"{"type":"ping"}"#).contains("pong"), "still running");
     // The CLI reads the token from the session dir.
     assert!(belay(&["allow"], &session).contains("No edit was blocked"));
-    assert!(belay(&["mode", "look"], &session).contains("mode: look"));
+    assert!(belay(&["pause", "guard"], &session).contains("Paused guard"));
+    assert!(belay(&["resume"], &session).contains("Resumed belay. Nothing is paused."));
+    // 0.1's `belay mode` says what replaced it.
+    let old = Command::new(bin())
+        .args(["mode", "look", "--session"])
+        .arg(&session)
+        .output()
+        .unwrap();
+    assert!(!old.status.success());
+    assert!(String::from_utf8_lossy(&old.stdout).contains("belay pause"));
+}
+
+/// Only the user pauses belay: the agent's `belay pause` (or `resume`, or `undo`) is
+/// denied with the default config.
+#[test]
+fn the_agents_belay_pause_is_denied() {
+    let dir = tmp("agent-pause");
+    let (_daemon, sock) = start_daemon(&dir.join("session"), "");
+    let mut pre: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture("pre_tool_use_bash_auto.json")).unwrap())
+            .unwrap();
+    for (cmd, says) in [
+        ("belay pause", "only the user pauses or resumes belay"),
+        (
+            "cd /tmp && belay resume guard",
+            "only the user pauses or resumes belay",
+        ),
+        ("belay undo t-0", "only the user rolls files back"),
+    ] {
+        pre["tool_input"]["command"] = cmd.into();
+        let out: serde_json::Value =
+            serde_json::from_str(&hook(&sock, "PreToolUse", &pre)).unwrap();
+        assert_eq!(
+            out["hookSpecificOutput"]["permissionDecision"], "deny",
+            "{cmd}"
+        );
+        assert!(
+            out["hookSpecificOutput"]["permissionDecisionReason"]
+                .as_str()
+                .unwrap()
+                .contains(says),
+            "{cmd}: {out}"
+        );
+    }
 }
 
 /// R2.1: flag what belay got wrong; review lists it with what it points at.
 #[test]
 fn flags_and_review() {
-    let (_dir, session) = run_session("flags", "look");
+    let (_dir, session) = run_session("flags", "", &[]);
     let out = belay(
         &["flag", "a-1", "this", "summary", "hid", "the", "failure"],
         &session,
@@ -659,7 +720,7 @@ fn flags_and_review() {
 fn bash_write_that_weakens_a_test_is_warned() {
     let dir = tmp("bashwrite");
     let session = dir.join("session");
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let repo = dir.join("repo");
     fs::create_dir_all(repo.join("tests")).unwrap();
     let test = repo.join("tests/test_api.py");
@@ -713,7 +774,7 @@ fn bash_write_that_weakens_a_test_is_warned() {
 fn denied_wrapped_call_may_be_retried_unwrapped() {
     let dir = tmp("denied");
     let session = dir.join("session");
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let fake = dir.join("bin/pytest");
     fs::create_dir_all(fake.parent().unwrap()).unwrap();
     fs::write(&fake, "#!/bin/sh\necho ok\n").unwrap();
@@ -751,7 +812,7 @@ fn denied_wrapped_call_may_be_retried_unwrapped() {
 fn status_line_shows_mode_and_counts() {
     let dir = tmp("status");
     let session = dir.join("session");
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let post: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("post_tool_use_bash.json")).unwrap())
             .unwrap();
@@ -768,7 +829,7 @@ fn status_line_shows_mode_and_counts() {
     };
     let line = status(Some(&session));
     assert!(
-        line.starts_with("belay optimize · 1 tool call · shaped 1 output, saved "),
+        line.starts_with("belay · 1 tool call · shaped 1 output, saved "),
         "{line}"
     );
     assert_eq!(status(None), "", "nothing outside a belay session");
@@ -781,7 +842,7 @@ fn late_hook_is_not_recorded_as_applied() {
     use std::io::{BufRead, BufReader, Write};
     let dir = tmp("late");
     let session = dir.join("session");
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let payload: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("pre_tool_use_edit_test.json")).unwrap())
             .unwrap();
@@ -1072,7 +1133,7 @@ fn huge_output_streams_without_the_daemon() {
 fn shim_latency_budget() {
     let dir = tmp("latency");
     let session = dir.join("session");
-    let (_daemon, sock) = start_daemon(&session, "optimize");
+    let (_daemon, sock) = start_daemon(&session, WRAPS);
     let mut pre: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("pre_tool_use_bash_auto.json")).unwrap())
             .unwrap();
@@ -1271,7 +1332,7 @@ fn undo_rolls_files_back_to_a_turn_and_leaves_the_index() {
     .unwrap();
     fs::set_permissions(&agent, fs::Permissions::from_mode(0o755)).unwrap();
     let out = Command::new(bin())
-        .args(["claude", "--belay-mode", "optimize"])
+        .args(["claude"])
         .current_dir(&repo)
         .env("BELAY_HOME", dir.join("home"))
         .env("BELAY_CLAUDE_BIN", &agent)
@@ -1380,7 +1441,7 @@ fn repo_policy_is_loaded_from_the_project() {
         "protected = [\"migrations/**\"]\n",
     )
     .unwrap();
-    let (_daemon, sock) = start_daemon(&dir.join("session"), "optimize");
+    let (_daemon, sock) = start_daemon(&dir.join("session"), WRAPS);
     let mut pre: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("pre_tool_use_edit_test.json")).unwrap())
             .unwrap();
@@ -1404,7 +1465,7 @@ fn plugin_hooks_run_a_session_without_the_launcher() {
     let dir = tmp("plugin");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "plugin_mode = optimize\n").unwrap();
+    fs::write(&config, "").unwrap();
     let mut payload: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("pre_tool_use_edit_test.json")).unwrap())
             .unwrap();
@@ -1442,10 +1503,7 @@ fn plugin_hooks_run_a_session_without_the_launcher() {
 
     assert_eq!(plugin_hook("SessionStart", None), "");
     let out = plugin_hook("PreToolUse", None);
-    assert!(
-        out.contains("\"deny\""),
-        "optimize mode from the config: {out}"
-    );
+    assert!(out.contains("\"deny\""), "the guard acts by default: {out}");
     let session = fs::read_dir(home.join("sessions"))
         .unwrap()
         .next()
@@ -1471,7 +1529,7 @@ fn plugin_hooks_run_a_session_without_the_launcher() {
             .unwrap();
     }
     let line = String::from_utf8(status.wait_with_output().unwrap().stdout).unwrap();
-    assert!(line.starts_with("belay optimize"), "{line}");
+    assert!(line.starts_with("belay · "), "{line}");
     plugin_hook("SessionEnd", None);
     assert!(socket_gone(&session), "SessionEnd stops the daemon");
     let report = belay(&["report"], &session);
@@ -1493,13 +1551,13 @@ fn learned_shape_levels_carry_over_to_the_next_session() {
     reopen["tool_input"]["command"] = "belay show o-1".into();
     reopen["tool_use_id"] = "toolu_02".into();
     {
-        let (_daemon, sock) = start_daemon(&dir.join("s1"), "optimize");
+        let (_daemon, sock) = start_daemon(&dir.join("s1"), WRAPS);
         hook(&sock, "PostToolUse", &post);
         hook(&sock, "PostToolUse", &reopen);
     }
     let memory: Vec<_> = fs::read_dir(dir.join("home/projects")).unwrap().collect();
     assert_eq!(memory.len(), 1);
-    let (_daemon, sock) = start_daemon(&dir.join("s2"), "optimize");
+    let (_daemon, sock) = start_daemon(&dir.join("s2"), WRAPS);
     hook(&sock, "UserPromptSubmit", &post);
     let report = belay(&["report"], &dir.join("s2"));
     assert!(
@@ -1515,7 +1573,6 @@ fn start_fleet_daemon(home: &Path, id: &str, config: &Path) -> (Daemon, PathBuf,
     let child = Command::new(bin())
         .args(["daemon", "--session-dir"])
         .arg(&session)
-        .args(["--mode", "optimize"])
         .env("BELAY_HOME", home)
         .env("BELAY_CONFIG", config)
         .stdout(std::process::Stdio::null())
@@ -1576,7 +1633,7 @@ fn fleet_sessions_notice_each_other() {
     let wt = dir.join("wt");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "fleet = on\n").unwrap();
+    fs::write(&config, "awareness = on\n").unwrap();
 
     let (_a, sock_a, sess_a) = start_fleet_daemon(&home, "1000000001-1", &config);
     let (_b, sock_b, sess_b) = start_fleet_daemon(&home, "1000000002-2", &config);
@@ -2378,7 +2435,6 @@ fn fleet_scopes_and_claims_deny_edits() {
     let child = Command::new(bin())
         .args(["daemon", "--session-dir"])
         .arg(&session)
-        .args(["--mode", "optimize"])
         .env("BELAY_HOME", dir.join("home"))
         .env("BELAY_FLEET_SLOT", "implementer-1")
         .env("BELAY_FLEET_RULES", rules.to_string())
@@ -2552,14 +2608,7 @@ echo "$BELAY_FLEET_SLOT" > "$D/rev-slot.txt"
     let up = belay(&["fleet", "up", "fleet.toml"]);
     assert!(up.contains("lead-1"), "{up}");
     let joined = Command::new(bin())
-        .args([
-            "claude",
-            "--belay-fleet",
-            "--belay-name",
-            "rev",
-            "--belay-mode",
-            "optimize",
-        ])
+        .args(["claude", "--belay-fleet", "--belay-name", "rev"])
         .current_dir(&repo)
         .env("BELAY_HOME", &home)
         .env("BELAY_CLAUDE_BIN", &terminal)
@@ -2963,15 +3012,15 @@ fn fleet_brings_a_done_parts_work_up_to_its_lead() {
 }
 
 /// C4: the last session in a repo leaves its card as a handoff; the next one there starts
-/// with it (commons = on), one elsewhere does not, and look mode only records it.
+/// with it (commons = on), one elsewhere does not, nor one with commons off.
 #[test]
 fn a_handoff_reaches_the_next_session_in_the_repo() {
     let dir = tmp("handoff");
     let home = dir.join("home");
     let on = dir.join("on.toml");
     fs::write(&on, "commons = on\nwrap_tests = false\n").unwrap();
-    let look = dir.join("look.toml");
-    fs::write(&look, "wrap_tests = false\n").unwrap();
+    let look = dir.join("off.toml");
+    fs::write(&look, "commons = off\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
     };
@@ -3040,18 +3089,15 @@ fn a_handoff_reaches_the_next_session_in_the_repo() {
     let (_, shown) = run(&["handoff"], None, &x);
     assert!(shown.contains("left: open: fix the parser test"), "{shown}");
 
-    // Another repo: nothing. Look mode: recorded, not said.
+    // Another repo: nothing. Commons off: nothing.
     let (_c, sock_c, _) = start_fleet_daemon(&home, "1000000003-3", &on);
     let got = hook(&sock_c, "SessionStart", &start_in(&dir.join("y")));
     assert!(!got.contains("last session in this repo"), "{got}");
     let (_d, sock_d, sess_d) = start_fleet_daemon(&home, "1000000004-4", &look);
     let got = hook(&sock_d, "SessionStart", &start_in(&x));
-    assert!(!got.contains("last session in this repo"), "look: {got}");
+    assert!(!got.contains("last session in this repo"), "off: {got}");
     let ledger = fs::read_to_string(sess_d.join("ledger.jsonl")).unwrap();
-    assert!(
-        ledger.contains("\"type\":\"handoff\""),
-        "recorded in look mode"
-    );
+    assert!(!ledger.contains("\"type\":\"handoff\""), "off: no action");
 }
 
 /// C3: a session publishes a finding; another, in another repo, pulls its text (not its
@@ -3232,8 +3278,8 @@ fn commons_messages_between_sessions() {
     let home = dir.join("home");
     let on = dir.join("on.toml");
     fs::write(&on, "commons = on\nwrap_tests = false\n").unwrap();
-    let look = dir.join("look.toml");
-    fs::write(&look, "wrap_tests = false\n").unwrap();
+    let look = dir.join("off.toml");
+    fs::write(&look, "commons = off\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
     };
@@ -3324,10 +3370,10 @@ fn commons_messages_between_sessions() {
         "{said}"
     );
 
-    // C runs `commons = look`: an agent's message is recorded only; the user's arrives.
+    // C runs `commons = off`: an agent's message does not arrive; the user's does.
     belay_at(&["msg", "web-1", "agent says hi"], Some(&sock_a), &on);
     let got = hook(&sock_c, "PreToolUse", &pre);
-    assert!(!got.contains("agent says hi"), "look: recorded only: {got}");
+    assert!(!got.contains("agent says hi"), "off: {got}");
     let (ok, said) = belay_at(&["msg", "web-1", "the user says hi"], None, &look);
     assert!(ok && said.contains("Sent to web-1."), "{said}");
     let got = hook(&sock_c, "PreToolUse", &pre);
@@ -3364,12 +3410,12 @@ fn a_second_daemon_for_a_session_goes_on_with_its_ids() {
         serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
     };
     {
-        let (_d, sock) = start_daemon(&session, "look");
+        let (_d, sock) = start_daemon(&session, "");
         hook(&sock, "SessionStart", &load("session_start.json"));
         hook(&sock, "PostToolUse", &load("post_tool_use_bash.json"));
     }
     thread::sleep(Duration::from_millis(200));
-    let (_d, sock) = start_daemon(&session, "look");
+    let (_d, sock) = start_daemon(&session, "");
     hook(&sock, "PostToolUse", &load("post_tool_use_bash.json"));
     let ledger = fs::read_to_string(session.join("ledger.jsonl")).unwrap();
     let seqs: Vec<u64> = ledger
@@ -3493,11 +3539,12 @@ fn session_cards_and_the_board() {
     let v: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert_eq!(v[0]["name"], "api");
 
-    // commons = off: no card.
+    // commons = off: still a card for the board (the user's own view); nothing said.
     let (_c, sock_c, sess_c) = start_fleet_daemon(&home, "1000000003-3", &off);
-    hook(&sock_c, "SessionStart", &start_in(&dir.join("quiet")));
-    thread::sleep(Duration::from_millis(300));
-    assert!(!sess_c.join("card.json").exists());
+    let got = hook(&sock_c, "SessionStart", &start_in(&dir.join("quiet")));
+    assert!(!got.contains("other belay session"), "{got}");
+    wait_card(&sess_c, "quiet");
+    assert!(sess_c.join("card.json").exists());
     let _ = sess_b;
 }
 
@@ -3509,7 +3556,7 @@ fn a_fix_learned_in_one_session_is_recalled_in_another() {
     let dir = tmp("learn");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "learn = on\nwrap_tests = false\n").unwrap();
+    fs::write(&config, "memory = on\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
     };
@@ -3560,7 +3607,7 @@ fn a_running_session_gets_a_fix_learned_after_it_started_with_its_change() {
     let dir = tmp("learn-live-peer");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "learn = on\nwrap_tests = false\n").unwrap();
+    fs::write(&config, "memory = on\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
     };
@@ -3641,7 +3688,7 @@ fn a_fix_learned_through_belay_run_reaches_the_machine_store() {
     let dir = tmp("learn-wrap");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "learn = on\n").unwrap();
+    fs::write(&config, "memory = on\nwrap_tests = true\n").unwrap();
     let fixed = dir.join("fixed");
     let fake = dir.join("bin/pytest");
     fs::create_dir_all(fake.parent().unwrap()).unwrap();
@@ -3704,7 +3751,7 @@ fn project_notes_reach_new_sessions_once_approved() {
     fs::create_dir_all(&project).unwrap();
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "learn = on\n").unwrap();
+    fs::write(&config, "memory = on\nwrap_tests = true\n").unwrap();
     let run = |args: &[&str], agent: bool| {
         let mut c = Command::new(bin());
         c.args(args)
@@ -3864,8 +3911,9 @@ fn e1_shim_exits_zero_and_prints_nothing_on_bad_input_and_bad_daemons() {
         assert_eq!(code, Some(0));
         assert!(out.is_empty());
     }
-    // A live daemon: no trailing newline, a huge payload, non-UTF-8, all print nothing in look mode.
-    let (_d, sock) = start_daemon(&dir.join("session"), "look");
+    // A live daemon: no trailing newline, a huge payload, non-UTF-8, all print nothing
+    // with shaping off.
+    let (_d, sock) = start_daemon(&dir.join("session"), QUIET);
     let mut huge: serde_json::Value = serde_json::from_slice(&post).unwrap();
     huge["tool_response"] = serde_json::json!({ "stdout": "x".repeat(12 << 20) });
     for input in [
@@ -3875,7 +3923,7 @@ fn e1_shim_exits_zero_and_prints_nothing_on_bad_input_and_bad_daemons() {
     ] {
         let (code, out, took) = raw_shim(Some(&sock), &input, "250");
         assert_eq!(code, Some(0));
-        assert!(out.is_empty(), "look mode never answers");
+        assert!(out.is_empty(), "nothing to say");
         assert!(took < Duration::from_secs(5), "{took:?}");
     }
     wait_for_daemon(&sock);
@@ -3885,7 +3933,7 @@ fn e1_shim_exits_zero_and_prints_nothing_on_bad_input_and_bad_daemons() {
 fn e1_a_daemon_that_cannot_write_its_ledger_sends_nothing_and_lives() {
     let dir = tmp("e1-ledger");
     let session = dir.join("session");
-    let (_d, sock) = start_daemon(&session, "optimize");
+    let (_d, sock) = start_daemon(&session, WRAPS);
     // Blobs can no longer be written: persisting a decision with a blob fails.
     fs::remove_dir_all(session.join("blobs")).unwrap();
     fs::write(session.join("blobs"), "not a directory").unwrap();
@@ -3912,11 +3960,10 @@ fn e1_a_daemon_that_cannot_write_its_ledger_sends_nothing_and_lives() {
 fn e1_a_second_daemon_for_a_live_session_does_not_take_its_socket() {
     let dir = tmp("e1-two");
     let session = dir.join("session");
-    let (_d, sock) = start_daemon(&session, "look");
+    let (_d, sock) = start_daemon(&session, "");
     let out = Command::new(bin())
         .args(["daemon", "--session-dir"])
         .arg(&session)
-        .args(["--mode", "look"])
         .env("BELAY_HOME", dir.join("home"))
         .output()
         .unwrap();
@@ -3925,14 +3972,14 @@ fn e1_a_second_daemon_for_a_live_session_does_not_take_its_socket() {
     wait_for_daemon(&sock);
     // The first daemon still serves: a stale socket (nobody listening) is replaced, though.
     drop(_d);
-    let (_d2, sock2) = start_daemon(&session, "look");
+    let (_d2, sock2) = start_daemon(&session, "");
     wait_for_daemon(&sock2);
 }
 
 #[test]
 fn e1_daemon_runs_with_spaces_in_the_session_path() {
     let dir = tmp("e1 spaces");
-    let (_d, sock) = start_daemon(&dir.join("a session  dir"), "look");
+    let (_d, sock) = start_daemon(&dir.join("a session  dir"), QUIET);
     let post: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(fixture("post_tool_use_bash.json")).unwrap())
             .unwrap();

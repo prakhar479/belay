@@ -12,7 +12,7 @@ This guide goes from install to fleets. Each section stands alone, so skip to wh
 
 - [Install](#install)
 - [Five minutes with belay](#five-minutes-with-belay)
-- [Look and optimize](#look-and-optimize)
+- [Features](#features)
 - [What belay does for one session](#what-belay-does-for-one-session)
 - [Reading the record](#reading-the-record)
 - [Sessions that know about each other](#sessions-that-know-about-each-other)
@@ -71,7 +71,7 @@ The plugin also gives the agent a `belay` skill (when to check handoffs and find
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
 
-The first hook of each conversation starts belay's session for it, and `SessionEnd` stops it. Plugin sessions run in `plugin_mode` (a config key, default `look`). When you start with `belay claude`, the plugin's hooks step aside, so nothing is recorded twice.
+The first hook of each conversation starts belay's session for it, and `SessionEnd` stops it. Plugin sessions use the same [features](#features) as `belay claude`. When you start with `belay claude`, the plugin's hooks step aside, so nothing is recorded twice.
 
 ## Five minutes with belay
 
@@ -85,21 +85,21 @@ belay retro ~/.claude/projects/<project>/<session>.jsonl   # one session in deta
 On a session that went in circles, the report looks like this:
 
 ```text
-Session loop_session.jsonl · claude-code (retro) · 14 s · mode: look
+Session loop_session.jsonl · claude-code (retro) · 14 s
 Needs attention: 1 loops
 Loops (13 s in loops): 1
   - [would steer] after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run):
     tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total' …
 Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages
 Tool calls: 7 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
-Test runs: 4 · wrapped (or would be, in auto mode): 4 (100%)
+Test runs: 4 · wrapped (or would be, in auto mode): 0 (0%)
 Edits: 3 through Edit/Write (guarded before they run)
 ```
 
 **2. Start a session under belay.** Use `belay claude` in place of `claude`. Every other argument goes to Claude Code unchanged:
 
 ```sh
-belay claude                 # look mode: belay records, the agent sees no difference
+belay claude                 # belay acts within what Claude Code supports, and records it
 belay claude --resume        # resume, as you would with claude
 ```
 
@@ -110,11 +110,12 @@ belay report                 # the newest session started in this directory
 belay status                 # one line, for Claude Code's status line
 ```
 
-**4. Let belay act.** When the report looks right to you, switch to optimize mode:
+**4. Pause belay if it is in your way.** From another terminal, or with `!` in Claude Code:
 
 ```sh
-belay claude --belay-mode optimize
-belay mode optimize          # or switch the live session from another terminal
+belay pause guard            # one feature
+belay pause                  # everything
+belay resume                 # back on
 ```
 
 **5. Put belay in your status line (optional).** Run `belay install --statusline`, or add this to `~/.claude/settings.json` yourself. It replaces any status line you have. Outside a belay session it prints nothing.
@@ -127,29 +128,36 @@ Short aliases help:
 
 ```sh
 alias bl='belay claude'
-alias blo='belay claude --belay-mode optimize'
 ```
 
-## Look and optimize
+## Features
 
-Every session runs in one of two modes.
+belay always acts within what the agent supports, and records every action with its reason. Each thing it does is a feature with its own [config](#config) key:
 
-| | Look (default) | Optimize |
+| Key | Default | What it does |
 |---|---|---|
-| Records every tool call, output, and edit | yes | yes |
-| Decides what it would do, and records it | yes | yes |
-| Changes what the agent sees | never | yes |
-| Summarizes long test output | recorded only | the agent gets the summary |
-| Test guard | recorded only | the edit is denied until you allow it |
-| Loop notice | recorded only | the agent is told |
+| `guard` | `deny` | Test guard: `deny` blocks an edit that may weaken tests until you allow it, `warn` only tells the agent, `off` leaves it |
+| `loops` | `on` | Tells the agent when a failure is unchanged after several fixes, or an edit cycles |
+| `shape` | `on` | Summarizes large test and build output (above `shape_threshold_tokens`) |
+| `wrap_tests` | `false` | Runs test commands through `belay run`, so a failed run can be summarized too |
+| `memory` | `on` | Recalls fixes other sessions learned, and the project's notes |
+| `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
+| `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
+| `report` | `quiet` | How much belay tells you about what it did: `quiet`, `normal`, `verbose` |
 
-Look mode never answers a hook. It is safe to leave on for everything. Each optimize feature can also be set to `off`, `look`, or `on` on its own; see [Config](#config).
+A feature that is off takes no action. An action the agent cannot take is recorded as not applied.
+
+### Pause and resume
+
+`belay pause` is the kill switch for a live session. `belay pause guard` pauses one feature; `belay pause` with no feature pauses all of them. `belay resume [feature]` turns them back on. Each pause and resume is in the ledger, and `belay status` shows what is paused. Run these yourself, in another terminal or with `!` in Claude Code: belay denies the agent's own `belay pause` and `belay resume`.
+
+0.1 had a look mode and an optimize mode. They are gone: `belay mode` says so, and `--belay-mode` is ignored with a warning. Reports of 0.1 sessions say "recorded in look mode (0.1)" when belay acted on nothing.
 
 ## What belay does for one session
 
 ### Test output, summarized
 
-Agents run test suites again and again, and a suite with hundreds of passing tests floods the context. In optimize mode, belay runs test commands through `belay run`, which keeps their exit code. Output above `shape_threshold_tokens` (default 2000) is replaced by a summary that keeps every failure line. The agent sees a footer like this:
+Agents run test suites again and again, and a suite with hundreds of passing tests floods the context. With `wrap_tests = true`, belay runs test commands through `belay run`, which keeps their exit code, so a failed run can be summarized too. Output above `shape_threshold_tokens` (default 2000) is replaced by a summary that keeps every failure line. The agent sees a footer like this:
 
 ```text
 [… 242 lines omitted (242 passing) …]
@@ -178,7 +186,7 @@ Before an Edit or Write lands in a test file, belay compares the old and new tex
 - assertions that always pass;
 - commands that rewrite snapshot or golden files (`jest -u`, `--update-snapshots`, `cargo insta accept`, `UPDATE_GOLDEN=1`, …).
 
-In optimize mode the edit is denied, and the agent reads why:
+With `guard = deny` (the default) the edit is denied, and the agent reads why:
 
 ```text
 belay: this edit may weaken tests in tests/test_discount.py: expected value changed to the failing
@@ -224,7 +232,7 @@ To report a bug, `belay export --session -1 > s.json` writes one session with pa
 
 ## Sessions that know about each other
 
-When you run several sessions on one machine, belay lets each one see the others. These features are called the commons. They are off for the agent unless you set `commons = on`; with the default `look`, cards are kept and only your own messages reach agents.
+When you run several sessions on one machine, belay lets each one see the others. These features are called the commons. Cards are always kept, for your board. The rest is off for the agent unless you set `commons = on`; with the default `off`, only your own messages reach agents.
 
 ### Cards and the board
 
@@ -243,7 +251,7 @@ $ belay sessions
       active 1 min ago
 ```
 
-`--all` adds sessions that ended in the last day, and `--json` is for scripts and agents. With `commons = on` in optimize mode, a session that starts while others run is told how many there are and how to see them.
+`--all` adds sessions that ended in the last day, and `--json` is for scripts and agents. With `commons = on`, a session that starts while others run is told how many there are and how to see them.
 
 ### Messages
 
@@ -285,7 +293,7 @@ The next session in that repo (any worktree) gets the newest card that ended the
 - its last test;
 - whether it was looping or blocked.
 
-`belay handoff` with no text shows what the next session would get. With `commons = on` the agent hears it at start; with `look` it is only recorded.
+`belay handoff` with no text shows what the next session would get. With `commons = on` the agent hears it at start.
 
 ### Awareness notices
 
@@ -296,11 +304,11 @@ Each daemon reads the other live sessions' ledgers once a second and notices fou
 - **Peer failure.** A failed run names a file another session in this checkout edited in the last 30 minutes.
 - **Worktree overlap.** In another worktree of the same repo, both sessions edited one file, so a merge will conflict there.
 
-With `fleet = on` in optimize mode, the agent gets these at its next hook. For example: "belay: shop-1 edited shop/payments.py after you did. Read it again before you change it." With `look` they are recorded and shown in `belay report`.
+With `awareness = on` (the default), the agent gets these at its next hook. For example: "belay: shop-1 edited shop/payments.py after you did. Read it again before you change it." They are also shown in `belay report`.
 
 ## Learning across sessions
 
-With `learn = on`, belay remembers fixes on this machine. A failure counts as fixed when it goes away after edits and a complete run passes. A complete run uses no `-x`, `-k`, or `--lf`; belay reads its exit code, or the runner's summary when the run is piped through `tail` or `tee`. The session then keeps the failure, the command, the files changed, and a short diff of the edits (at most 30 lines, secrets redacted).
+With `memory = on` (the default), belay remembers fixes on this machine. A failure counts as fixed when it goes away after edits and a complete run passes. A complete run uses no `-x`, `-k`, or `--lf`; belay reads its exit code, or the runner's summary when the run is piped through `tail` or `tee`. The session then keeps the failure, the command, the files changed, and a short diff of the edits (at most 30 lines, secrets redacted).
 
 When another session of the same project hits that failure, belay tells it how it was fixed, with the diff, on the first hit. All worktrees of a repo are one project. A fix from another project is told only on a second hit, and without the diff: code does not leave its project.
 
@@ -359,7 +367,7 @@ permission_mode = "acceptEdits"    # headless sessions cannot answer permission 
 ```
 
 ```sh
-belay fleet up fleet.toml --mode optimize
+belay fleet up fleet.toml
 belay task add "add CSV export to the reports page"   # goes to the lead
 belay fleet status                  # sessions: state, turns, restarts, worktree
 belay task list                     # the board: state, session, dependencies, outcome
@@ -427,7 +435,7 @@ protected = ["migrations/**", "tests/golden/**"]  # edits are guarded like test 
 audit_ignore = ["vendor/**"]                      # left out of `belay audit`
 ```
 
-An edit of a protected path is denied in optimize mode (and recorded in look mode) until you run `! belay allow`. Globs are relative to the repo root. `*` stays within a directory, `**` crosses them, and a pattern without `/` matches a file name anywhere. When `belay claude` starts, it skips a bad line with a warning; the other lines still apply.
+An edit of a protected path is denied (with `guard = deny`) until you run `! belay allow`. Globs are relative to the repo root. `*` stays within a directory, `**` crosses them, and a pattern without `/` matches a file name anywhere. When `belay claude` starts, it skips a bad line with a warning; the other lines still apply.
 
 ## Undo
 
@@ -484,15 +492,18 @@ tighten_after = 5               # summaries without a re-open before belay summa
 idle_gap_minutes = 10           # loop time leaves out gaps longer than this
 keep_days = 30                  # 0 keeps every session
 notify = false                  # desktop notification when belay steers a loop or blocks an edit
-wrap_tests = true               # optimize: run tests through `belay run` (~1-2 s each in auto mode)
-plugin_mode = look              # mode of sessions the Claude Code plugin starts
-fleet = look                    # awareness of other sessions: off, look, on
-learn = look                    # learned fixes and project notes: off, look, on
-commons = look                  # cards, messages, findings, handoffs: off, look, on
+guard = deny                    # test guard: deny, warn, off
+loops = on                      # tell the agent about loops and edit cycles
+shape = on                      # summarize large test output
+wrap_tests = false              # run tests through `belay run` (~1-2 s each in auto mode)
+memory = on                     # learned fixes and project notes
+awareness = on                  # what other belay sessions here did
+commons = off                   # other sessions' messages and handoffs reach the agent
+report = quiet                  # how much belay tells you: quiet, normal, verbose
 experimental_audit = false      # audit each session's changes to tests and checks
 ```
 
-For `fleet`, `learn`, and `commons`, `look` records what belay would say and `on` says it, in optimize mode. `off` turns the feature off.
+0.1 config files still load, with a warning for each old key: `look` reads as `on`, `fleet` is now `awareness`, `learn` is now `memory`, and `plugin_mode` is ignored. Fleet sessions always run with `guard = deny` and `commons = on`.
 
 | Variable | Effect |
 |---|---|
@@ -529,16 +540,16 @@ Everything stays on your machine. belay makes no network calls and no model call
 
 | Command | What it does |
 |---|---|
-| `belay claude [--belay-mode optimize] [args…]` | Start Claude Code under belay |
+| `belay claude [args…]` | Start Claude Code under belay |
 | `belay launch <agent> [args…]` | Start an agent under belay. `belay launch claude-code` is `belay claude` |
-| `belay mode look\|optimize` | Change the mode of the live session |
+| `belay pause [feature]` · `belay resume [feature]` | Pause belay in the live session, or resume it (yours to run) |
 | `belay allow [a-N]` | Lift one guard block (yours to run) |
 | `belay undo [t-N] [--yes]` | List snapshots, or roll the files back to one (yours to run) |
 | `belay report [--session S] [--full]` | What happened in a session |
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |
 | `belay status` | One line for the status line |
-| `belay retro <transcript> \| --all [--summary]` | Look mode over past transcripts |
+| `belay retro <transcript> \| --all [--summary]` | What belay would have done in past transcripts |
 | `belay flag <target> "note"` · `belay review` | Note and list where belay got it wrong |
 | `belay sessions [--all\|--json\|--history]` | The board of live sessions |
 | `belay card [--task …] [--name …] [--join …]` | This session's card |

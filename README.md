@@ -38,9 +38,9 @@ cargo install --git https://github.com/prakhar479/belay belay-cli   # or grab a 
 belay install            # the Claude Code plugin: hooks, a skill, slash commands (asks first)
 
 belay retro --all        # what belay would have caught in sessions you already ran
-belay claude             # your next session, recorded (look mode: nothing changes for the agent)
-belay report             # what happened, and what belay would have done
-belay claude --belay-mode optimize   # let belay act
+belay claude             # your next session: belay guards tests, flags loops, summarizes output
+belay report             # what happened, and why belay did what it did
+belay pause              # the kill switch, from another terminal (`belay resume` undoes it)
 ```
 
 `belay claude` takes every `claude` argument. If belay cannot start, Claude Code runs without it.
@@ -49,7 +49,7 @@ belay claude --belay-mode optimize   # let belay act
 
 | | |
 |---|---|
-| **Test guard** | Before an edit lands in a test file, belay checks it. It flags assertions removed, skips added, expected values changed to the failing actual, tolerances raised, and golden files rewritten. In optimize mode the edit is denied until *you* run `! belay allow`. |
+| **Test guard** | Before an edit lands in a test file, belay checks it. It flags assertions removed, skips added, expected values changed to the failing actual, tolerances raised, and golden files rewritten. The edit is denied until *you* run `! belay allow` (or set `guard = warn`). |
 | **Loop detection** | The same failure after 3 rounds of edit-then-run, or an edit that reverts the last one. belay tells the agent, with the failure it keeps hitting. |
 | **Faithful summaries** | Test output with hundreds of passing tests is cut to what matters, and every failure line is kept. One pytest run went from 6,407 to 1,576 tokens. `belay show o-3` prints the original. |
 | **Every action explained** | Each session is a ledger. `belay why a-2` shows the cause chain of anything belay did. `belay flag` notes where it got something wrong. |
@@ -59,7 +59,7 @@ belay claude --belay-mode optimize   # let belay act
 
 ## Built to stay out of the way
 
-- **Look before you act.** The default mode only records. Switch to optimize when the report convinces you.
+- **Acts within what the agent supports, and says why.** Every action is in the ledger with its reason. Each feature has its own switch, and `belay pause` stops them all.
 - **Fails open.** A hook that errors or takes longer than 250 ms prints nothing, and the agent goes on. A hook costs about 2 ms at p95.
 - **Local.** No network calls, no model calls. Data stays in `~/.local/share/belay`, with secrets redacted before anything is written.
 - **Never edits the past.** belay acts only on what the agent has not seen yet, so the prompt cache stays intact.

@@ -214,12 +214,13 @@ pub fn list(root: &Path) -> String {
             (Some(a), Some(b)) if b >= a => crate::report::minutes(b - a),
             _ => "-".into(),
         };
-        let (mut mode, mut tools) = (String::from("?"), 0u64);
+        // 0.1 sessions ran in a mode; later ones have none ("-").
+        let (mut mode, mut tools) = (String::from("-"), 0u64);
         for e in &entries {
             match &e.body {
                 belay_core::Body::Event {
                     event: belay_core::Event::SessionStarted { mode: Some(m), .. },
-                } => mode = format!("{m:?}").to_lowercase(),
+                } => mode = m.clone(),
                 belay_core::Body::Event {
                     event: belay_core::Event::ToolCompleted { .. },
                 } => tools += 1,

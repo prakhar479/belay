@@ -1,0 +1,10 @@
+{"seq":0,"ts_ms":1792616789373,"body":{"kind":"format","version":1}}
+{"seq":1,"ts_ms":1792616789373,"body":{"kind":"event","event":{"type":"session_started","agent":"claude-code","cwd":"/home/dev/shop","transcript_path":null,"mode":"look"}}}
+{"seq":2,"ts_ms":1792616789373,"causes":[1],"body":{"kind":"config","overrides":{"fleet":"look","plugin_mode":"look"}}}
+{"seq":3,"ts_ms":1792616790000,"body":{"kind":"event","event":{"type":"tool_completed","tool_use_id":"toolu_01","tool":"Bash","input":{"command":"pytest -v"},"output":"<blob:0000>","failed":false}}}
+{"seq":4,"ts_ms":1792616790000,"causes":[3],"body":{"kind":"output","id":"o-1","blob":"0000","output_kind":"test","lines":311,"tokens":6100}}
+{"seq":5,"ts_ms":1792616790000,"causes":[4],"body":{"kind":"action","id":"a-1","action":{"type":"shape","output_id":"o-1","from_tokens":6100,"to_tokens":300,"from_lines":311,"to_lines":12},"reason":"test output was 6100 tokens; the summary keeps every failure line (level 2).","applied":false}}
+{"seq":6,"ts_ms":1792616791000,"body":{"kind":"event","event":{"type":"edit_proposed","tool_use_id":"toolu_02","path":"/home/dev/shop/tests/test_api.py","old_text":"<blob:1111>","new_text":"<blob:2222>"}}}
+{"seq":7,"ts_ms":1792616791000,"causes":[6],"body":{"kind":"judgment","question":"test_weakened","version":1,"subject":"/home/dev/shop/tests/test_api.py","answer":{"value":"weakened","reasons":["assertions removed (2 → 1)"]},"source":{"type":"rule"}}}
+{"seq":8,"ts_ms":1792616791000,"causes":[7],"body":{"kind":"action","id":"a-2","action":{"type":"guard","path":"/home/dev/shop/tests/test_api.py","decision":"deny"},"reason":"this edit may weaken tests in /home/dev/shop/tests/test_api.py: assertions removed (2 → 1).","applied":false}}
+{"seq":9,"ts_ms":1792616850000,"body":{"kind":"mode_changed","from":"look","to":"optimize"}}

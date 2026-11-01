@@ -2,7 +2,9 @@
 //!
 //! The controller is the only writer of ledger entries. It returns a `Decision`:
 //! entries and blobs to persist, plus a `Response` for the connector to apply.
-//! In look mode the response is always empty; actions are recorded with `applied: false`.
+//! belay acts within the agent's capabilities. A feature that is off or paused takes no
+//! action; an action is recorded with `applied: false` only when the agent lacks the
+//! capability or the reply reaches no one (D9).
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -11,7 +13,7 @@ type EditKey = (String, String, String);
 
 use crate::broker::{Answer, Broker, Question};
 use crate::capability::Capabilities;
-use crate::event::{Event, Mode, ToolKind};
+use crate::event::{Event, ToolKind};
 use crate::guard::{self, GuardDecision};
 use crate::loops::{LoopDetector, LoopSignal};
 use crate::perception::{
@@ -38,39 +40,27 @@ pub struct Config {
     pub tighten_after: u32,
     /// Loop time counts at most this much of any gap between events (idle time).
     pub idle_gap_minutes: u64,
-    /// Wrap test runs in `belay run` (optimize mode). A wrapped call can cost the agent
-    /// some permission checking, so this can be turned off.
+    /// The test guard: deny (block a weakening edit), warn (say so), or off.
+    pub guard: GuardSetting,
+    /// Tell the agent when a failure loops or an edit cycles.
+    pub loops: bool,
+    /// Summarize large test and build output.
+    pub shape: bool,
+    /// Wrap test runs in `belay run`, so a failed run can be summarized too. A wrapped
+    /// call can cost the agent some permission checking, so this is off by default.
     pub wrap_tests: bool,
-    /// Awareness of other belay sessions on this machine (F1).
-    pub fleet: FleetSetting,
-    /// Shared learning (F2): recall other sessions' fixes and the project's notes.
-    /// off: none; look: record what would be said; on: say it (optimize mode).
-    pub learn: FleetSetting,
-    /// The commons (C1): off (no card), look (a card; nothing said), on (also tell the
-    /// agent at start who else is here, in optimize mode).
-    pub commons: FleetSetting,
+    /// Memory (F2): recall fixes other sessions learned, and the project's notes.
+    pub memory: bool,
+    /// Awareness (F1): tell the agent what other belay sessions here did that matters.
+    pub awareness: bool,
+    /// The commons (C1–C4): who else is here, handoffs, and other sessions' messages.
+    /// The user's own messages reach the agent either way.
+    pub commons: bool,
+    /// How much the user hears about what belay did.
+    pub report: ReportLevel,
     /// Settings the core does not read (the launcher's), as `name → value`. Only their
     /// overrides, so the session-start record names every setting the user changed.
     pub other_overrides: BTreeMap<String, String>,
-}
-
-/// `fleet` config: off (no watching), look (record notices only, the default), or on
-/// (also tell the agent, in optimize mode).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FleetSetting {
-    Off,
-    Look,
-    On,
-}
-
-impl FleetSetting {
-    pub fn name(self) -> &'static str {
-        match self {
-            FleetSetting::Off => "off",
-            FleetSetting::Look => "look",
-            FleetSetting::On => "on",
-        }
-    }
 }
 
 impl Default for Config {
@@ -81,10 +71,14 @@ impl Default for Config {
             loop_threshold: 3,
             tighten_after: 5,
             idle_gap_minutes: 10,
-            wrap_tests: true,
-            fleet: FleetSetting::Look,
-            learn: FleetSetting::Look,
-            commons: FleetSetting::Look,
+            guard: GuardSetting::Deny,
+            loops: true,
+            shape: true,
+            wrap_tests: false,
+            memory: true,
+            awareness: true,
+            commons: false,
+            report: ReportLevel::Quiet,
             other_overrides: BTreeMap::new(),
         }
     }
@@ -93,12 +87,17 @@ impl Default for Config {
 impl Config {
     /// Every core knob as `name → value`, in a stable order.
     pub fn fields(&self) -> BTreeMap<String, String> {
+        let on_off = |b: bool| if b { "on" } else { "off" }.to_string();
         [
             ("idle_gap_minutes", self.idle_gap_minutes.to_string()),
-            ("fleet", self.fleet.name().to_string()),
-            ("learn", self.learn.name().to_string()),
-            ("commons", self.commons.name().to_string()),
+            ("guard", self.guard.name().to_string()),
+            ("loops", on_off(self.loops)),
+            ("shape", on_off(self.shape)),
             ("wrap_tests", self.wrap_tests.to_string()),
+            ("memory", on_off(self.memory)),
+            ("awareness", on_off(self.awareness)),
+            ("commons", on_off(self.commons)),
+            ("report", self.report.name().to_string()),
             ("loop_threshold", self.loop_threshold.to_string()),
             ("max_summary_ratio", self.max_summary_ratio.to_string()),
             (
@@ -198,6 +197,11 @@ const MAX_SHELL_BASELINES: usize = 64;
 pub struct Controller {
     cfg: Config,
     caps: Capabilities,
+    /// Features the user paused (`belay pause`).
+    paused: std::collections::BTreeSet<Feature>,
+    /// The reply reaches the agent. False while handling an event whose reply comes
+    /// too late (D9): actions are then recorded as not applied.
+    deliver: bool,
     session: SessionModel,
     loops: LoopDetector,
     broker: Broker,
@@ -389,9 +393,11 @@ struct PendingShape {
 }
 
 impl Controller {
-    pub fn new(cfg: Config, caps: Capabilities, mode: Mode) -> Self {
+    pub fn new(cfg: Config, caps: Capabilities) -> Self {
         Self {
-            session: SessionModel::new(mode, cfg.tighten_after),
+            session: SessionModel::new(cfg.tighten_after),
+            paused: std::collections::BTreeSet::new(),
+            deliver: true,
             loops: LoopDetector::new(cfg.loop_threshold),
             cfg,
             caps,
@@ -585,7 +591,7 @@ impl Controller {
             id: self.identity.id.clone(),
             name,
             agent,
-            mode: format!("{:?}", self.session.mode).to_lowercase(),
+            mode: self.paused_label(),
             started_ms,
             repo,
             top,
@@ -661,11 +667,21 @@ impl Controller {
         self.learning.add_known(fixes);
     }
 
-    /// Whether the learning setting lets this say something now.
-    fn learn_applies(&self) -> bool {
-        self.session.mode == Mode::Optimize
-            && self.caps.inject_context
-            && self.cfg.learn == FleetSetting::On
+    /// Whether context added now reaches the agent.
+    fn says(&self) -> bool {
+        self.deliver && self.caps.inject_context
+    }
+
+    /// What the card shows of the kill switch: empty unless something is paused.
+    fn paused_label(&self) -> String {
+        if self.paused.is_empty() {
+            String::new()
+        } else if self.paused.len() == Feature::ALL.len() {
+            "paused".into()
+        } else {
+            let names: Vec<&str> = self.paused.iter().map(|f| f.name()).collect();
+            format!("paused: {}", names.join(", "))
+        }
     }
 
     /// The fleet role's write scope (F5c), from the hub.
@@ -696,27 +712,15 @@ impl Controller {
         self.active_ms
     }
 
-    /// Handle an event whose reply would reach the agent too late (D9): as in look mode,
-    /// so the ledger records no action as applied, and with no response.
-    pub fn handle_unanswered(&mut self, event: Event, now_ms: u64) -> Decision {
-        let mode = std::mem::replace(&mut self.session.mode, Mode::Look);
-        // The ledger shows the session's real mode, not the one used to hold back actions.
-        let event = match event {
-            Event::SessionStarted {
-                agent,
-                cwd,
-                transcript_path,
-                ..
-            } => Event::SessionStarted {
-                agent,
-                cwd,
-                transcript_path,
-                mode: Some(mode),
-            },
-            e => e,
-        };
+    /// Handle an event. With `deliver` false the reply would reach the agent too late
+    /// (D9): the ledger records no action as applied, and there is no response.
+    pub fn handle_with(&mut self, event: Event, now_ms: u64, deliver: bool) -> Decision {
+        if deliver {
+            return self.handle(event, now_ms);
+        }
+        self.deliver = false;
         let mut d = self.handle(event, now_ms);
-        self.session.mode = mode;
+        self.deliver = true;
         d.response = Response::default();
         d
     }
@@ -792,10 +796,6 @@ impl Controller {
         Ok(d)
     }
 
-    pub fn mode(&self) -> Mode {
-        self.session.mode
-    }
-
     pub fn session(&self) -> &SessionModel {
         &self.session
     }
@@ -846,16 +846,6 @@ impl Controller {
     /// The repo's `.belay.toml`: extra test paths and protected paths for the guard.
     pub fn set_policy(&mut self, policy: crate::policy::Policy) {
         self.policy = policy;
-    }
-
-    pub fn set_mode(&mut self, mode: Mode, now_ms: u64) -> Decision {
-        let mut d = Decision::default();
-        let from = self.session.mode;
-        if from != mode {
-            self.session.mode = mode;
-            self.push(&mut d, now_ms, vec![], Body::ModeChanged { from, to: mode });
-        }
-        d
     }
 
     pub fn handle(&mut self, event: Event, now_ms: u64) -> Decision {
@@ -955,7 +945,7 @@ impl Controller {
                     agent,
                     cwd,
                     transcript_path,
-                    mode: mode.or(Some(self.session.mode)),
+                    mode,
                 };
                 let ev = self.push(&mut d, now_ms, vec![], Body::Event { event });
                 let overrides = self.cfg.overrides();
@@ -963,13 +953,13 @@ impl Controller {
                     self.push(&mut d, now_ms, vec![ev], Body::Config { overrides });
                 }
                 // The project's notes, kept by the user (F2, L5).
-                if !self.notes.is_empty() && self.cfg.learn != FleetSetting::Off {
+                if !self.notes.is_empty() && self.on(Feature::Memory) {
                     let lines: Vec<String> = self.notes.iter().map(|n| format!("- {n}")).collect();
                     let text = format!(
                         "belay: notes for this project, kept by the user:\n{}",
                         lines.join("\n")
                     );
-                    let applied = self.learn_applies();
+                    let applied = self.says();
                     let action = ActionKind::Notes {
                         count: self.notes.len(),
                         text: text.clone(),
@@ -991,7 +981,7 @@ impl Controller {
                 // The commons (C1): who else is here, and how to say what this does.
                 let (others, here) = self.peers;
                 let findings = self.findings_here;
-                if (others > 0 || findings > 0) && self.cfg.commons != FleetSetting::Off {
+                if (others > 0 || findings > 0) && self.on(Feature::Commons) {
                     let mut parts = Vec::new();
                     if others > 0 {
                         parts.push(format!(
@@ -1006,9 +996,7 @@ impl Controller {
                         ));
                     }
                     let text = format!("belay: {}", parts.join(" "));
-                    let applied = self.session.mode == Mode::Optimize
-                        && self.caps.inject_context
-                        && self.cfg.commons == FleetSetting::On;
+                    let applied = self.says();
                     let reason = format!(
                         "{others} other live belay session(s) on this machine; {findings} finding(s) for this repo."
                     );
@@ -1033,11 +1021,9 @@ impl Controller {
                 }
                 // C4: what the last session in this repo left.
                 if let Some(h) = self.handoff.take() {
-                    if self.cfg.commons != FleetSetting::Off && !h.is_empty() {
+                    if self.on(Feature::Commons) && !h.is_empty() {
                         let text = crate::commons::handoff_text(&h, now_ms);
-                        let applied = self.session.mode == Mode::Optimize
-                            && self.caps.inject_context
-                            && self.cfg.commons == FleetSetting::On;
+                        let applied = self.says();
                         let reason = format!("{} ended last in this repo and left a card.", h.from);
                         let action = ActionKind::Handoff {
                             from: h.from.clone(),
@@ -1204,8 +1190,8 @@ impl Controller {
         d
     }
 
-    /// Record pending fleet notices as actions, and tell the agent in optimize mode when
-    /// `fleet = on`. Each action is caused by the peer's event and by this hook's event.
+    /// Tell the agent pending fleet notices its features let through, and record each as
+    /// an action caused by the peer's event and by this hook's event.
     fn deliver_fleet(&mut self, d: &mut Decision, now: u64) {
         let groups = self.fleet.take();
         if groups.is_empty() {
@@ -1217,22 +1203,24 @@ impl Controller {
             .find(|e| matches!(e.body, Body::Event { .. }))
             .map(|e| e.seq);
         let supported = self.caps.inject_context;
-        let optimize = self.session.mode == Mode::Optimize && supported;
-        let notices_on = optimize && self.cfg.fleet == FleetSetting::On;
+        let applied = self.says();
         // Each notice is its own action; a group reaches the agent as one message.
         for group in groups {
-            let text = crate::fleet::message(&group);
-            // A fleet message is the fleet's own traffic: `fleet = look` holds back only
-            // the awareness notices (F1), not what sessions send each other (F4).
-            // C2: the user's own commons messages go in optimize mode; other sessions'
-            // only with `commons = on` (owner, 2026-10-22).
-            let applied = match group[0].kind {
-                crate::fleet::NoticeKind::Message => optimize,
+            // A fleet message is the fleet's own traffic: `awareness` covers only the
+            // notices about peers' activity (F1), not what sessions send each other (F4).
+            // C2: the user's own commons messages always go; other sessions' only with
+            // `commons = on` (owner, 2026-10-22).
+            let wanted = match group[0].kind {
+                crate::fleet::NoticeKind::Message => true,
                 crate::fleet::NoticeKind::Commons => {
-                    optimize && (group[0].peer == "user" || self.cfg.commons == FleetSetting::On)
+                    group[0].peer == "user" || self.on(Feature::Commons)
                 }
-                _ => notices_on,
+                _ => self.on(Feature::Awareness),
             };
+            if !wanted {
+                continue;
+            }
+            let text = crate::fleet::message(&group);
             // A question the agent sees makes its next plain reply an answer (C2).
             if applied
                 && group[0].kind == crate::fleet::NoticeKind::Commons
@@ -1461,9 +1449,7 @@ impl Controller {
             });
         }
         // Shared learning (F2): fixes learned here, and fixes others learned.
-        if matches!(kind, OutputKind::Test | OutputKind::Build)
-            && self.cfg.learn != FleetSetting::Off
-        {
+        if matches!(kind, OutputKind::Test | OutputKind::Build) && self.on(Feature::Memory) {
             let passed = self.run_failed == Some(false) && complete || summary_pass;
             for f in self.learning.on_run(&key, &failures, passed) {
                 self.push(
@@ -1482,7 +1468,7 @@ impl Controller {
             }
             if let Some((failure, fix)) = self.learning.recall(&failures) {
                 let text = self.learning.recall_text(&fix, now);
-                let applied = self.learn_applies();
+                let applied = self.says();
                 let reason = format!(
                     "Session {} fixed `{}` before.",
                     fix.session,
@@ -1570,6 +1556,9 @@ impl Controller {
         }
 
         // Shaping (computed by `prepare`, possibly outside the daemon's lock).
+        if !self.on(Feature::Shape) {
+            return None;
+        }
         let level = p.level;
         let s = p.shaped?;
         let text = format!(
@@ -1791,7 +1780,8 @@ impl Controller {
         let ev = self.push(d, now, vec![], Body::Event { event });
         // Rewriting every expected snapshot makes a failing suite pass by definition: say
         // so, so the agent (and the ledger) checks what changed (E5). It never blocks.
-        if let Some(form) = crate::perception::snapshot_update(&command) {
+        let guard_on = self.on(Feature::Guard);
+        if let Some(form) = crate::perception::snapshot_update(&command).filter(|_| guard_on) {
             let message = format!(
                 "belay: `{form}` rewrites expected snapshots or golden files. Check that only the intended ones change."
             );
@@ -1803,14 +1793,16 @@ impl Controller {
                 d.response.add_context.push(message);
             }
         }
-        let bypass = if self.in_fleet {
+        let bypass = if !guard_on {
+            None
+        } else if self.in_fleet {
             crate::fleet::fleet_bypass(&command)
         } else {
             None
         };
         // A shell command that writes where the fleet role may not (G4).
         let bypass = bypass.or_else(|| {
-            let rules = self.fleet_rules.as_ref()?;
+            let rules = self.fleet_rules.as_ref().filter(|_| guard_on)?;
             if !writes_files(&command) {
                 return None;
             }
@@ -1836,9 +1828,10 @@ impl Controller {
             "belay: only the user can allow a blocked edit. Ask the user to run `! belay allow`, then retry the edit.".to_string()
         } else if runs_belay(&command, "undo") {
             "belay: only the user rolls files back. Ask the user to run `belay undo` in their own terminal.".to_string()
-        } else if runs_belay(&command, "mode") {
-            // Look mode never blocks: switching to it would lift every guard at once.
-            "belay: only the user changes belay's mode. Ask the user if this session should run in another mode.".to_string()
+        } else if runs_belay(&command, "pause") || runs_belay(&command, "resume") {
+            // Pausing would lift every guard at once.
+            "belay: only the user pauses or resumes belay. Ask the user if belay should pause."
+                .to_string()
         } else if runs_belay_notes_review(&command) {
             "belay: only the user reviews project notes and learned fixes. Your `belay note` waits for the user's review.".to_string()
         } else {
@@ -1863,7 +1856,7 @@ impl Controller {
         rewrite_ok: bool,
     ) {
         let info = classify(&command);
-        if !self.cfg.wrap_tests
+        if !self.on(Feature::WrapTests)
             || info.kind != OutputKind::Test
             || info.show_target.is_some()
             || tool_use_id.is_empty()
@@ -1965,6 +1958,9 @@ impl Controller {
         let ev = self.push(d, now, vec![], Body::Event { event: stored });
         // A fleet role edits only within its scope, and not what another session in its
         // worktree claimed (F5c).
+        if !self.on(Feature::Guard) {
+            return;
+        }
         if let Some(why) = self.fleet_rules.as_ref().and_then(|r| r.refuse(&path)) {
             let message = format!(
                 "belay: in this fleet, this session may not edit {path}: {why}. Ask your lead (`belay task blocked`) if it must change."
@@ -2097,7 +2093,7 @@ impl Controller {
     }
 
     /// A shell command changed a test file (R1.4). The change already happened, so the
-    /// guard can only warn: the agent hears it in context, and look mode records it.
+    /// guard can only warn: the agent hears it in context.
     fn on_file_changed(&mut self, d: &mut Decision, event: Event, now: u64) {
         let Event::FileChanged {
             tool_use_id,
@@ -2152,6 +2148,9 @@ impl Controller {
                 }),
                 (Answer::Weakened { .. }, _)
             );
+        if !self.on(Feature::Guard) {
+            return;
+        }
         let old = if from_start_fine { &base } else { &old_text };
         let Some((j, reasons)) = self.judge_test_edit(d, now, ev, &path, old, &new_text) else {
             return;
@@ -2185,7 +2184,7 @@ impl Controller {
         let reason = "Auto mode denied a call that belay had wrapped in `belay run`; the agent may retry it unwrapped.";
         let action = ActionKind::Retry { tool_use_id };
         let supported = self.supports(&action);
-        let applied = self.session.mode == Mode::Optimize && supported;
+        let applied = self.deliver && supported;
         self.record(
             d,
             now,
@@ -2214,8 +2213,13 @@ impl Controller {
         }
     }
 
-    /// Downgrade the wanted guard decision to what the agent supports.
+    /// Downgrade the wanted guard decision to the `guard` setting and to what the agent
+    /// supports. Call only while the guard is on.
     fn effective_guard(&self, wanted: GuardDecision) -> GuardDecision {
+        let wanted = match self.guard_setting() {
+            GuardSetting::Warn => GuardDecision::Warn,
+            _ => wanted,
+        };
         match wanted {
             GuardDecision::Ask if !self.caps.ask => {
                 if self.caps.deny {
@@ -2278,7 +2282,7 @@ impl Controller {
         reason: String,
         supported: bool,
     ) -> bool {
-        let applied = self.session.mode == Mode::Optimize && supported;
+        let applied = self.deliver && supported;
         self.record(d, now, vec![cause], action, reason, applied, !supported);
         applied
     }
@@ -2319,6 +2323,9 @@ impl Controller {
         text: String,
         reason: String,
     ) {
+        if !self.on(Feature::Loops) {
+            return;
+        }
         let action = ActionKind::Steer {
             trigger,
             text: text.clone(),
@@ -2366,7 +2373,10 @@ impl Controller {
     }
 }
 
+mod features;
 mod snapshot;
+
+pub use features::{Feature, GuardSetting, ReportLevel, ALL_FEATURES};
 
 #[cfg(test)]
 mod tests;

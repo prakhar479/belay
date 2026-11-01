@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **No more modes.** Look mode is gone: belay always acts within what the agent supports, and records why. Each feature has its own config key: `guard = deny|warn|off` (default `deny`), `loops`, `shape`, `memory` (was `learn`), `awareness` (was `fleet`), all `on` by default; `commons` (`off` by default: other sessions' messages and handoffs do not reach the agent, yours always do); `wrap_tests` (now `false` by default); and `report = quiet|normal|verbose`. Session cards are kept whatever `commons` says.
+- **`belay pause [feature]` and `belay resume [feature]`:** the kill switch for a live session, recorded in the ledger and shown by `belay status`. The agent's own `belay pause` and `belay resume` are denied.
+- **Old config and flags still work, with a warning:** a `look` value reads as `on`; `learn` and `fleet` map to `memory` and `awareness`; `plugin_mode`, `--belay-mode`, and `belay fleet up --mode` are ignored. `belay mode` says how to pause instead. Fleet sessions run with `guard = deny` and `commons = on`.
+- **Ledger format 2.** A pause or resume is a `feature_changed` entry; `mode_changed` and the session's `mode` are no longer written. 0.1 ledgers still read, and their reports say "recorded in look mode (0.1)".
+
 - `belay launch <agent> [args…]` starts any agent belay has a connector for. `belay launch claude-code` is the same as `belay claude`, which stays.
 - **Memory:** `belay memory` lists, searches, adds, shows, approves, and drops memories in one store, each with its provenance. It reads notes, learned fixes, findings, and handoffs as memories; `belay memory migrate` copies them in once.
 - **`belay install` / `belay uninstall`:** the Claude Code plugin, `belay status` as the status line (with a backup, never over another status line without `--force`), and a printed launcher alias, each shown and confirmed first. `belay doctor` says whether the plugin is installed and the status line is belay's.

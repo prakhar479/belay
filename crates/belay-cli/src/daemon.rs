@@ -10,7 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use belay_core::{Controller, Mode, Response};
+use belay_core::{Controller, Response};
 
 use crate::connector::{self, Connector};
 use crate::ipc::{Reply, Request};
@@ -108,7 +108,6 @@ static LAST_REQUEST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 pub fn run(
     dir: PathBuf,
     parent_pid: Option<i32>,
-    mode: Mode,
     agent: &str,
     idle_exit_minutes: Option<u64>,
 ) -> Result<()> {
@@ -156,11 +155,14 @@ pub fn run(
     if idle_exit_minutes.is_some() {
         connector.set_socket(&sock);
     }
-    let mut controller = Controller::new(
-        crate::config::load().session(),
-        connector.capabilities(),
-        mode,
-    );
+    let mut cfg = crate::config::load().session();
+    // A fleet's sessions (F5a; fleets are frozen): the guard denies, and the sessions
+    // hear each other, whatever this machine's config says.
+    if std::env::var_os("BELAY_FLEET_SLOT").is_some() {
+        cfg.guard = belay_core::GuardSetting::Deny;
+        cfg.commons = true;
+    }
+    let mut controller = Controller::new(cfg, connector.capabilities());
     // A ledger from an earlier daemon of this session: go on from its ids.
     if let Ok(old) = crate::store::read_entries(&dir) {
         let id = |e: &belay_core::Entry, p: &str| -> u64 {
@@ -179,6 +181,7 @@ pub fn run(
             let output = old.iter().map(|e| id(e, "o-")).max().unwrap_or(0);
             controller.resume_ids(seq + 1, action + 1, output + 1);
         }
+        controller.restore_paused(&old);
     }
     // A fleet's hub starts its sessions with BELAY_FLEET_SLOT set (F5a).
     controller.set_in_fleet(std::env::var_os("BELAY_FLEET_SLOT").is_some());
@@ -210,11 +213,10 @@ pub fn run(
                 let seen = inbox_seen(&p);
                 v.push((p, seen, false));
             }
-            if crate::config::load().commons != belay_core::FleetSetting::Off {
-                let p = crate::commons::inbox_path(&dir);
-                let seen = inbox_seen(&p);
-                v.push((p, seen, true));
-            }
+            // The user's own messages reach the agent whatever `commons` says.
+            let p = crate::commons::inbox_path(&dir);
+            let seen = inbox_seen(&p);
+            v.push((p, seen, true));
             v
         },
         session_id: dir
@@ -225,10 +227,8 @@ pub fn run(
         fixes_seen: None,
         dir: dir.clone(),
     }));
-    if crate::config::load().commons != belay_core::FleetSetting::Off {
-        let _ = CARD_DIR.set(dir.clone());
-    }
-    eprintln!("belayd: listening on {} (mode {mode:?})", sock.display());
+    let _ = CARD_DIR.set(dir.clone());
+    eprintln!("belayd: listening on {}", sock.display());
 
     if let Some(pid) = parent_pid {
         let sock = sock.clone();
@@ -236,7 +236,7 @@ pub fn run(
         thread::spawn(move || watch_parent(pid, &sock, &state));
     }
     LAST_REQUEST_MS.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
-    if crate::config::load().fleet != belay_core::FleetSetting::Off {
+    if crate::config::load().awareness {
         let state = Arc::clone(&state);
         thread::spawn(move || watch_fleet(dir, &state));
     }
@@ -604,7 +604,7 @@ fn send_commons(
         let cfg = st.controller.config();
         (
             st.controller.card(now),
-            cfg.commons == belay_core::FleetSetting::On,
+            cfg.commons,
             cfg.idle_gap_minutes * 60_000,
             st.notify,
         )
@@ -890,10 +890,8 @@ fn decide_hook(
             connector.set_policy(&policy);
             // One git call for the workspace; the project (the main checkout) and the
             // root (this worktree) come from it, not from three more (rule 7).
-            let cfg = controller.config();
-            let wants = cfg.commons != belay_core::FleetSetting::Off
-                || cfg.learn != belay_core::FleetSetting::Off;
-            let ws = wants.then(|| crate::fleet::workspace(Path::new(cwd)));
+            // The card needs it whatever the features say.
+            let ws = Some(crate::fleet::workspace(Path::new(cwd)));
             let project = ws
                 .as_ref()
                 .map(
@@ -907,10 +905,7 @@ fn decide_hook(
                 )
                 .unwrap_or_default();
             // The commons (C1): who this session is, and who else is here.
-            if let Some(ws) = ws
-                .as_ref()
-                .filter(|_| controller.config().commons != belay_core::FleetSetting::Off)
-            {
+            if let Some(ws) = ws.as_ref() {
                 let cards = crate::commons::read_cards(&crate::paths::sessions_dir());
                 let repo = project.clone();
                 // The card's repo and files need the workspace now, also with
@@ -943,10 +938,7 @@ fn decide_hook(
                 });
             }
             // Shared learning (F2): other sessions' fixes and this project's notes.
-            if let Some(ws) = ws
-                .as_ref()
-                .filter(|_| controller.config().learn != belay_core::FleetSetting::Off)
-            {
+            if let Some(ws) = ws.as_ref().filter(|_| controller.config().memory) {
                 controller.set_learning(
                     &project,
                     &ws.top,
@@ -955,11 +947,7 @@ fn decide_hook(
                 );
             }
         }
-        decisions.push(if unanswered {
-            controller.handle_unanswered(ev, now)
-        } else {
-            controller.handle(ev, now)
-        });
+        decisions.push(controller.handle_with(ev, now, !unanswered));
         if let Some(ws) = workspace_now.take() {
             decisions.push(controller.handle(ws, now));
         }
@@ -1064,7 +1052,7 @@ fn serve(
 
     // Control requests must show the session token (R0.8).
     let given = match &req {
-        Request::SetMode { token, .. }
+        Request::Pause { token, .. }
         | Request::Allow { token, .. }
         | Request::Undone { token, .. }
         | Request::Shutdown { token } => Some(token),
@@ -1209,9 +1197,7 @@ fn serve(
                     crate::learnstore::save_fixes(&decisions, &st.session_id, project);
                     // Read from the start once: what was added since the session's
                     // start (a few lines) is checked against what it loaded.
-                    if st.fixes_seen.is_none()
-                        && st.controller.config().learn != belay_core::FleetSetting::Off
-                    {
+                    if st.fixes_seen.is_none() && st.controller.config().memory {
                         // From where the start's full read ended: only later fixes.
                         st.fixes_seen = Some(crate::learnstore::fixes_len());
                     }
@@ -1226,12 +1212,44 @@ fn serve(
                     message: None,
                 }
             }
-            Request::SetMode { mode, .. } => {
-                let d = st.controller.set_mode(mode, now_ms());
-                st.store.persist(&d)?;
+            Request::Pause {
+                feature, resume, ..
+            } => {
+                let feature = match feature.as_deref() {
+                    None => Ok(None),
+                    Some(f) => belay_core::Feature::parse(f).map(Some).ok_or_else(|| {
+                        let names: Vec<&str> =
+                            belay_core::Feature::ALL.iter().map(|f| f.name()).collect();
+                        format!("No feature `{f}`. Features: {}.", names.join(", "))
+                    }),
+                };
+                let done = feature.and_then(|f| {
+                    let r = if resume {
+                        st.controller.resume(f, "user", now_ms())
+                    } else {
+                        st.controller.pause(f, "user", now_ms())
+                    };
+                    r.map(|d| (f, d))
+                });
+                let message = match done {
+                    Ok((f, d)) => {
+                        st.store.persist(&d)?;
+                        let what = f.map_or("belay".to_string(), |f| f.name().to_string());
+                        let paused: Vec<&str> =
+                            st.controller.paused().iter().map(|f| f.name()).collect();
+                        match (resume, paused.is_empty()) {
+                            (false, _) => format!("Paused {what}. `belay resume` undoes it."),
+                            (true, true) => format!("Resumed {what}. Nothing is paused."),
+                            (true, false) => {
+                                format!("Resumed {what}. Still paused: {}.", paused.join(", "))
+                            }
+                        }
+                    }
+                    Err(m) => m,
+                };
                 Reply {
                     output: None,
-                    message: Some(format!("mode: {mode:?}").to_lowercase()),
+                    message: Some(message),
                 }
             }
             Request::Allow { action, .. } => {
@@ -1380,11 +1398,11 @@ mod tests {
     fn decide(deadline: Option<u64>, times: &[u64]) -> (Vec<belay_core::Decision>, Response) {
         // Not the machine's live sessions, fixes or notes: only the deadline is tested.
         let cfg = Config {
-            commons: belay_core::FleetSetting::Off,
-            learn: belay_core::FleetSetting::Off,
+            commons: false,
+            memory: false,
             ..Config::default()
         };
-        let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE, Mode::Optimize);
+        let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE);
         let mut conn = ClaudeCode::default();
         let mut t = times.iter().copied();
         let mut clock = move || t.next().unwrap_or(u64::MAX / 2);

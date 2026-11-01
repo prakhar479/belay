@@ -34,7 +34,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use belay_core::Mode;
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -52,13 +51,14 @@ struct Cli {
 enum Cmd {
     /// Start Claude Code under belay. Other arguments, `--help` included, go to `claude`.
     ///
-    /// belay's own flags may come anywhere: `--belay-mode look|optimize`; to join a fleet
-    /// from this terminal, `--belay-fleet [ID]` with `--belay-role R` and `--belay-name N`.
+    /// belay's own flags may come anywhere: to join a fleet from this terminal,
+    /// `--belay-fleet [ID]` with `--belay-role R` and `--belay-name N`.
     /// The same as `belay launch claude-code`. `belay help claude` shows this text.
     #[command(disable_help_flag = true)]
     Claude {
-        #[arg(long = "belay-mode", value_enum, default_value = "look")]
-        mode: ModeArg,
+        /// 0.1's mode: accepted and ignored, with a warning.
+        #[arg(long = "belay-mode", hide = true)]
+        mode: Option<String>,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
@@ -81,13 +81,27 @@ enum Cmd {
     /// Install stable hooks for an agent once (not built yet).
     #[command(hide = true)]
     Init { agent: String },
-    /// Change the mode of a live session.
-    Mode {
-        #[arg(value_enum)]
-        mode: ModeArg,
+    /// Pause belay in a live session: one feature, or all of them. Run it yourself;
+    /// the agent may not. Features: guard, loops, shape, wrap_tests, memory, awareness,
+    /// commons.
+    Pause {
+        feature: Option<String>,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
+    },
+    /// Resume what `belay pause` paused: one feature, or all of them.
+    Resume {
+        feature: Option<String>,
+        /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
+        #[arg(long, allow_hyphen_values = true)]
+        session: Option<String>,
+    },
+    /// 0.1: modes are gone. Says how to pause instead.
+    #[command(hide = true)]
+    Mode {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
     /// Allow one edit the test guard blocked (the latest, or action a-N). Run it yourself,
     /// for example with `! belay allow` in Claude Code; the agent may not.
@@ -347,7 +361,7 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
-    /// Run look mode over an existing Claude Code transcript, or over all of them.
+    /// What belay would have done in an existing Claude Code transcript, or in all of them.
     Retro {
         #[arg(required_unless_present = "all")]
         transcript: Option<PathBuf>,
@@ -405,8 +419,6 @@ enum Cmd {
         session_dir: PathBuf,
         #[arg(long)]
         parent_pid: Option<i32>,
-        #[arg(long, value_enum, default_value = "look")]
-        mode: ModeArg,
         #[arg(long, default_value = "claude-code")]
         agent: String,
         #[arg(long)]
@@ -423,9 +435,9 @@ enum FleetCmd {
         /// solo, peers, lead, pipeline, review, best-of, specialists, pool, tree.
         #[arg(long)]
         preset: Option<String>,
-        /// The belay mode of the fleet's sessions.
-        #[arg(long, value_enum, default_value = "look")]
-        mode: ModeArg,
+        /// 0.1's mode: accepted and ignored, with a warning.
+        #[arg(long, hide = true)]
+        mode: Option<String>,
     },
     /// A fleet's sessions: state, pid, turns, restarts, worktree.
     Status {
@@ -545,24 +557,29 @@ enum AuditFormat {
     Json,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
-enum ModeArg {
-    Look,
-    Optimize,
-}
-
-impl From<ModeArg> for Mode {
-    fn from(m: ModeArg) -> Self {
-        match m {
-            ModeArg::Look => Mode::Look,
-            ModeArg::Optimize => Mode::Optimize,
-        }
-    }
+/// `belay pause` and `belay resume`: the user's kill switch, sent to the live daemon.
+fn pause(feature: Option<String>, session: Option<String>, resume: bool) -> Result<i32> {
+    let dir = sessions::resolve(session.as_deref(), true)?;
+    let req = ipc::Request::Pause {
+        feature,
+        resume,
+        token: paths::read_token(&dir),
+    };
+    let reply = ipc::send(&paths::socket_path(&dir), &req, Duration::from_secs(1))
+        .with_context(|| format!("session {} is not live", dir.display()))?;
+    let said = reply.message.unwrap_or_default();
+    println!("{said}");
+    Ok(i32::from(
+        !(said.starts_with("Paused") || said.starts_with("Resumed")),
+    ))
 }
 
 fn fleet_cmd(c: FleetCmd) -> Result<i32> {
     let text = match c {
         FleetCmd::Up { file, preset, mode } => {
+            if mode.is_some() {
+                eprintln!("belay: --mode is ignored: belay has no modes now. Fleet sessions run with guard = deny and commons = on.");
+            }
             let preset = match preset {
                 Some(p) => Some(
                     serde_json::from_value(serde_json::Value::String(p.clone()))
@@ -570,7 +587,7 @@ fn fleet_cmd(c: FleetCmd) -> Result<i32> {
                 ),
                 None => None,
             };
-            let id = hub::up(file.as_deref(), preset, mode.into())?;
+            let id = hub::up(file.as_deref(), preset)?;
             format!(
                 "fleet {id} is up.\n{}",
                 hub::status(Some(&id)).unwrap_or_default()
@@ -761,7 +778,12 @@ fn short(s: &str) -> String {
 
 fn run(cli: Cli) -> Result<i32> {
     match cli.cmd {
-        Cmd::Claude { mode, args } => launcher::run_claude(mode.into(), args),
+        Cmd::Claude { mode, args } => {
+            if mode.is_some() {
+                launcher::warn_mode_flag();
+            }
+            launcher::run_claude(args)
+        }
         Cmd::Launch { agent, args } => launcher::launch(&agent, args),
         Cmd::Codex { .. } => bail!("`belay codex` is not built yet"),
         Cmd::Init { agent } => bail!("`belay init {agent}` is not built yet"),
@@ -769,21 +791,12 @@ fn run(cli: Cli) -> Result<i32> {
             let dir = sessions::resolve(session.as_deref(), false)?;
             undo::run(&dir, id.as_deref(), yes)
         }
-        Cmd::Mode { mode, session } => {
-            let dir = sessions::resolve(session.as_deref(), true)?;
-            let req = ipc::Request::SetMode {
-                mode: mode.into(),
-                token: paths::read_token(&dir),
-            };
-            let reply = ipc::send(&paths::socket_path(&dir), &req, Duration::from_secs(1))?;
-            let said = reply.message.unwrap_or_default();
-            println!("{said}");
-            Ok(if said.starts_with("belay: refused") {
-                1
-            } else {
-                0
-            })
+        Cmd::Mode { .. } => {
+            println!("belay has no modes now: it acts within what the agent supports. To stop it, run `belay pause` (or `belay pause guard` for one feature); `belay resume` undoes it.");
+            Ok(1)
         }
+        Cmd::Pause { feature, session } => pause(feature, session, false),
+        Cmd::Resume { feature, session } => pause(feature, session, true),
         Cmd::Allow { id, session } => {
             let dir = sessions::resolve(session.as_deref(), true)?;
             let req = ipc::Request::Allow {
@@ -1312,17 +1325,10 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Daemon {
             session_dir,
             parent_pid,
-            mode,
             agent,
             idle_exit_minutes,
         } => {
-            daemon::run(
-                session_dir,
-                parent_pid,
-                mode.into(),
-                &agent,
-                idle_exit_minutes,
-            )?;
+            daemon::run(session_dir, parent_pid, &agent, idle_exit_minutes)?;
             Ok(0)
         }
         Cmd::Hook { .. } | Cmd::Run { .. } => unreachable!("handled in main"),

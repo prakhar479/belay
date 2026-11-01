@@ -1,4 +1,5 @@
-//! Retro look: run the look-mode pipeline over an existing agent transcript.
+//! Retro: what belay would have done in an existing agent transcript. Nothing reaches
+//! the agent: every event is handled as a reply no one gets.
 //! The user gets a report without changing how they work.
 //!
 //! The agent's connector reads the transcript into events (`TranscriptSource`); this
@@ -8,7 +9,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
-use belay_core::{Controller, Entry, Event, Mode};
+use belay_core::{Controller, Entry, Event};
 
 use crate::connector::{self, Connector, TranscriptSource};
 use crate::report;
@@ -30,7 +31,9 @@ pub fn run(transcript: &Path, full: bool) -> Result<String> {
     Ok(report::render(&label, &entries, false, full))
 }
 
-/// Ledger entries look mode would have written for this transcript.
+/// Ledger entries for what belay would have done in this transcript. The agent's own
+/// capabilities say what belay could do; no reply is delivered, so every action is
+/// recorded as not applied (and an unsupported one as unsupported, as live).
 pub fn analyze(transcript: &Path) -> Result<Vec<Entry>> {
     let c = connector::for_agent(AGENT)?;
     analyze_with(c.as_ref(), source(c.as_ref())?.as_ref(), transcript)
@@ -42,14 +45,10 @@ fn analyze_with(
     transcript: &Path,
 ) -> Result<Vec<Entry>> {
     let steps = src.read(transcript)?;
-    let mut ctl = Controller::new(
-        crate::config::load().session(),
-        c.capabilities(),
-        Mode::Look,
-    );
+    let mut ctl = Controller::new(crate::config::load().session(), c.capabilities());
     let mut entries = Vec::new();
     entries.extend(
-        ctl.handle(
+        ctl.handle_with(
             Event::SessionStarted {
                 agent: format!("{} (retro)", c.agent()),
                 cwd: String::new(),
@@ -57,6 +56,7 @@ fn analyze_with(
                 mode: None,
             },
             0,
+            false,
         )
         .entries,
     );
@@ -85,7 +85,7 @@ fn analyze_with(
             now = now.max(t);
         }
         for ev in step.events {
-            entries.extend(ctl.handle(ev, now).entries);
+            entries.extend(ctl.handle_with(ev, now, false).entries);
         }
     }
     Ok(entries)
@@ -283,8 +283,16 @@ mod tests {
             "{out}"
         );
         assert!(with_tmp.contains("Retro over 4 transcripts"), "{with_tmp}");
+        // Wrapping is the user's choice (`wrap_tests`, off by default).
+        let wrapped = if crate::config::load().wrap_tests {
+            "12 (100%)"
+        } else {
+            "0 (0%)"
+        };
         assert!(
-            out.contains("Test runs: 12 · wrapped (or would be, in auto mode): 12 (100%)"),
+            out.contains(&format!(
+                "Test runs: 12 · wrapped (or would be, in auto mode): {wrapped}"
+            )),
             "{out}"
         );
         assert!(out.contains("3 loops (41 s in loops)"), "{out}");
@@ -351,7 +359,7 @@ mod tests {
         std::fs::write(&t, out).unwrap();
         let report = run(&t, false).unwrap();
         assert!(
-            report.lines().next().unwrap().contains(" 14 s "),
+            report.lines().next().unwrap().contains(" · 14 s"),
             "{report}"
         );
         let _ = std::fs::remove_dir_all(&d);
@@ -369,8 +377,15 @@ mod tests {
         assert!(out.contains("would steer"), "{out}");
         // R2.2: coverage lines.
         assert!(out.contains("Bash output by kind: test 100%"), "{out}");
+        let wrapped = if crate::config::load().wrap_tests {
+            "4 (100%)"
+        } else {
+            "0 (0%)"
+        };
         assert!(
-            out.contains("Test runs: 4 · wrapped (or would be, in auto mode): 4 (100%)"),
+            out.contains(&format!(
+                "Test runs: 4 · wrapped (or would be, in auto mode): {wrapped}"
+            )),
             "{out}"
         );
         assert!(out.contains("Edits: 3 through Edit/Write"), "{out}");
