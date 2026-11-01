@@ -2,22 +2,24 @@
 
 belay is a local supervisor for command-line coding agents.
 Design: `docs/belay-reference.md`. Work items: `docs/dev/TASKS.md` (kept locally; not in the public repo).
-Current scope: 0.2 (plan: `docs/dev/plan-0.2-2026-10-31.md`, tasks U0–U7). belay always acts within each agent's capabilities; there is no look mode. What belay does reaches the user through reporting. Claude Code first, with a harness-neutral core. Fleets (docs/fleet-*.md) are frozen: kept working, no new features. Codex waits for S10.
+Current scope: 0.2 and 0.3 (plan: `docs/dev/plan-0.2-2026-10-31.md`, tasks U0–U10). belay always acts within each agent's capabilities; there is no look mode. What belay does reaches the user through reporting. Claude Code first, with a harness-neutral core. Fleets (docs/fleet-*.md) are frozen: kept working, no new features. Codex waits for S10.
 
 ## Rules
 
 Do not break these. If a task needs you to, stop and ask.
 
-1. **Fail open.** `belay hook` always exits 0. On any error or timeout it prints nothing.
+1. **Fail open.** `belay hook` always exits 0. On any error or timeout it prints nothing. The one exception is a sandbox (`belay sandbox`): it **fails closed**. If it cannot be built as specified, nothing runs.
 2. **belay-core has no I/O.** No files, sockets, env vars, clocks, threads, or model calls. Time comes in as `now_ms`.
 3. **Never edit the past.** Act only on content before the agent sees it.
 4. **Every action is recorded** with a one-sentence reason and its causes.
-5. **Reporting never reaches the model.** Notices go to the user through user-only channels (status line, `systemMessage`, `belay watch`, the exit summary). Only actions reach the agent. (Replaces "look mode never returns a hook response"; look mode is removed in U2.1. Until then the old rule holds for code that still has `Mode::Look`.)
+5. **Reporting never reaches the model.** Notices go to the user through user-only channels (status line, `systemMessage`, `belay watch`, the exit summary). Only actions reach the agent.
 6. **Deterministic.** Use `sha256_hex` for hashes. Do not let `HashMap` order reach output or the ledger.
 7. **Shim stays thin.** It only forwards. Target p95 < 20 ms (measured: ~5 ms).
 8. **Capability-honest.** Plan only with `Capabilities`. Downgrade; do not fail.
 9. **No new dependency** in belay-core without a reason in the commit message.
 10. **Parsers need fixtures.** Every parser change adds a file in `fixtures/` and a test.
+11. **Network only on request.** belay makes a network call only for an explicit `belay skill` command. It uses `git` and `curl` subprocesses. The hook path, the daemon, and the core never touch the network.
+12. **Users approve what persists or escapes.** An approval that outlives the session, or that brings work out of a sandbox, is the user's: `allow`, `pause`, `undo`, `memory approve|drop`, `skill approve|remove`, `sandbox rm`. Each refuses outside the user's terminal, and PreToolUse denies the agent's run of it.
 
 ## Unverified facts
 
@@ -39,6 +41,11 @@ crates/belay-core/src/        pure logic, no I/O
   guard.rs                     test-weakening rules
   broker.rs                    question catalog, rule answers, Decider trait
   controller.rs                sense → judge → decide → act → record
+  controller/features.rs       per-feature settings (guard, loops, shape, memory, …), pause/resume
+  controller/notice.rs         notices for the user (rule 5), report levels
+  controller/memory.rs         recall at start, carry pack after compaction, handoffs
+  controller/snapshot.rs       per-turn snapshot and undo records
+  memory.rs                    memories: scopes, kinds, provenance, rank, consolidate, handoff_from
   fleet/awareness.rs           F1: what other sessions did that matters here
   fleet/spec.rs                fleet files: roles, channels, limits, presets
   fleet/model.rs, model/tasks.rs  fleet state machine: slots, tasks, checks, messages
@@ -56,10 +63,12 @@ crates/belay-cli/src/         binary `belay`: all I/O
   run.rs                       `belay run`: the wrapper around test commands (exit code kept)
   plugin.rs                    the Claude Code plugin's session start and mapping
   ipc.rs                       one JSON line each way
-  connector/claude_code.rs     hook JSON ↔ core events/responses, settings file
+  connector/mod.rs             Connector trait, TranscriptSource, contract tests (every agent passes them)
+  connector/claude_code.rs     hook JSON ↔ core events/responses, tool kinds, settings file
+  connector/claude_code/transcript.rs  Claude Code transcripts (for retro)
   store.rs                     JSONL ledger + blobs (SQLite later; keep the API)
   report.rs                    report, why, output lookup
-  retro.rs                     look mode over old transcripts (one, or --all)
+  retro.rs                     replay old transcripts without delivering (one, or --all)
   config.rs                    ~/.config/belay/config.toml → Config
   sessions.rs                  prune old sessions, remove stale sockets
   paths.rs                     session dirs, socket path, Claude projects dir
@@ -70,7 +79,13 @@ crates/belay-cli/src/         binary `belay`: all I/O
   findings.rs                  <home>/commons/findings.jsonl; `belay share/ask/findings`
   audit.rs                     `belay audit`: worktree snapshots, diffs
   doctor.rs, export.rs         `belay doctor`, `belay export`
-crates/belay-cli/tests/e2e.rs launcher → daemon → shim with a fake agent
+  memorystore.rs               <home>/memory: native memories + adapters over notes, fixes, findings, handoffs
+  mcp.rs                       `belay mcp`: stdio MCP server (memory, handoff, show, why)
+  install.rs                   `belay install/uninstall`: plugin, status line, alias
+  undo.rs                      per-turn snapshots under refs/belay/<session>/, `belay undo`
+  watch.rs                     `belay watch`: live notices for any harness
+plugin/                        Claude Code plugin: hooks, skill, slash commands, .mcp.json
+crates/belay-cli/tests/e2e.rs launcher → daemon → shim with a fake agent (mcp.rs: the MCP server over stdio)
 fixtures/                      outputs, hook payloads, transcripts
 docs/guide.md                  the usage guide (keep it in step with the CLI)
 site/                          the GitHub Pages site (.github/workflows/pages.yml)
