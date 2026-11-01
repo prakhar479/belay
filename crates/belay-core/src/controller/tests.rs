@@ -1535,6 +1535,8 @@ fn an_agent_may_not_review_project_notes_or_forget_fixes() {
         "belay notes approve n-3",
         "belay fixes forget --all",
         "belay findings drop f-1",
+        "belay memory approve m-1",
+        "belay memory drop m-2",
     ] {
         let mut c = ctl(Mode::Optimize);
         let d = c.handle(

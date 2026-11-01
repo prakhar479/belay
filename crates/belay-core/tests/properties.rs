@@ -223,3 +223,52 @@ fn shell_reader_never_panics() {
         let _ = belay_core::perception::classify::classify(&cmd);
     }
 }
+
+#[test]
+fn memory_rank_ignores_input_order() {
+    use belay_core::memory::{rank, Kind, Memory, Provenance, Query, Scope};
+    const WORDS: [&str; 8] = [
+        "pytest", "asyncio", "cargo", "loop", "fixture", "parser", "timeout", "deploy",
+    ];
+    for seed in 0..200u64 {
+        let mut rng = Rng::new(seed);
+        let n = 1 + rng.below(12);
+        let mut ms: Vec<Memory> = (0..n)
+            .map(|i| {
+                let text: Vec<&str> = (0..3).map(|_| *rng.pick(&WORDS)).collect();
+                let tags = vec![rng.pick(&WORDS).to_string()];
+                let files = vec![format!("src/{}.rs", rng.pick(&WORDS))];
+                let project = ["/a", "/b"][rng.below(2)];
+                let mut m = Memory::new(
+                    &format!("m-{i}"),
+                    Scope::Project,
+                    *rng.pick(&Kind::ALL),
+                    *rng.pick(&[Provenance::Agent, Provenance::User, Provenance::Observed]),
+                    Some(project),
+                    &text.join(" "),
+                    &tags,
+                    &files,
+                    rng.below(5) as u64 * 86_400_000,
+                );
+                if rng.below(4) == 0 {
+                    m.signature = Some("sig".into());
+                }
+                m
+            })
+            .collect();
+        let q = Query {
+            text: format!("{} {}", rng.pick(&WORDS), rng.pick(&WORDS)),
+            signature: Some("sig".into()),
+            project: Some("/a".into()),
+            now_ms: 10 * 86_400_000,
+            ..Query::default()
+        };
+        let first = rank(&ms, &q);
+        // Shuffle (Fisher–Yates) and rank again.
+        for i in (1..ms.len()).rev() {
+            let j = rng.below(i + 1);
+            ms.swap(i, j);
+        }
+        assert_eq!(rank(&ms, &q), first, "seed {seed}");
+    }
+}

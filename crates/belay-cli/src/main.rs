@@ -18,6 +18,7 @@ mod hub;
 mod ipc;
 mod launcher;
 mod learnstore;
+mod memorystore;
 mod paths;
 mod plugin;
 mod report;
@@ -265,6 +266,12 @@ enum Cmd {
         all: bool,
         #[arg(long)]
         json: bool,
+    },
+    /// Memories for this project and you: list, search, add, show; approve or drop
+    /// (yours to run); migrate copies notes, fixes, findings, and handoffs in once.
+    Memory {
+        #[command(subcommand)]
+        action: Option<MemoryCmd>,
     },
     /// Leave a handoff for the next session in this repo ("done: …; open: …; next: …"),
     /// from inside a session. With no text, show what the next session here would get.
@@ -557,6 +564,43 @@ fn fleet_cmd(c: FleetCmd) -> Result<i32> {
     };
     println!("{}", text.trim_end());
     Ok(0)
+}
+
+/// `belay memory` actions.
+#[derive(Subcommand)]
+enum MemoryCmd {
+    /// This project's memories and yours, newest first (the default).
+    List {
+        /// Every project's.
+        #[arg(long)]
+        all: bool,
+    },
+    /// The memories that best match some words.
+    Search { query: String },
+    /// Keep a memory. From an agent, it is the agent's until you approve it.
+    Add {
+        text: String,
+        /// fact, decision, gotcha, fix, handoff, or note (default).
+        #[arg(long)]
+        kind: Option<String>,
+        /// A tag (repeat for more).
+        #[arg(long)]
+        tag: Vec<String>,
+        /// A file it is about (repeat for more).
+        #[arg(long)]
+        file: Vec<String>,
+        /// project (default) or user (every project).
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Every field of one memory.
+    Show { id: String },
+    /// Retire a memory (yours to run).
+    Drop { id: String },
+    /// Vouch for an agent's memory (yours to run).
+    Approve { id: String },
+    /// Copy notes, fixes, findings, and handoffs into the memory store, once.
+    Migrate,
 }
 
 fn main() {
@@ -1158,6 +1202,25 @@ fn run(cli: Cli) -> Result<i32> {
                 None => findings::ask_as_user(&query, here, json)?,
             };
             print!("{said}");
+            Ok(0)
+        }
+        Cmd::Memory { action } => {
+            let said = match action.unwrap_or(MemoryCmd::List { all: false }) {
+                MemoryCmd::List { all } => memorystore::list(all)?,
+                MemoryCmd::Search { query } => memorystore::search(&query)?,
+                MemoryCmd::Add {
+                    text,
+                    kind,
+                    tag,
+                    file,
+                    scope,
+                } => memorystore::add(&text, kind.as_deref(), &tag, &file, scope.as_deref())?,
+                MemoryCmd::Show { id } => memorystore::show(&id)?,
+                MemoryCmd::Drop { id } => memorystore::drop(&id)?,
+                MemoryCmd::Approve { id } => memorystore::approve(&id)?,
+                MemoryCmd::Migrate => memorystore::migrate()?,
+            };
+            println!("{}", said.trim_end());
             Ok(0)
         }
         Cmd::Findings {

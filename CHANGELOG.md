@@ -3,6 +3,7 @@
 ## Unreleased
 
 - `belay launch <agent> [args…]` starts any agent belay has a connector for. `belay launch claude-code` is the same as `belay claude`, which stays.
+- **Memory:** `belay memory` lists, searches, adds, shows, approves, and drops memories in one store, each with its provenance. It reads notes, learned fixes, findings, and handoffs as memories; `belay memory migrate` copies them in once.
 
 ## 0.1.0
 

@@ -282,7 +282,7 @@ pub struct Note {
     pub ts_ms: u64,
 }
 
-fn load_notes() -> Vec<Note> {
+pub fn load_notes() -> Vec<Note> {
     read_lossy(&dir().join("notes.jsonl"))
         .map(|t| {
             t.lines()

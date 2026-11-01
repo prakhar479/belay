@@ -323,7 +323,8 @@ fn runs_belay(command: &str, verb: &str) -> bool {
     })
 }
 
-/// A simple command runs `belay notes approve|drop` or `belay fixes forget`: the user's
+/// A simple command runs `belay notes approve|drop`, `belay memory approve|drop`, or
+/// `belay fixes forget`: the user's
 /// review of what sessions share (F2, L4).
 fn runs_belay_notes_review(command: &str) -> bool {
     shell::parse(command).segments.iter().any(|seg| {
@@ -332,7 +333,8 @@ fn runs_belay_notes_review(command: &str) -> bool {
             && shell::program_name(&w[0]) == "belay"
             && (w[1] == "notes" && matches!(w[2].as_str(), "approve" | "drop")
                 || w[1] == "fixes" && w[2] == "forget"
-                || w[1] == "findings" && w[2] == "drop")
+                || w[1] == "findings" && w[2] == "drop"
+                || w[1] == "memory" && matches!(w[2].as_str(), "approve" | "drop"))
     })
 }
 

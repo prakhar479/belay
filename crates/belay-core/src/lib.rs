@@ -26,6 +26,7 @@ pub mod fleet;
 pub mod guard;
 pub mod learn;
 pub mod loops;
+pub mod memory;
 pub mod perception;
 pub mod policy;
 pub mod record;

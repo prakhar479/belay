@@ -3837,3 +3837,85 @@ fn launch_claude_code_is_belay_claude() {
         String::from_utf8_lossy(&bad.stderr)
     );
 }
+
+#[test]
+fn memory_add_search_approve_and_migrate() {
+    let dir = tmp("memory-cli");
+    let home = dir.join("home");
+    // `agent`: a shell inside a belay session; else the user at their terminal.
+    let run = |args: &[&str], agent: bool| {
+        let mut c = Command::new(bin());
+        c.args(args).current_dir(&dir).env("BELAY_HOME", &home);
+        if agent {
+            c.env("BELAY_SESSION_DIR", home.join("sessions/1000000002-2"));
+        } else {
+            c.env("BELAY_TEST_TERMINAL", "1");
+        }
+        let o = c.output().unwrap();
+        (o.status.code(), String::from_utf8(o.stdout).unwrap())
+    };
+    // Older stores: a note and a finding, both the user's.
+    assert_eq!(
+        run(&["note", "deploys go through make release"], false).0,
+        Some(0)
+    );
+    assert_eq!(
+        run(
+            &["share", "pytest needs asyncio_mode auto", "--tag", "pytest"],
+            false
+        )
+        .0,
+        Some(0)
+    );
+
+    let (code, said) = run(
+        &[
+            "memory",
+            "add",
+            "the parser cache lives in tmp",
+            "--kind",
+            "gotcha",
+        ],
+        true,
+    );
+    assert_eq!(code, Some(0));
+    assert!(said.contains("Kept m-1 as the agent's"), "{said}");
+    let (_, said) = run(
+        &["memory", "add", "I review on Fridays", "--scope", "user"],
+        false,
+    );
+    assert!(said.contains("Kept m-2."), "{said}");
+
+    let (_, found) = run(&["memory", "search", "parser cache"], false);
+    assert!(
+        found.contains("m-1 · gotcha · this project · by agent"),
+        "{found}"
+    );
+    let (_, found) = run(&["memory", "search", "pytest deploys"], false);
+    assert!(
+        found.contains("f-1 · note · this project · by user"),
+        "{found}"
+    );
+    assert!(found.contains("note-1 · note"), "{found}");
+
+    // Approving is the user's: refused from an agent's shell.
+    let (code, _) = run(&["memory", "approve", "m-1"], true);
+    assert_eq!(code, Some(1));
+    let (code, said) = run(&["memory", "approve", "m-1"], false);
+    assert_eq!((code, said.trim()), (Some(0), "m-1 is approved."));
+    let (_, shown) = run(&["memory", "show", "m-1"], false);
+    assert!(shown.contains("\"approved\": true"), "{shown}");
+    let (_, listed) = run(&["memory"], false);
+    assert!(
+        listed.contains("by agent (approved)") && listed.contains("m-2 · note · yours"),
+        "{listed}"
+    );
+
+    let (_, said) = run(&["memory", "migrate"], false);
+    assert!(said.contains("Copied 2 memories"), "{said}");
+    let (_, said) = run(&["memory", "migrate"], false);
+    assert!(said.contains("Nothing to migrate"), "{said}");
+    let (_, listed) = run(&["memory", "list"], false);
+    assert_eq!(listed.matches("f-1 ·").count(), 1, "{listed}");
+    let _ = fs::remove_dir_all(&dir);
+}
