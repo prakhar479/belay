@@ -2149,7 +2149,13 @@ fn limit_of(line: &str, slot: &str) -> Option<FleetEvent> {
     let text = v.get("result").and_then(|r| r.as_str()).unwrap_or("");
     let lower = text.to_lowercase();
     let is_error = v.get("is_error").and_then(|e| e.as_bool()).unwrap_or(false);
-    let named = lower.contains("usage limit") || lower.contains("session limit");
+    // "hit your 5-hour limit", "hit your weekly limit": the window's name varies.
+    let hit_your_limit = lower.split("hit your ").skip(1).any(|rest| {
+        rest.split_whitespace()
+            .take(2)
+            .any(|w| w.starts_with("limit"))
+    });
+    let named = lower.contains("usage limit") || lower.contains("session limit") || hit_your_limit;
     // Not an error: only a short line that says the limit was hit ("…usage limit
     // reached", "You've hit your session limit"), not an answer that mentions one.
     let reached = lower.contains("limit reached") || lower.contains("hit your");
@@ -3517,6 +3523,15 @@ mod tests {
         assert!(limit_of(short, "w-1").is_none());
         let reached = r#"{"type":"result","result":"You've hit your session limit · resets 4pm"}"#;
         assert!(limit_of(reached, "w-1").is_some());
+        // Claude Code 2.1.316 names the window (dogfood 0.2: three attempts each were
+        // lost to it as failures).
+        let five_hour = include_str!("../../../fixtures/fleet/result_five_hour_limit.json");
+        assert!(limit_of(five_hour.trim(), "w-1").is_some());
+        let weekly = r#"{"type":"result","result":"You've hit your weekly limit · resets Mon"}"#;
+        assert!(limit_of(weekly, "w-1").is_some());
+        let unrelated =
+            r#"{"type":"result","result":"You've hit your stride; the limit test passes."}"#;
+        assert!(limit_of(unrelated, "w-1").is_none());
     }
 
     #[test]
@@ -3673,7 +3688,7 @@ mod tests {
         let e = send_cli(&d, &HubRequest::Ping).unwrap_err().to_string();
         assert_eq!(e, "the fleet's hub is not running");
         // A socket nobody listens on any more (a hub that crashed).
-        drop(UnixListener::bind(socket_path(&d)).unwrap());
+        crate::ipc::dead_socket(&socket_path(&d));
         let e = send_cli(&d, &HubRequest::Ping).unwrap_err().to_string();
         assert_eq!(e, "the fleet's hub is not running");
         let _ = fs::remove_dir_all(&d);
