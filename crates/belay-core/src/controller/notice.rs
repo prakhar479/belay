@@ -106,7 +106,7 @@ pub fn notice_for(
             Act,
             if *compact {
                 format!(
-                    "after the compaction, gave the agent back its task and {} memor{}.",
+                    "gave the agent back its task and {} memor{}.",
                     ids.len(),
                     if ids.len() == 1 { "y" } else { "ies" }
                 )
@@ -288,10 +288,7 @@ mod tests {
             text: String::new(),
         };
         let (n, _) = notice_for("a-2", &carry, "", false);
-        assert_eq!(
-            n.text,
-            "after the compaction, gave the agent back its task and 1 memory."
-        );
+        assert_eq!(n.text, "gave the agent back its task and 1 memory.");
     }
 
     #[test]

@@ -97,6 +97,32 @@ def tool_results(transcript: list) -> dict:
     return out
 
 
+def resume_checks(work: Path, home: Path, first: Path, first_hooks: list, check) -> None:
+    """U8 [Verify] facts, from `--resume`: two more sessions after the first."""
+    conv = next((h["payload"].get("session_id") for h in first_hooks), None)
+
+    def run(name):
+        d = home / "sessions" / (work / f"{name}-session").read_text().strip()
+        hooks = jsonl(d / "hooks.jsonl")
+        ledger = [e["body"] for e in jsonl(d / "ledger.jsonl") if "body" in e]
+        return d, hooks, ledger
+
+    _, hooks, ledger = run("resumed")
+    ids = {h["payload"].get("session_id") for h in hooks}
+    # [Verify] `resume_keeps_session_id`: `--resume <id>` keeps the conversation's id.
+    check("`claude --resume <id>` keeps the session_id", ids == {conv}, ", ".join(map(str, ids)))
+    # [Verify] `resume_picker` / `resume_in_process`: its SessionStart says `resume`.
+    starts = [h["payload"].get("source") for h in hooks if h.get("event") == "SessionStart"]
+    check("A resumed session's SessionStart has source \"resume\"", "resume" in starts,
+          ", ".join(map(str, starts)))
+    check("belay continued the first session (a resumed entry)",
+          any(e.get("kind") == "resumed" and e.get("from_session") == first.name for e in ledger))
+    _, hooks, _ = run("forked")
+    ids = {h["payload"].get("session_id") for h in hooks}
+    check("`--fork-session` gives the resumed conversation a new session_id",
+          ids and conv not in ids, ", ".join(map(str, ids)))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--belay", default=str(ROOT / "target/debug/belay"))
@@ -104,6 +130,8 @@ def main() -> int:
     ap.add_argument("--record", action="store_true", help="write docs/conformance/<version>.md")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--keep", action="store_true", help="keep the work dir after a pass")
+    ap.add_argument("--resume", action="store_true",
+                    help="also check resuming (U8): two more short sessions (model calls)")
     ap.add_argument("--replay", metavar="WORK_DIR",
                     help="check a work dir kept by --keep instead of running a session")
     args = ap.parse_args()
@@ -131,8 +159,23 @@ def main() -> int:
             cwd=proj, env=env, capture_output=True, text=True, timeout=args.timeout,
         )
         stderr = run.stderr
+        if args.resume:
+            conv = next((h["payload"].get("session_id") for h in
+                         jsonl(sorted((home / "sessions").glob("*"))[-1] / "hooks.jsonl")), None)
+            for name, extra in (("resumed", []), ("forked", ["--fork-session"])):
+                subprocess.run(
+                    [args.belay, "claude", "-p", "Say ok.", "--resume", str(conv), *extra],
+                    cwd=proj, env=env, capture_output=True, text=True, timeout=args.timeout,
+                )
+                (work / f"{name}-session").write_text(
+                    sorted((home / "sessions").glob("*"))[-1].name + "\n")
+            (work / "first-session").write_text(
+                sorted((home / "sessions").glob("*"))[0].name + "\n")
 
     sessions = sorted((home / "sessions").glob("*"))
+    if (work / "first-session").exists():
+        # The checks below are about the first session; resume checks read the others.
+        sessions = [home / "sessions" / (work / "first-session").read_text().strip()]
     if not sessions:
         print(f"no belay session was recorded\n{stderr}", file=sys.stderr)
         return 2
@@ -202,6 +245,14 @@ def main() -> int:
           not any(notice_text in t for t in seen.values()))
     denied = payloads("PermissionDenied")
     check("Settings with a PermissionDenied hook load (the session ran)", ledger)
+    # [Verify] U8 `project_dir_name`: Claude Code names a project's transcript dir after
+    # its cwd, every character but letters and digits as `-` (used by `--continue`).
+    if transcript_path:
+        want = "".join(c if c.isascii() and c.isalnum() else "-" for c in str(proj.resolve()))
+        check("Transcripts live in the project dir belay derives from the cwd",
+              Path(transcript_path).parent.name == want, Path(transcript_path).parent.name)
+    if (work / "resumed-session").exists():
+        resume_checks(work, home, session, hooks, check)
 
     lines = [f"# Claude Code {version}", "",
              f"belay conformance (scripts/conformance.py), {len(hooks)} hook calls, "

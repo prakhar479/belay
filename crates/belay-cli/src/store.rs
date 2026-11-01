@@ -117,6 +117,76 @@ pub fn read_entries(dir: &Path) -> Result<Vec<Entry>> {
     Ok(out)
 }
 
+/// One run of a resumed conversation: its session directory and ledger.
+pub struct Run {
+    pub dir: PathBuf,
+    pub entries: Vec<Entry>,
+}
+
+/// The session this ledger continues (U8): a `resumed` entry before its first event.
+/// A `resumed` entry later on records a `/resume` inside a run: not a link.
+pub fn resumed_from(entries: &[Entry]) -> Option<(String, Option<String>)> {
+    entries
+        .iter()
+        .take_while(|e| !matches!(e.body, belay_core::Body::Event { .. }))
+        .find_map(|e| match &e.body {
+            belay_core::Body::Resumed {
+                from_session,
+                conversation,
+                ..
+            } => Some((from_session.clone(), conversation.clone())),
+            _ => None,
+        })
+}
+
+/// Longest chain of resumed runs followed (A → B → C …).
+const MAX_CHAIN: usize = 64;
+
+/// A session's ledger and the earlier runs it resumed, oldest first. A run whose
+/// directory is gone (pruned) ends the chain there.
+pub fn read_chain(dir: &Path) -> Result<Vec<Run>> {
+    let entries = read_entries(dir)?;
+    let mut runs = vec![Run {
+        dir: dir.to_path_buf(),
+        entries,
+    }];
+    while runs.len() < MAX_CHAIN {
+        let last = &runs[runs.len() - 1];
+        let Some((from, _)) = resumed_from(&last.entries) else {
+            break;
+        };
+        // A session name, never a path; earlier runs live next to this one.
+        if from.is_empty() || from.contains(['/', '\\']) || from.starts_with('.') {
+            break;
+        }
+        let Some(prev) = last.dir.parent().map(|p| p.join(&from)) else {
+            break;
+        };
+        if runs.iter().any(|r| r.dir == prev) {
+            break;
+        }
+        match read_entries(&prev) {
+            Ok(entries) => runs.push(Run { dir: prev, entries }),
+            Err(_) => break,
+        }
+    }
+    runs.reverse();
+    Ok(runs)
+}
+
+/// Every entry of the chain, oldest run first. Ids and entry numbers continue from run
+/// to run, so they name one thing across it.
+pub fn chain_entries(runs: &[Run]) -> Vec<Entry> {
+    runs.iter()
+        .flat_map(|r| r.entries.iter().cloned())
+        .collect()
+}
+
+/// A blob of any run in the chain, newest run first.
+pub fn read_chain_blob(runs: &[Run], hash: &str) -> Option<String> {
+    runs.iter().rev().find_map(|r| read_blob(&r.dir, hash).ok())
+}
+
 /// Reject a ledger written by a newer belay. No `format` entry means version 1.
 fn check_format(first_line: &str, path: &Path) -> Result<()> {
     let Ok(v) = serde_json::from_str::<Value>(first_line) else {

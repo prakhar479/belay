@@ -60,24 +60,15 @@ pub fn run(event: &str) {
     }
 }
 
-/// A conversation id as a file name: only letters, digits, and `-`, at most 64.
-fn clean_id(session_id: &str) -> String {
-    session_id
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .take(64)
-        .collect()
-}
-
 /// The session directory a conversation id maps to; a new one on its first hook.
 pub fn session_dir(session_id: &str, cwd: &Path) -> Option<PathBuf> {
-    let id = clean_id(session_id);
+    let id = paths::clean_id(session_id);
     if id.is_empty() {
         return None;
     }
-    let map_dir = paths::home().join("by-session");
+    let map_dir = paths::by_session_dir();
     let map = map_dir.join(&id);
-    if let Some(dir) = mapped_dir(&paths::sessions_dir(), &map) {
+    if let Some(dir) = paths::mapped_dir(&paths::sessions_dir(), &map) {
         return Some(dir);
     }
     paths::ensure_private_dir(&paths::home()).ok()?;
@@ -94,7 +85,7 @@ pub fn session_dir(session_id: &str, cwd: &Path) -> Option<PathBuf> {
     let linked = fs::hard_link(&tmp, &map);
     let _ = fs::remove_file(&tmp);
     if linked.is_err() {
-        if let Some(winner) = mapped_dir(&paths::sessions_dir(), &map) {
+        if let Some(winner) = paths::mapped_dir(&paths::sessions_dir(), &map) {
             if winner != dir {
                 let _ = fs::remove_dir_all(&dir);
             }
@@ -109,32 +100,6 @@ pub fn session_dir(session_id: &str, cwd: &Path) -> Option<PathBuf> {
     Some(dir)
 }
 
-/// The session directory for a status line's stdin JSON (`session_id`), if the plugin
-/// started one.
-pub fn existing_session_dir(session_id: &str) -> Option<PathBuf> {
-    // An id is a name in `by-session/`, never a path; clean it as `session_dir` did.
-    let id = clean_id(session_id);
-    if id.is_empty() {
-        return None;
-    }
-    mapped_dir(
-        &paths::sessions_dir(),
-        &paths::home().join("by-session").join(id),
-    )
-}
-
-/// The session directory a mapping file names. An empty or path-like name (a file
-/// caught half written, or damaged) names nothing: it must not resolve to `sessions/`.
-fn mapped_dir(sessions: &Path, map: &Path) -> Option<PathBuf> {
-    let text = fs::read_to_string(map).ok()?;
-    let name = text.trim();
-    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
-        return None;
-    }
-    let dir = sessions.join(name);
-    dir.is_dir().then_some(dir)
-}
-
 fn alive(sock: &Path) -> bool {
     ipc::send(sock, &Request::Ping, Duration::from_millis(100)).is_ok()
 }
@@ -144,13 +109,21 @@ fn start(dir: &Path, sock: &Path) -> bool {
     let Ok(exe) = std::env::current_exe() else {
         return false;
     };
-    launcher::start_daemon(&exe, dir, None, Some(IDLE_EXIT_MINUTES)).is_ok()
+    launcher::start_daemon(
+        &exe,
+        dir,
+        None,
+        Some(IDLE_EXIT_MINUTES),
+        &crate::daemon::Resume::No,
+    )
+    .is_ok()
         && launcher::wait_for(sock)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::paths::{clean_id, mapped_dir};
 
     #[test]
     fn an_empty_or_odd_mapping_names_no_session() {
@@ -179,7 +152,7 @@ mod tests {
     #[test]
     fn a_session_id_is_never_a_path() {
         for id in ["", "../x", "a/b", ".hidden"] {
-            assert!(existing_session_dir(id).is_none(), "{id}");
+            assert!(crate::paths::conversation_dir(id).is_none(), "{id}");
         }
     }
 }

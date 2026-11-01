@@ -4,13 +4,14 @@
 //! Claude Code 2.1.303. Re-capture from <session>/hooks.jsonl when Claude Code changes.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use belay_core::text::sha256_hex;
 use belay_core::{Capabilities, Event, Permission, Response, ToolKind};
 use serde_json::{json, Value};
 
-use super::{Connector, TranscriptSource};
+use super::{Connector, ResumeTarget, TranscriptSource};
 use crate::paths::now_ms;
 
 mod transcript;
@@ -30,6 +31,16 @@ pub fn tool_kind(tool: &str) -> ToolKind {
         t if t.starts_with("mcp__") => ToolKind::Mcp,
         _ => ToolKind::Other,
     }
+}
+
+/// Claude Code's directory name for a project: the working directory with every
+/// character that is not a letter or digit replaced by `-`.
+/// [Verify] conformance `project_dir_name`: checked against real `~/.claude/projects`.
+pub fn project_dir_name(cwd: &Path) -> String {
+    cwd.to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 /// Tools belay hooks (see `settings`). Retro looks at the same tools, so its numbers
@@ -379,6 +390,51 @@ impl Connector for ClaudeCode {
 
     fn transcript(&self) -> Option<Box<dyn TranscriptSource>> {
         Some(Box::new(transcript::ClaudeTranscripts))
+    }
+
+    /// `--resume <id>`, `-r <id>`, `--resume=<id>`: that conversation. `--continue`, `-c`:
+    /// the latest. A bare `--resume` or `-r` opens Claude Code's picker. Arguments after
+    /// `--` are the prompt's, not flags.
+    fn resume_target(&self, args: &[String], _cwd: &Path) -> Option<ResumeTarget> {
+        let mut it = args.iter().take_while(|a| *a != "--").peekable();
+        while let Some(a) = it.next() {
+            if let Some(id) = a.strip_prefix("--resume=") {
+                return Some(match id {
+                    "" => ResumeTarget::Picker,
+                    id => ResumeTarget::Conversation(id.to_string()),
+                });
+            }
+            match a.as_str() {
+                "--resume" | "-r" => {
+                    return Some(match it.peek() {
+                        Some(id) if !id.starts_with('-') => {
+                            ResumeTarget::Conversation(id.to_string())
+                        }
+                        _ => ResumeTarget::Picker,
+                    })
+                }
+                "--continue" | "-c" => return Some(ResumeTarget::Latest),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// The newest main transcript in Claude Code's project dir for `cwd`; its file name
+    /// is the conversation id.
+    fn latest_conversation(&self, cwd: &Path) -> Option<String> {
+        let project = crate::paths::claude_projects_dir().join(project_dir_name(cwd));
+        transcript::ClaudeTranscripts
+            .list(&crate::paths::claude_projects_dir())
+            .into_iter()
+            .filter(|t| !t.subagent && t.path.parent() == Some(project.as_path()))
+            .filter_map(|t| Some((fs::metadata(&t.path).ok()?.modified().ok()?, t.path)))
+            .max()
+            .and_then(|(_, p)| Some(p.file_stem()?.to_string_lossy().to_string()))
+    }
+
+    fn conversation(&self) -> Option<String> {
+        (!self.session_id.is_empty()).then(|| self.session_id.clone())
     }
 
     fn set_policy(&mut self, policy: &belay_core::policy::Policy) {
@@ -822,6 +878,51 @@ mod tests {
                 .unwrap();
             assert_eq!(preview.len(), preview_len, "{name}");
         }
+    }
+
+    /// U8: the arguments that resume a conversation, and those that do not.
+    #[test]
+    fn resume_flags_name_a_conversation_the_latest_or_the_picker() {
+        let c = ClaudeCode::default();
+        let t = |args: &[&str]| {
+            let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
+            c.resume_target(&args, Path::new("/x"))
+        };
+        let conv = |id: &str| Some(ResumeTarget::Conversation(id.into()));
+        assert_eq!(t(&["--resume", "abc"]), conv("abc"));
+        assert_eq!(t(&["-r", "abc", "--model", "x"]), conv("abc"));
+        assert_eq!(t(&["--resume=abc"]), conv("abc"));
+        assert_eq!(t(&["--continue"]), Some(ResumeTarget::Latest));
+        assert_eq!(t(&["-p", "hi", "-c"]), Some(ResumeTarget::Latest));
+        assert_eq!(t(&["--resume"]), Some(ResumeTarget::Picker));
+        assert_eq!(t(&["-r", "--model", "x"]), Some(ResumeTarget::Picker));
+        assert_eq!(t(&["--model", "x"]), None);
+        assert_eq!(t(&["--", "--resume", "abc"]), None, "a prompt, not a flag");
+    }
+
+    /// U8: a resumed launch's first hook is SessionStart with `source: "resume"`: the
+    /// session starts, and the connector knows the conversation's id.
+    #[test]
+    fn a_resumed_start_starts_the_session_and_names_the_conversation() {
+        let mut c = ClaudeCode::default();
+        assert_eq!(c.conversation(), None);
+        let evs = c.map("SessionStart", &fixture("session_start_resume.json"));
+        assert!(
+            matches!(&evs[..], [Event::SessionStarted { .. }]),
+            "{evs:?}"
+        );
+        assert_eq!(
+            c.conversation().as_deref(),
+            Some("9b1d6f2e-0000-4000-8000-000000000001")
+        );
+    }
+
+    #[test]
+    fn project_dirs_are_named_as_claude_code_names_them() {
+        assert_eq!(
+            project_dir_name(Path::new("/home/dev/my.shop_1")),
+            "-home-dev-my-shop-1"
+        );
     }
 
     /// U4b: a SessionStart after a compaction keeps the session id; it restarts the

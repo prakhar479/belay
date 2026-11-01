@@ -32,7 +32,8 @@ pub const LEDGER_FORMAT: u32 = 2;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Body {
-    /// Always the first entry (seq 0). Keep this shape stable: readers check it first.
+    /// Always the first entry: seq 0, or in a resumed run's ledger (U8) the next seq after
+    /// the earlier run's. Keep this shape stable: readers check it first.
     Format { version: u32 },
     /// An event as received. Large text is replaced with `<blob:HASH>`.
     Event { event: Event },
@@ -112,6 +113,16 @@ pub enum Body {
         reason: String,
         #[serde(default, skip_serializing_if = "is_false")]
         undo: bool,
+    },
+    /// This session continues an earlier one's conversation (U8): its state was restored
+    /// from `from_session`'s ledger, up to entry `from_seq`. Ids go on after that ledger's.
+    /// `conversation`: the agent's id for it, when known. Readers follow the link to show
+    /// one story across runs.
+    Resumed {
+        from_session: String,
+        from_seq: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        conversation: Option<String>,
     },
     /// What the user was told about this hook's actions (at most one per hook; rule 5:
     /// never the model). `shown`: the report setting and the agent let it reach the

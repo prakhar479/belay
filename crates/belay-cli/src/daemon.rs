@@ -47,6 +47,62 @@ struct State {
     fixes_seen: Option<u64>,
     /// The session's directory: snapshots build their temporary index here (U6.2).
     dir: PathBuf,
+    /// A resume through the agent's picker waits for its first SessionStart (U8).
+    picker: bool,
+    /// A resumed conversation continues its belay state (`resume = continue`).
+    resume: bool,
+    /// The conversation id this session last mapped to itself in `by-session/`.
+    mapped: Option<String>,
+    /// The first turn number this session's snapshots may take: after the runs it
+    /// continues, so `t-N` names one snapshot across them (U8).
+    snapshot_floor: u64,
+}
+
+/// What a launch asks the daemon to continue (U8).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum Resume {
+    #[default]
+    No,
+    /// The earlier session that ran the conversation, and the conversation's id.
+    From {
+        dir: PathBuf,
+        conversation: Option<String>,
+    },
+    /// The agent's picker chooses: resolved at its SessionStart.
+    Picker,
+}
+
+/// The turn number after the last snapshot of these runs (0 when they kept none).
+fn next_turn(runs: &[crate::store::Run]) -> u64 {
+    runs.iter()
+        .flat_map(|r| &r.entries)
+        .filter_map(|e| match &e.body {
+            belay_core::Body::Snapshot {
+                id, undo: false, ..
+            } => id.strip_prefix("t-")?.parse::<u64>().ok().map(|n| n + 1),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Replay earlier runs into the controller (U8). Returns the last run's highest seq.
+fn restore_runs(controller: &mut Controller, runs: &[crate::store::Run]) -> u64 {
+    let all = crate::store::chain_entries(runs);
+    controller.restore(&all, &|h| crate::store::read_chain_blob(runs, h));
+    all.iter().map(|e| e.seq).max().unwrap_or(0)
+}
+
+/// The earlier session that ran `conversation`, when it is not this one, with its runs.
+fn earlier_runs(conversation: &str, own: &Path) -> Option<(String, Vec<crate::store::Run>)> {
+    let dir = crate::paths::conversation_dir(conversation)?;
+    let same = |a: &Path, b: &Path| fs::canonicalize(a).ok() == fs::canonicalize(b).ok();
+    if same(&dir, own) {
+        return None;
+    }
+    let name = dir.file_name()?.to_string_lossy().to_string();
+    let runs = crate::store::read_chain(&dir).ok()?;
+    Some((name, runs))
 }
 
 /// Snapshots decided but not yet recorded. Shutdown waits for them, so the last turn's
@@ -121,6 +177,7 @@ pub fn run(
     parent_pid: Option<i32>,
     agent: &str,
     idle_exit_minutes: Option<u64>,
+    resume: Resume,
 ) -> Result<()> {
     let sock = socket_path(&dir);
     // The socket accepts hook events and `belay allow`: keep it in a private dir.
@@ -173,26 +230,30 @@ pub fn run(
         cfg.guard = belay_core::GuardSetting::Deny;
         cfg.commons = true;
     }
+    let resume_on = crate::config::load().resume_continues();
     let mut controller = Controller::new(cfg, connector.capabilities());
-    // A ledger from an earlier daemon of this session: go on from its ids.
-    if let Ok(old) = crate::store::read_entries(&dir) {
-        let id = |e: &belay_core::Entry, p: &str| -> u64 {
-            match &e.body {
-                belay_core::Body::Action { id, .. } if p == "a-" => {
-                    id.strip_prefix(p).and_then(|n| n.parse().ok()).unwrap_or(0)
-                }
-                belay_core::Body::Output { id, .. } if p == "o-" => {
-                    id.strip_prefix(p).and_then(|n| n.parse().ok()).unwrap_or(0)
-                }
-                _ => 0,
-            }
-        };
-        if let Some(seq) = old.iter().map(|e| e.seq).max() {
-            let action = old.iter().map(|e| id(e, "a-")).max().unwrap_or(0);
-            let output = old.iter().map(|e| id(e, "o-")).max().unwrap_or(0);
-            controller.resume_ids(seq + 1, action + 1, output + 1);
+    // A ledger from an earlier daemon of this session (a plugin daemon that exited idle,
+    // or crashed), with the runs it resumed: the state goes on as if it never stopped.
+    let mut resumed_now = None;
+    let mut snapshot_floor = 0;
+    let own = crate::store::read_chain(&dir)
+        .ok()
+        .filter(|runs| runs.iter().any(|r| !r.entries.is_empty()));
+    if let Some(runs) = own {
+        restore_runs(&mut controller, &runs);
+        snapshot_floor = next_turn(&runs[..runs.len() - 1]);
+    } else if let Resume::From {
+        dir: from,
+        conversation,
+    } = &resume
+    {
+        // A new session for a resumed conversation: continue the earlier runs' story.
+        if let Ok(runs) = crate::store::read_chain(from) {
+            let seq = restore_runs(&mut controller, &runs);
+            snapshot_floor = next_turn(&runs);
+            let name = from.file_name().map(|n| n.to_string_lossy().to_string());
+            resumed_now = name.map(|n| (n, seq, conversation.clone()));
         }
-        controller.restore_paused(&old);
     }
     // A fleet's hub starts its sessions with BELAY_FLEET_SLOT set (F5a).
     controller.set_in_fleet(std::env::var_os("BELAY_FLEET_SLOT").is_some());
@@ -203,7 +264,12 @@ pub fn run(
     if let Some(r) = &rules {
         controller.set_fleet_rules(belay_core::fleet::scope::Rules::new(r));
     }
-    let store = Store::open(&dir)?;
+    let mut store = Store::open(&dir)?;
+    if let Some((from, seq, conversation)) = resumed_now {
+        let d = controller.resumed(&from, seq, conversation.clone(), true, now_ms());
+        store.persist(&d)?;
+        eprintln!("belayd: continues session {from}");
+    }
     // Without a token file (a daemon started by hand), control requests are open.
     let token: Arc<Option<String>> = Arc::new(crate::paths::read_token(&dir));
     let state = Arc::new(Mutex::new(State {
@@ -237,6 +303,10 @@ pub fn run(
         project: None,
         fixes_seen: None,
         dir: dir.clone(),
+        picker: resume == Resume::Picker && resume_on,
+        resume: resume_on,
+        mapped: None,
+        snapshot_floor,
     }));
     let _ = CARD_DIR.set(dir.clone());
     eprintln!("belayd: listening on {}", sock.display());
@@ -878,6 +948,13 @@ fn watch_parent(pid: i32, sock: &Path, state: &Mutex<State>) {
 /// late paths can be tested (I5, T3). D9: a reply after the shim's deadline reaches no
 /// one. Late before handling: nothing is applied. Late after: the decisions are recorded
 /// as not delivered, and nothing is sent.
+/// This session, as a hook's lookups need it.
+struct Me<'a> {
+    id: &'a str,
+    /// Its directory, when a `/resume` continues an earlier session's conversation (U8).
+    resume: Option<&'a Path>,
+}
+
 fn decide_hook(
     controller: &mut Controller,
     connector: &mut dyn Connector,
@@ -885,8 +962,12 @@ fn decide_hook(
     payload: &serde_json::Value,
     deadline_ms: Option<u64>,
     clock: &mut dyn FnMut() -> u64,
-    session_id: &str,
+    me: Me,
 ) -> (Vec<belay_core::Decision>, Response) {
+    let Me {
+        id: session_id,
+        resume,
+    } = me;
     let late = |t: u64| deadline_ms.is_some_and(|d| t + REPLY_MARGIN_MS > d);
     let now = clock();
     let unanswered = late(now);
@@ -965,7 +1046,24 @@ fn decide_hook(
                 );
             }
         }
+        let resumed = matches!(&ev, belay_core::Event::ConversationChanged { reason, .. } if reason == "resume");
         decisions.push(controller.handle_with(ev, now, !unanswered));
+        // `/resume` in the agent: a conversation an earlier session ran takes up its
+        // state (U8). [Verify] conformance `resume_in_process`: SessionStart has
+        // `source: "resume"` and the resumed conversation's session_id.
+        if let (true, Some(own), Some(conv)) = (resumed, resume, connector.conversation()) {
+            if let Some((from, runs)) = earlier_runs(&conv, own) {
+                let all = crate::store::chain_entries(&runs);
+                let blobs = |h: &str| crate::store::read_chain_blob(&runs, h);
+                decisions.push(controller.restore_conversation(
+                    &all,
+                    &blobs,
+                    &from,
+                    Some(conv),
+                    now,
+                ));
+            }
+        }
         if let Some(ws) = workspace_now.take() {
             decisions.push(controller.handle(ws, now));
         }
@@ -991,6 +1089,7 @@ struct SnapshotDue {
     cwd: PathBuf,
     dir: PathBuf,
     cause: u64,
+    floor: u64,
 }
 
 /// Whether these decisions start the session or end a turn in a known directory. Counted
@@ -1016,6 +1115,7 @@ fn snapshot_due(st: &State, decisions: &[belay_core::Decision]) -> Option<Snapsh
         cwd: PathBuf::from(cwd),
         dir: st.dir.clone(),
         cause,
+        floor: st.snapshot_floor,
     })
 }
 
@@ -1024,7 +1124,8 @@ fn snapshot_due(st: &State, decisions: &[belay_core::Decision]) -> Option<Snapsh
 fn take_snapshot(state: &Mutex<State>, due: SnapshotDue) {
     {
         let _one = SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((id, commit, files)) = crate::undo::take(&due.dir, &due.cwd, due.at) {
+        if let Some((id, commit, files)) = crate::undo::take(&due.dir, &due.cwd, due.at, due.floor)
+        {
             let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
             let d = st
                 .controller
@@ -1035,6 +1136,31 @@ fn take_snapshot(state: &Mutex<State>, due: SnapshotDue) {
         }
     }
     SNAPSHOTS_PENDING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The earlier runs of the conversation the agent's picker chose, at the first hook of a
+/// `Resume::Picker` session, if it is a SessionStart that resumes one.
+/// [Verify] conformance `resume_picker`: after the picker, SessionStart has
+/// `source: "resume"` and the chosen conversation's session_id.
+fn picked_runs(
+    state: &Mutex<State>,
+    event: &str,
+    payload: &serde_json::Value,
+) -> Option<(String, Vec<crate::store::Run>, String)> {
+    let own = {
+        let mut st = lock(state);
+        if !std::mem::take(&mut st.picker) {
+            return None;
+        }
+        st.dir.clone()
+    };
+    let field = |k: &str| payload.get(k).and_then(serde_json::Value::as_str);
+    if event != "SessionStart" || field("source") != Some("resume") {
+        return None;
+    }
+    let conv = field("session_id")?.to_string();
+    let (from, runs) = earlier_runs(&conv, &own)?;
+    Some((from, runs, conv))
 }
 
 fn reply_to(mut stream: UnixStream, reply: &Reply) -> Result<()> {
@@ -1165,6 +1291,12 @@ fn serve(
         other => other,
     };
 
+    // A resume through the picker: the first SessionStart names the conversation. Its
+    // earlier runs are read outside the lock; hooks that wait meanwhile fail open.
+    let picked = match &req {
+        Request::Hook { event, payload, .. } => picked_runs(state, event, payload),
+        _ => None,
+    };
     let reply = {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
         let st = &mut *st;
@@ -1175,6 +1307,14 @@ fn serve(
                 deadline_ms,
             } => {
                 st.store.capture(now_ms(), &event, &payload)?;
+                if let Some((from, runs, conv)) = picked {
+                    let seq = restore_runs(&mut st.controller, &runs);
+                    st.snapshot_floor = st.snapshot_floor.max(next_turn(&runs));
+                    let d = st
+                        .controller
+                        .resumed(&from, seq, Some(conv), true, now_ms());
+                    st.store.persist(&d)?;
+                }
                 if event == "PreToolUse" {
                     refresh_claims(st);
                 }
@@ -1187,10 +1327,22 @@ fn serve(
                     &payload,
                     deadline_ms,
                     &mut now_ms,
-                    &st.session_id.clone(),
+                    Me {
+                        id: &st.session_id,
+                        resume: st.resume.then_some(st.dir.as_path()),
+                    },
                 );
                 for d in &decisions {
                     st.store.persist(d)?;
+                }
+                // `by-session/<conversation>` names this session: a later resume of the
+                // conversation continues from here (U8), and the plugin finds it.
+                if let Some(conv) = st.connector.conversation() {
+                    if st.mapped.as_ref() != Some(&conv)
+                        && crate::paths::map_conversation(&conv, &st.session_id).is_ok()
+                    {
+                        st.mapped = Some(conv);
+                    }
                 }
                 if st.project.is_none() {
                     let started = decisions
@@ -1443,7 +1595,10 @@ mod tests {
             &weakening_edit(),
             deadline,
             &mut clock,
-            "test",
+            Me {
+                id: "test",
+                resume: None,
+            },
         )
     }
 

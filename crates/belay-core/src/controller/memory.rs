@@ -28,6 +28,23 @@ pub(super) struct MemoryState {
     fixes_recalled: std::collections::BTreeSet<String>,
 }
 
+impl MemoryState {
+    /// Take up another run's conversation: its open failure and guard history.
+    pub(super) fn take_conversation(&mut self, other: MemoryState) {
+        self.open_failure = other.open_failure;
+        self.guard = other.guard;
+    }
+
+    /// The state that decisions depend on, for `Controller::state_digest`.
+    pub(super) fn digest(&self) -> String {
+        let used: Vec<&str> = self.used.iter().map(|m| m.id.as_str()).collect();
+        format!(
+            "{used:?} {:?} {:?} {:?}",
+            self.open_failure, self.guard, self.fixes_recalled
+        )
+    }
+}
+
 impl Controller {
     /// The project's and the user's memories, for the recall at the start and for
     /// failures that match a fix. The daemon calls it before the session starts.
@@ -126,7 +143,17 @@ impl Controller {
     pub(super) fn on_context_restarted(&mut self, d: &mut Decision, event: Event, now: u64) {
         let compact = matches!(&event, Event::ContextRestarted { source } if source == "compact");
         let cause = self.push(d, now, vec![], Body::Event { event });
-        if !compact || !self.caps.compact_source || !self.on(Feature::Memory) {
+        if !compact || !self.caps.compact_source {
+            return;
+        }
+        let reason = "The conversation was compacted: this session's task, failure, and memories go with it.".to_string();
+        self.carry_pack(d, cause, now, reason);
+    }
+
+    /// The carry pack: what this session is on and was given, for a context that may
+    /// have lost it (a compaction, or a resumed conversation).
+    pub(super) fn carry_pack(&mut self, d: &mut Decision, cause: u64, now: u64, reason: String) {
+        if !self.on(Feature::Memory) {
             return;
         }
         let carry = memory::Carry {
@@ -134,6 +161,7 @@ impl Controller {
             failure: self.mem.open_failure.as_ref(),
             guard: &self.mem.guard,
             used: &self.mem.used,
+            resumed: self.restored,
         };
         let Some(text) = memory::carry_text(&carry, self.cfg.recall_tokens) else {
             return;
@@ -145,7 +173,6 @@ impl Controller {
             compact: true,
             text: text.clone(),
         };
-        let reason = "The conversation was compacted: this session's task, failure, and memories go with it.".to_string();
         self.record(
             d,
             now,

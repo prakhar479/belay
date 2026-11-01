@@ -20,6 +20,7 @@
 //! awareness = on             # tell the agent what other belay sessions here did
 //! commons = off              # pass other sessions' messages to the agent
 //! report = quiet             # how much belay tells the user: quiet, normal, verbose
+//! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
 //! ```
 //!
 //! 0.1 keys still load, with a warning: `look` reads as `on`; `fleet` is `awareness`,
@@ -45,6 +46,9 @@ pub struct Config {
     pub experimental_audit: bool,
     /// A desktop notification when belay steers a loop or blocks an edit (unattended runs).
     pub notify: bool,
+    /// A resumed conversation (`claude --resume`, `-c`, `/resume`) continues the belay
+    /// state its earlier runs left (`continue`), or starts clean (`fresh`) (U8).
+    pub resume: String,
 }
 
 impl Default for Config {
@@ -54,6 +58,7 @@ impl Default for Config {
             keep_days: 30,
             experimental_audit: false,
             notify: false,
+            resume: "continue".into(),
         }
     }
 }
@@ -71,6 +76,7 @@ impl Config {
             ("experimental_audit", self.experimental_audit.to_string()),
             ("keep_days", self.keep_days.to_string()),
             ("notify", self.notify.to_string()),
+            ("resume", self.resume.clone()),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -95,6 +101,11 @@ impl Config {
 
     /// The controller's config: the core's knobs, and this side's overrides so the
     /// session-start record still names every key the user set.
+    /// Whether a resumed conversation continues its belay state (`resume = continue`).
+    pub fn resume_continues(&self) -> bool {
+        self.resume == "continue"
+    }
+
     pub fn session(&self) -> belay_core::Config {
         let defaults = Config::default().own_fields();
         let mut core = self.core.clone();
@@ -147,7 +158,7 @@ pub fn load() -> Config {
     c
 }
 
-const KEYS: [&str; 20] = [
+const KEYS: [&str; 21] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -165,6 +176,7 @@ const KEYS: [&str; 20] = [
     "awareness",
     "commons",
     "report",
+    "resume",
     // 0.1 keys: read with a warning.
     "plugin_mode",
     "fleet",
@@ -289,6 +301,12 @@ fn apply(
         "wrap_tests" => c.core.wrap_tests = boolean()?,
         "notify" => c.notify = boolean()?,
         "experimental_audit" => c.experimental_audit = boolean()?,
+        "resume" => {
+            if !matches!(value, "continue" | "fresh") {
+                bail!("{key} must be continue or fresh, got {value}");
+            }
+            c.resume = value.to_string();
+        }
         _ => unreachable!("checked against KEYS"),
     }
     seen.insert(key.to_string());

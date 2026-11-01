@@ -42,6 +42,7 @@ pub fn launch(agent: &str, args: Vec<String>) -> Result<i32> {
 pub fn run_claude(args: Vec<String>) -> Result<i32> {
     let args = drop_mode(args);
     let (join, args) = take_fleet(args);
+    let (fresh, args) = take_fresh(args);
     let bin = env::var("BELAY_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
     // A missing agent is the user's to fix; set nothing up for it.
     if find_program(&bin).is_none() {
@@ -71,7 +72,12 @@ pub fn run_claude(args: Vec<String>) -> Result<i32> {
         thread::spawn(move || unchecked_version(&bin))
     };
 
-    let session = match setup(&exe, user_settings.as_deref()) {
+    let resume = if fresh || !crate::config::load().resume_continues() {
+        crate::daemon::Resume::No
+    } else {
+        resume_of(&args)
+    };
+    let session = match setup(&exe, user_settings.as_deref(), &resume) {
         Ok(s) => Some(s),
         Err(e) => {
             eprintln!("belay: {e:#}; running {bin} without belay");
@@ -116,7 +122,11 @@ pub fn run_claude(args: Vec<String>) -> Result<i32> {
 }
 
 /// Session dir, token, settings, daemon. Any error here means: run without belay.
-fn setup(exe: &Path, user_settings: Option<&str>) -> Result<Session> {
+fn setup(
+    exe: &Path,
+    user_settings: Option<&str>,
+    resume: &crate::daemon::Resume,
+) -> Result<Session> {
     let root = paths::sessions_dir();
     // A crashed daemon leaves its socket behind. Clean up before starting a new one.
     let _ = crate::sessions::remove_stale_sockets(&root);
@@ -151,7 +161,7 @@ fn setup(exe: &Path, user_settings: Option<&str>) -> Result<Session> {
         }
     }
     let sock = paths::socket_path(&dir);
-    let mut daemon = start_daemon(exe, &dir, Some(std::process::id()), None)?;
+    let mut daemon = start_daemon(exe, &dir, Some(std::process::id()), None, resume)?;
     if !wait_for(&sock) {
         let _ = daemon.kill();
         let _ = daemon.wait();
@@ -294,6 +304,39 @@ fn mark_version_seen(version: &str) {
     let _ = fs::write(&seen, format!("{known}{version}\n"));
 }
 
+/// `--belay-fresh`: a resumed conversation starts with a clean belay state (U8).
+fn take_fresh(args: Vec<String>) -> (bool, Vec<String>) {
+    let before = args.len();
+    let rest: Vec<String> = args.into_iter().filter(|a| a != "--belay-fresh").collect();
+    (rest.len() != before, rest)
+}
+
+/// What the agent's arguments resume, as the daemon will continue it (U8). A
+/// conversation no belay session ran, or one whose session was pruned, starts clean.
+fn resume_of(args: &[String]) -> crate::daemon::Resume {
+    use crate::connector::ResumeTarget;
+    use crate::daemon::Resume;
+    let Ok(connector) = crate::connector::for_agent("claude-code") else {
+        return Resume::No;
+    };
+    let cwd = env::current_dir().unwrap_or_default();
+    let conversation = match connector.resume_target(args, &cwd) {
+        None => return Resume::No,
+        Some(ResumeTarget::Picker) => return Resume::Picker,
+        Some(ResumeTarget::Latest) => connector.latest_conversation(&cwd),
+        Some(ResumeTarget::Conversation(id)) => Some(id),
+    };
+    // [Verify] conformance `resume_keeps_session_id`: `--resume <id>` keeps the id (and
+    // `--fork-session` makes a new one, which still continues this story).
+    match conversation.and_then(|c| Some((paths::conversation_dir(&c)?, c))) {
+        Some((dir, c)) => Resume::From {
+            dir,
+            conversation: Some(c),
+        },
+        None => Resume::No,
+    }
+}
+
 /// The 0.1 `--belay-mode X` (or `--belay-mode=X`) anywhere in the arguments: dropped,
 /// with a warning, so an old script still starts.
 fn drop_mode(args: Vec<String>) -> Vec<String> {
@@ -417,6 +460,7 @@ pub(crate) fn start_daemon(
     dir: &Path,
     parent: Option<u32>,
     idle_exit_minutes: Option<u64>,
+    resume: &crate::daemon::Resume,
 ) -> Result<Child> {
     let log = fs::OpenOptions::new()
         .create(true)
@@ -429,6 +473,18 @@ pub(crate) fn start_daemon(
     }
     if let Some(m) = idle_exit_minutes {
         cmd.arg("--idle-exit-minutes").arg(m.to_string());
+    }
+    match resume {
+        crate::daemon::Resume::From { dir, conversation } => {
+            cmd.arg("--resume-from").arg(dir);
+            if let Some(c) = conversation {
+                cmd.arg("--resume-conversation").arg(c);
+            }
+        }
+        crate::daemon::Resume::Picker => {
+            cmd.arg("--resume-picker");
+        }
+        crate::daemon::Resume::No => {}
     }
     cmd.stdin(Stdio::null())
         .stdout(log.try_clone()?)

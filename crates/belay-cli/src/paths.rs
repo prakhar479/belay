@@ -161,6 +161,63 @@ pub fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Where conversation ids map to belay session directories: `<home>/by-session/<id>`
+/// holds the directory's name. Every session writes its own (U8); the plugin finds its
+/// daemon there.
+pub fn by_session_dir() -> PathBuf {
+    home().join("by-session")
+}
+
+/// A conversation id as a file name: only letters, digits, and `-`, at most 64.
+pub fn clean_id(session_id: &str) -> String {
+    session_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(64)
+        .collect()
+}
+
+/// The session directory a mapping file names. An empty or path-like name (a file
+/// caught half written, or damaged) names nothing: it must not resolve to `sessions/`.
+pub fn mapped_dir(sessions: &Path, map: &Path) -> Option<PathBuf> {
+    let text = fs::read_to_string(map).ok()?;
+    let name = text.trim();
+    if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+        return None;
+    }
+    let dir = sessions.join(name);
+    dir.is_dir().then_some(dir)
+}
+
+/// The belay session that last ran conversation `id`, if it is still kept.
+pub fn conversation_dir(id: &str) -> Option<PathBuf> {
+    // An id is a name in `by-session/`, never a path.
+    let id = clean_id(id);
+    if id.is_empty() {
+        return None;
+    }
+    mapped_dir(&sessions_dir(), &by_session_dir().join(id))
+}
+
+/// Map conversation `id` to session directory `name`, replacing an earlier mapping: the
+/// newest run of a conversation is the one a resume continues (U8). Written whole.
+pub fn map_conversation(id: &str, name: &str) -> Result<()> {
+    let id = clean_id(id);
+    if id.is_empty() || name.is_empty() {
+        bail!("no conversation id");
+    }
+    let dir = by_session_dir();
+    ensure_private_dir(&home())?;
+    ensure_private_dir(&dir)?;
+    let map = dir.join(&id);
+    if fs::read_to_string(&map).is_ok_and(|t| t.trim() == name) {
+        return Ok(());
+    }
+    let tmp = dir.join(format!(".{id}.{}.w", std::process::id()));
+    fs::write(&tmp, name)?;
+    fs::rename(&tmp, &map).with_context(|| format!("write {}", map.display()))
+}
+
 pub fn list_sessions() -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(sessions_dir())
         .map(|rd| {

@@ -607,7 +607,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                 }
                 _ => {}
             },
-            Body::Output { .. } | Body::Format { .. } => {}
+            Body::Output { .. } | Body::Format { .. } | Body::Resumed { .. } => {}
             Body::Undelivered { actions, reason } if reason.contains("ignored belay's rewrite") => {
                 ignored += actions.len() as u64
             }
@@ -742,6 +742,12 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
         ""
     };
     let _ = writeln!(out, "Session {label} · {agent} · {duration}{old}{convs}");
+    if let Some((from, _)) = crate::store::resumed_from(entries) {
+        let _ = writeln!(
+            out,
+            "Continues session {from}: its state and ids go on here."
+        );
+    }
     if !cwd.is_empty() {
         let _ = writeln!(out, "Project: {cwd}");
     }
@@ -998,6 +1004,11 @@ fn describe(e: &Entry) -> String {
         Body::Config { overrides } => format!("config {overrides:?}"),
         Body::Format { version } => format!("ledger format {version}"),
         Body::Override { action } => format!("user allowed {action} once"),
+        Body::Resumed {
+            from_session,
+            from_seq,
+            ..
+        } => format!("resumed session {from_session} after its entry {from_seq}"),
         Body::Notice { notice, shown } => format!(
             "notice ({}, {}): {}",
             level_name(notice.level),
