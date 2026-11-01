@@ -7,7 +7,9 @@
 //! - Peer git: in this checkout, a peer ran a git command that changes files or HEAD.
 //! - Peer failure: a failed run here names a file a peer edited in this checkout recently.
 //! - Worktree overlap: in another worktree of this repo, a peer edited a file this
-//!   session edited too, so merging both branches will conflict there.
+//!   session edited too, so merging both branches will conflict there. Not when the
+//!   peer's version is already in this HEAD (`PeerActivity::Merged`), or the peer has
+//!   left and its worktree is gone (`PeerActivity::Removed`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -73,6 +75,8 @@ pub struct Notice {
     pub cause: u64,
     /// When the peer did it (the peer's clock).
     pub at_ms: u64,
+    /// The peer's session had ended when the notice was made.
+    pub ended: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +84,10 @@ struct Peer {
     agent: String,
     top: String,
     common: String,
+    /// Its daemon is gone.
+    left: bool,
+    /// It left, and its worktree no longer exists.
+    removed: bool,
 }
 
 /// A peer's latest edit of one path.
@@ -151,11 +159,43 @@ impl Fleet {
                         agent: agent.to_string(),
                         top: top.clone(),
                         common: common.clone(),
+                        left: false,
+                        removed: false,
                     },
                 );
             }
-            // A peer that left stays known: its edits still conflict with ours.
-            PeerActivity::Left => {}
+            // A peer that left stays known: its edits still conflict with ours, until
+            // they are merged here or its worktree is removed.
+            PeerActivity::Left => {
+                if let Some(p) = self.peers.get_mut(session) {
+                    p.left = true;
+                }
+            }
+            PeerActivity::Removed => {
+                let Some(p) = self.peers.get_mut(session) else {
+                    return;
+                };
+                if !p.left {
+                    return;
+                }
+                p.removed = true;
+                self.peer_edits.retain(|(_, s), _| s != session);
+                self.pending
+                    .retain(|n| !(n.kind == NoticeKind::WorktreeOverlap && n.peer == session));
+            }
+            PeerActivity::Merged { paths } => {
+                let Some(top) = self.peers.get(session).map(|p| p.top.clone()) else {
+                    return;
+                };
+                for rel in paths.iter().filter_map(|p| relative(p, &top)) {
+                    self.peer_edits.remove(&(rel.clone(), session.to_string()));
+                    self.pending.retain(|n| {
+                        !(n.kind == NoticeKind::WorktreeOverlap
+                            && n.peer == session
+                            && n.path.as_deref() == Some(rel.as_str()))
+                    });
+                }
+            }
             PeerActivity::Edited { path } => self.on_peer_edit(session, path, at_ms, cause),
             PeerActivity::Git { command } => {
                 if self.relation(session) != Relation::SameCheckout {
@@ -176,6 +216,7 @@ impl Fleet {
                         ),
                         cause,
                         at_ms,
+                        ended: false,
                     });
                 }
             }
@@ -190,7 +231,7 @@ impl Fleet {
             return;
         };
         let rel_kind = self.relation(session);
-        if rel_kind == Relation::Other {
+        if rel_kind == Relation::Other || peer.removed {
             return;
         }
         // A peer's ledger is read from its start: an edit in another worktree from
@@ -233,6 +274,7 @@ impl Fleet {
             ),
             cause,
             at_ms,
+            ended: false,
         });
     }
 
@@ -246,17 +288,26 @@ impl Fleet {
             return;
         }
         let who = self.who(session);
-        let top = self.peers.get(session).map_or("", |p| p.top.as_str());
+        let (top, ended) = self
+            .peers
+            .get(session)
+            .map_or(("", false), |p| (p.top.as_str(), p.left));
+        let end = if ended {
+            " (that session has ended)"
+        } else {
+            ""
+        };
         self.pending.push(Notice {
             kind: NoticeKind::WorktreeOverlap,
             peer: session.to_string(),
             path: Some(rel.to_string()),
             text: format!(
-                "belay: {who} also changed {rel}, in its worktree {top}. Merging both branches will conflict in this file."
+                "belay: {who} also changed {rel}, in its worktree {top}{end}. Merging both branches will conflict in this file."
             ),
             reason: format!("Session {session} edited {rel} in another worktree of this repo."),
             cause,
             at_ms,
+            ended,
         });
     }
 
@@ -328,6 +379,7 @@ impl Fleet {
                 ),
                 cause: e.cause,
                 at_ms: e.at_ms,
+                ended: false,
             });
         }
     }
@@ -346,6 +398,7 @@ impl Fleet {
             reason: format!("{from} sent this session a {kind}."),
             cause,
             at_ms,
+            ended: false,
         });
     }
 
@@ -381,6 +434,7 @@ impl Fleet {
             reason: format!("{from} sent this session a {kind} (commons)."),
             cause,
             at_ms,
+            ended: false,
         });
     }
 
@@ -463,9 +517,22 @@ pub fn message(group: &[Notice]) -> String {
         NoticeKind::PeerEdit => format!(
             "belay: {who} edited {rel} after you did. Read it again before you change it."
         ),
-        NoticeKind::WorktreeOverlap => format!(
-            "belay: {who} also changed {rel}, in their worktrees (`belay fleet` lists them). Merging those branches will conflict in this file."
-        ),
+        NoticeKind::WorktreeOverlap => {
+            let ended: Vec<&str> = names
+                .iter()
+                .copied()
+                .filter(|p| group.iter().any(|n| n.ended && n.peer == *p))
+                .collect();
+            let end = match ended.len() {
+                0 => String::new(),
+                n if n == names.len() => " (those sessions have ended)".to_string(),
+                1 => format!(" ({} has ended)", ended[0]),
+                _ => format!(" ({} have ended)", ended.join(", ")),
+            };
+            format!(
+                "belay: {who} also changed {rel}, in their worktrees{end} (`belay fleet` lists the live ones). Merging those branches will conflict in this file."
+            )
+        }
         NoticeKind::PeerFailure => format!(
             "belay: this failure names {rel}, which {who} edited recently. It may come from their work, not yours."
         ),
@@ -1052,6 +1119,132 @@ mod tests {
         assert!(git_effect("git --git-dir=/x/.git commit -m a").is_some());
     }
 
+    fn peer_event(f: &mut Fleet, a: PeerActivity, cause: u64) {
+        f.on_peer("p1", "claude", 0, &a, cause);
+    }
+
+    /// W4c: overlaps with a peer's worktree, case by case.
+    #[test]
+    fn worktree_overlap_cases() {
+        let merged = |p: &str| PeerActivity::Merged {
+            paths: vec![p.into()],
+        };
+        type Step = fn(&mut Fleet);
+        let cases: [(&str, Step, bool); 6] = [
+            ("live peer, not merged", |_| {}, true),
+            (
+                "peer's version is in this HEAD",
+                |f| {
+                    peer_event(
+                        f,
+                        PeerActivity::Merged {
+                            paths: vec!["/wt/b/f.rs".into()],
+                        },
+                        7,
+                    )
+                },
+                false,
+            ),
+            (
+                "another file is in this HEAD",
+                |f| {
+                    peer_event(
+                        f,
+                        PeerActivity::Merged {
+                            paths: vec!["/wt/b/g.rs".into()],
+                        },
+                        7,
+                    )
+                },
+                true,
+            ),
+            (
+                "peer left, worktree kept",
+                |f| peer_event(f, PeerActivity::Left, 7),
+                true,
+            ),
+            (
+                "peer left, worktree removed",
+                |f| {
+                    peer_event(f, PeerActivity::Left, 7);
+                    peer_event(f, PeerActivity::Removed, 8);
+                },
+                false,
+            ),
+            (
+                "worktree removed under a live peer",
+                |f| peer_event(f, PeerActivity::Removed, 8),
+                true,
+            ),
+        ];
+        for (name, step, want) in cases {
+            // The peer edits first, then this session: the notice comes at my edit.
+            let mut f = fleet_with("/wt/b");
+            edited(&mut f, "/wt/b/f.rs", 10, 5);
+            step(&mut f);
+            f.on_my_edit("/repo/f.rs", 20);
+            assert_eq!(!flat(&mut f).is_empty(), want, "{name}, peer first");
+            // This session first: the notice is pending when the news comes.
+            let mut f = fleet_with("/wt/b");
+            f.on_my_edit("/repo/f.rs", 5);
+            edited(&mut f, "/wt/b/f.rs", 10, 5);
+            step(&mut f);
+            assert_eq!(!flat(&mut f).is_empty(), want, "{name}, me first");
+        }
+        // A merged file the peer changes again overlaps again.
+        let mut f = fleet_with("/wt/b");
+        edited(&mut f, "/wt/b/f.rs", 10, 5);
+        peer_event(&mut f, merged("/wt/b/f.rs"), 6);
+        edited(&mut f, "/wt/b/f.rs", 30, 7);
+        f.on_my_edit("/repo/f.rs", 40);
+        assert_eq!(kinds(&mut f), [NoticeKind::WorktreeOverlap]);
+        // A removed peer's later edits (an old ledger read late) say nothing.
+        let mut f = fleet_with("/wt/b");
+        peer_event(&mut f, PeerActivity::Left, 6);
+        peer_event(&mut f, PeerActivity::Removed, 7);
+        edited(&mut f, "/wt/b/f.rs", 10, 8);
+        f.on_my_edit("/repo/f.rs", 20);
+        assert!(flat(&mut f).is_empty());
+    }
+
+    #[test]
+    fn an_ended_peers_overlap_says_so_once_per_file() {
+        let mut f = fleet_with("/wt/b");
+        edited(&mut f, "/wt/b/f.rs", 10, 5);
+        peer_event(&mut f, PeerActivity::Left, 6);
+        f.on_my_edit("/repo/f.rs", 20);
+        let n = flat(&mut f);
+        assert_eq!(n.len(), 1);
+        assert!(n[0].ended);
+        assert!(
+            n[0].text
+                .contains("/wt/b (that session has ended). Merging"),
+            "{}",
+            n[0].text
+        );
+        for t in [30, 40] {
+            f.on_my_edit("/repo/f.rs", t);
+            f.reset_conversation();
+            f.on_my_edit("/repo/f.rs", t + 1);
+        }
+        assert!(flat(&mut f).is_empty(), "once per peer and file");
+        // In a group, the ended ones are named.
+        let mk = |peer: &str, ended| Notice {
+            kind: NoticeKind::WorktreeOverlap,
+            peer: peer.into(),
+            path: Some("f.rs".into()),
+            text: String::new(),
+            reason: String::new(),
+            cause: 1,
+            at_ms: 0,
+            ended,
+        };
+        let m = message(&[mk("a", true), mk("b", false)]);
+        assert!(m.contains("worktrees (a has ended)"), "{m}");
+        let m = message(&[mk("a", true), mk("b", true)]);
+        assert!(m.contains("(those sessions have ended)"), "{m}");
+    }
+
     #[test]
     fn a_group_names_each_peer_once() {
         let n = |peer: &str| Notice {
@@ -1062,6 +1255,7 @@ mod tests {
             reason: String::new(),
             cause: 1,
             at_ms: 0,
+            ended: false,
         };
         let m = message(&[n("a"), n("b"), n("a")]);
         assert!(m.contains("sessions a and b "), "{m}");

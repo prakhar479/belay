@@ -40,6 +40,31 @@ pub(crate) fn git(root: &Path, args: &[&str], index: Option<&Path>) -> Result<St
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// The bytes of `path` (repo-relative) at `repo`'s HEAD, if it has that file. None in
+/// a sandbox's clone (see `git`).
+pub fn head_blob(repo: &Path, path: &str) -> Option<Vec<u8>> {
+    if crate::sandbox::inside_clone(repo) {
+        return None;
+    }
+    Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["cat-file", "blob", &format!("HEAD:{path}")])
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| o.stdout)
+}
+
+/// Whether `path` (repo-relative) in worktree `wt` has the bytes `repo`'s HEAD has, or
+/// is gone from both. No patch matching; a line-ending or filter difference says no
+/// (the safe side). One git call.
+pub fn same_as_head(repo: &Path, wt: &Path, path: &str) -> bool {
+    std::fs::read(wt.join(path)).ok() == head_blob(repo, path)
+}
+
 /// The top of the git work tree that holds `dir`.
 pub fn repo_root(dir: &Path) -> Result<PathBuf> {
     Ok(PathBuf::from(

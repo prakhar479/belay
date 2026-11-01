@@ -1055,6 +1055,8 @@ fn describe(e: &Entry) -> String {
                 PeerActivity::Edited { path } => format!("edited {path}"),
                 PeerActivity::Git { command } => format!("ran `{command}`"),
                 PeerActivity::Left => "ended".to_string(),
+                PeerActivity::Merged { paths } => format!("has {} in this HEAD", paths.join(", ")),
+                PeerActivity::Removed => "had its worktree removed".to_string(),
             };
             format!("peer session {session} (its entry #{seq}) {what}")
         }

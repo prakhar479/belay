@@ -878,7 +878,7 @@ fn watch_fleet(dir: PathBuf, state: &Mutex<State>) {
         }
     };
     let ws = crate::fleet::workspace(Path::new(&cwd));
-    let mut watcher = crate::fleet::Watcher::new(dir, ws.common.clone());
+    let mut watcher = crate::fleet::Watcher::new(dir, ws.clone());
     let known = state
         .lock()
         .unwrap_or_else(|e| e.into_inner())

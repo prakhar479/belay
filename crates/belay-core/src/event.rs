@@ -197,6 +197,11 @@ pub enum PeerActivity {
     Git { command: String },
     /// The peer's daemon is gone.
     Left,
+    /// The peer's versions of these files (absolute, in its worktree) are already in
+    /// this session's HEAD: the watcher compared the bytes. They cannot conflict.
+    Merged { paths: Vec<String> },
+    /// The worktree of a peer that left no longer exists: its edits cannot conflict.
+    Removed,
 }
 
 #[cfg(test)]
