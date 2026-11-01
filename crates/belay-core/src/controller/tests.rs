@@ -2255,3 +2255,100 @@ fn pause_all_stops_every_feature_until_resumed() {
     assert!(c.card(5).mode.is_empty());
     assert!(c.handle(weakening(), 6).response.permission.is_some());
 }
+
+fn weakening_edit() -> Event {
+    Event::EditProposed {
+        tool_use_id: "x".into(),
+        path: "crates/shop/src/orders.rs".into(),
+        old_text: "#[test]\nfn total() {\n    assert_eq!(total(), 6);\n}\n".into(),
+        new_text: "#[test]\n#[ignore]\nfn total() {\n    assert_eq!(total(), 6);\n}\n".into(),
+    }
+}
+
+fn notices(d: &Decision) -> Vec<(Notice, bool)> {
+    d.entries
+        .iter()
+        .filter_map(|e| match &e.body {
+            Body::Notice { notice, shown } => Some((notice.clone(), *shown)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// U2b: a blocked edit is a warning the user sees, also with `report = quiet`.
+#[test]
+fn guard_deny_makes_a_warning_notice() {
+    let mut c = ctl();
+    let d = c.handle(weakening_edit(), 0);
+    assert_eq!(d.response.notices.len(), 1);
+    let n = &d.response.notices[0];
+    assert_eq!(n.level, crate::record::NoticeLevel::Warn);
+    assert!(n.text.contains("blocked an edit") && n.text.contains("belay allow a-"));
+    assert_eq!(
+        notices(&d),
+        vec![(n.clone(), true)],
+        "recorded once, as shown"
+    );
+}
+
+/// U2b: a call belay did nothing about has no notice.
+#[test]
+fn plain_call_makes_no_notice() {
+    let mut c = ctl();
+    let d = c.handle(bash("ls", "a\nb\n"), 0);
+    assert!(d.response.notices.is_empty());
+    assert!(notices(&d).is_empty());
+}
+
+/// U2b: `report = quiet` keeps a summary's notice from the user, but records it.
+#[test]
+fn quiet_report_hides_act_notices() {
+    let mut c = ctl();
+    let d = c.handle(bash("pytest", PYTEST), 0);
+    assert!(d.response.replace_output.is_some());
+    assert!(d.response.notices.is_empty());
+    let recorded = notices(&d);
+    assert_eq!(recorded.len(), 1);
+    assert!(!recorded[0].1 && recorded[0].0.text.starts_with("summarized output"));
+
+    let cfg = Config {
+        report: ReportLevel::Normal,
+        ..Config::default()
+    };
+    let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE);
+    let d = c.handle(bash("pytest", PYTEST), 0);
+    assert_eq!(d.response.notices.len(), 1);
+    assert!(!d.response.notices[0].text.contains("tokens kept out"));
+
+    let cfg = Config {
+        report: ReportLevel::Verbose,
+        ..Config::default()
+    };
+    let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE);
+    let d = c.handle(bash("pytest", PYTEST), 0);
+    assert!(d.response.notices[0].text.contains("tokens kept out"));
+}
+
+/// U2b: without a user channel the notice is recorded, not sent.
+#[test]
+fn no_notice_without_notify_user() {
+    let caps = Capabilities {
+        notify_user: false,
+        ..Capabilities::CLAUDE_CODE
+    };
+    let mut c = Controller::new(Config::default(), caps);
+    let d = c.handle(weakening_edit(), 0);
+    assert!(d.response.notices.is_empty());
+    assert_eq!(notices(&d).len(), 1);
+}
+
+#[test]
+fn notice_entries_round_trip() {
+    let mut c = ctl();
+    let d = c.handle(weakening_edit(), 0);
+    for e in &d.entries {
+        let json = serde_json::to_string(e).unwrap();
+        let back: Entry = serde_json::from_str(&json).unwrap();
+        assert_eq!(&back, e, "{json}");
+    }
+}

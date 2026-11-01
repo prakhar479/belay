@@ -88,7 +88,7 @@ On a session that went in circles, the report looks like this:
 Session loop_session.jsonl · claude-code (retro) · 14 s
 Needs attention: 1 loops
 Loops (13 s in loops): 1
-  - [would steer] after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run):
+  - [would have steered] after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run):
     tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total' …
 Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages
 Tool calls: 7 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
@@ -108,6 +108,7 @@ belay claude --resume        # resume, as you would with claude
 ```sh
 belay report                 # the newest session started in this directory
 belay status                 # one line, for Claude Code's status line
+belay watch                  # what belay does, as it happens
 ```
 
 **4. Pause belay if it is in your way.** From another terminal, or with `!` in Claude Code:
@@ -143,7 +144,7 @@ belay always acts within what the agent supports, and records every action with 
 | `memory` | `on` | Recalls fixes other sessions learned, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
 | `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
-| `report` | `quiet` | How much belay tells you about what it did: `quiet`, `normal`, `verbose` |
+| `report` | `quiet` | How much belay tells you about what it did: `quiet` (warnings), `normal` (+ what it did), `verbose` (+ minor notes). See "Seeing what belay does" |
 
 A feature that is off takes no action. An action the agent cannot take is recorded as not applied.
 
@@ -206,6 +207,26 @@ assert 500 == 200; … A different approach may be needed.
 ```
 
 It compares failures by a normalized signature, so line numbers, addresses, and timings do not hide a repeat. It also notices edit cycles (`edit, revert, edit`). With `notify = true` you also get a desktop notification when belay steers a loop or blocks an edit, which helps in long unattended runs.
+
+## Seeing what belay does
+
+belay tells you what it does. It never tells the model: these notes go only to you.
+
+- **In Claude Code.** When belay acts, a one-line note appears under the hook, for example `belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: belay allow a-3.` A hook gets at most one note. If belay did more in that hook, the note counts the rest: `(+2 more summaries)`.
+- **`report` decides what you see there.** `quiet` (the default) shows warnings: blocked edits and commands, guard warnings, and loops. `normal` adds what belay did for the agent: summaries, recalled fixes, notes, handoffs, and fleet notices. `verbose` adds minor notes: wrapped test runs, retries, and the tokens each summary kept out.
+- **The status line.** `belay status` prints `belay · 2 blocked · 14k tokens kept out · 1 memory`. Memories are fixes the session learned or was told about.
+- **`belay watch`** prints each note as it happens, in another terminal. It follows the newest live session, or the one you name with `--session`, and stops when the session ends or you press Ctrl-C. It shows every note, whatever `report` says; `--verbose` adds the minor ones. It reads only the ledger, so it works with any agent.
+- **When the agent exits**, `belay claude` prints a short summary:
+
+```text
+belay: session 1793507424-19739 ended.
+  did: 3 summaries · 1 blocked edit · 1 loop warning
+  kept out: 14.2k tokens of tool output
+  handoff: done: the order API; next: the cart tests
+  `belay report` for more
+```
+
+Every note is in the ledger, shown or not. `belay report` says "blocked" or "steered" for what belay did, and "would have" only for what the agent could not take, and for `belay retro`.
 
 ## Reading the record
 
@@ -563,6 +584,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |
 | `belay status` | One line for the status line |
+| `belay watch [--session S] [--verbose]` | Print what belay does as it happens |
 | `belay retro <transcript> \| --all [--summary]` | What belay would have done in past transcripts |
 | `belay flag <target> "note"` · `belay review` | Note and list where belay got it wrong |
 | `belay sessions [--all\|--json\|--history]` | The board of live sessions |

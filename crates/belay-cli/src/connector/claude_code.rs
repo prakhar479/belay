@@ -548,8 +548,37 @@ impl Connector for ClaudeCode {
     }
 
     fn encode(&self, hook_event: &str, payload: &Value, r: &Response) -> Option<Value> {
-        // Notices are for the user and take another channel (rule 5). `continue_turn` at
-        // Stop would be `{"decision":"block","reason":…}`: [Verify] live before encoding it.
+        let notice = user_notice(&r.notices).filter(|_| self.capabilities().notify_user);
+        let mut out = self.encode_for_agent(hook_event, payload, r);
+        if let Some(text) = notice {
+            // Rule 5: top-level `systemMessage` is shown to the user, not sent to the model.
+            // [Verify] it shows on every hook event (scripts/conformance.py: notice).
+            let o = out.get_or_insert_with(|| json!({}));
+            o["systemMessage"] = json!(text);
+        }
+        out
+    }
+}
+
+/// The one line the user sees for a hook's notices: the most important one, with the
+/// others counted (the core makes one per hook; a hook can carry two decisions).
+fn user_notice(notices: &[belay_core::Notice]) -> Option<String> {
+    let warn = notices
+        .iter()
+        .position(|n| n.level == belay_core::NoticeLevel::Warn);
+    let first = notices.get(warn.unwrap_or(0))?;
+    let mut text = format!("belay: {}", first.text);
+    if notices.len() > 1 {
+        text.push_str(&format!(" (+{} more)", notices.len() - 1));
+    }
+    Some(text)
+}
+
+impl ClaudeCode {
+    /// The part of the reply the agent acts on. Notices never go here (rule 5).
+    fn encode_for_agent(&self, hook_event: &str, payload: &Value, r: &Response) -> Option<Value> {
+        // `continue_turn` at Stop would be `{"decision":"block","reason":…}`: [Verify]
+        // live before encoding it.
         let mut context = Vec::new();
         if hook_event == "SessionStart" {
             context.extend(r.start_context.iter().cloned());
@@ -1248,7 +1277,7 @@ mod tests {
     }
 
     #[test]
-    fn encodes_start_context_only_at_session_start_and_never_notices() {
+    fn encodes_start_context_only_at_session_start_and_notices_for_the_user() {
         let c = ClaudeCode::default();
         let r = Response {
             start_context: vec!["peers".into()],
@@ -1282,8 +1311,45 @@ mod tests {
             ("Stop", "stop.json"),
             ("UserPromptSubmit", "user_prompt_submit.json"),
         ] {
-            assert_eq!(c.encode(event, &fixture(file), &user_only), None, "{event}");
+            // Rule 5: the notice is a user-only `systemMessage`, never context.
+            assert_eq!(
+                c.encode(event, &fixture(file), &user_only),
+                Some(json!({ "systemMessage": "belay: for the user" })),
+                "{event}"
+            );
         }
+        // With context, the notice rides along and stays out of `additionalContext`.
+        let both = Response {
+            add_context: vec!["for the agent".into()],
+            ..user_only.clone()
+        };
+        let out = c
+            .encode("PostToolUse", &fixture("post_tool_use_bash.json"), &both)
+            .unwrap();
+        assert_eq!(out["systemMessage"], "belay: for the user");
+        assert_eq!(
+            out["hookSpecificOutput"]["additionalContext"],
+            "for the agent"
+        );
+        assert_eq!(
+            c.encode("Stop", &fixture("stop.json"), &Response::default()),
+            None
+        );
+    }
+
+    #[test]
+    fn several_notices_make_one_line_led_by_a_warning() {
+        let n = |level, text: &str| belay_core::Notice {
+            level,
+            text: text.into(),
+            action: None,
+        };
+        let notices = [
+            n(belay_core::NoticeLevel::Act, "summarized"),
+            n(belay_core::NoticeLevel::Warn, "blocked"),
+        ];
+        assert_eq!(user_notice(&notices).unwrap(), "belay: blocked (+1 more)");
+        assert_eq!(user_notice(&[]), None);
     }
 
     #[test]

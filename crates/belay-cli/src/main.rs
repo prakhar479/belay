@@ -30,6 +30,7 @@ mod sessions;
 mod shim;
 mod store;
 mod undo;
+mod watch;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -210,9 +211,19 @@ enum Cmd {
         #[arg(long, num_args = 0..=1, default_missing_value = "-1", allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// One line for the Claude Code status line: mode and what belay did so far.
+    /// One line for the Claude Code status line: what belay did so far.
     /// Prints nothing outside a belay session.
     Status,
+    /// Print what belay does in a session as it happens: the newest live session, or
+    /// the one named. Ctrl-C stops.
+    Watch {
+        /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
+        #[arg(long, allow_hyphen_values = true)]
+        session: Option<String>,
+        /// Also print minor notices (wrapped runs, retries, summary savings).
+        #[arg(long)]
+        verbose: bool,
+    },
     /// A fleet's task board: add, give out, take, finish, or block tasks. In a fleet
     /// session, the agent uses these; belay knows which session asks.
     Task {
@@ -870,6 +881,10 @@ fn run(cli: Cli) -> Result<i32> {
             };
             store::append_flag(&dir, &flag)?;
             println!("Flagged {target}. `belay review` lists all flags.");
+            Ok(0)
+        }
+        Cmd::Watch { session, verbose } => {
+            watch::run(session.as_deref(), verbose)?;
             Ok(0)
         }
         Cmd::Status => {
