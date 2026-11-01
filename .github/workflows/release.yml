@@ -10,7 +10,28 @@ permissions:
   contents: write
 
 jobs:
+  versions:
+    # The tag, the workspace version, and the plugin version must agree, or users get a
+    # binary and a plugin that say different things.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check versions
+        run: |
+          cargo=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\(.*\)"/\1/p' Cargo.toml)
+          plugin=$(jq -r .version plugin/.claude-plugin/plugin.json)
+          echo "tag $GITHUB_REF_NAME, Cargo.toml $cargo, plugin.json $plugin"
+          if [ -z "$cargo" ] || [ "$cargo" != "$plugin" ]; then
+            echo "::error::plugin/.claude-plugin/plugin.json is $plugin but the workspace version in Cargo.toml is $cargo."
+            exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "v$cargo" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the workspace version v$cargo."
+            exit 1
+          fi
+
   build:
+    needs: versions
     strategy:
       matrix:
         include:

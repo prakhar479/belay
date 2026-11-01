@@ -25,3 +25,10 @@ serde.workspace = true
 serde_json.workspace = true
 # Fleet files (F3a). The old clash with the `winnow` crate ended when the tool stopped being called winnow.
 toml = { version = "0.8", default-features = false, features = ["parse"] }
+
+# `cargo binstall`: the tarballs .github/workflows/release.yml attaches to each release.
+# Each holds one top-level directory, named like the tarball, with the binary in it.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/belay-v{ version }-{ target }.tar.gz"
+bin-dir = "belay-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"

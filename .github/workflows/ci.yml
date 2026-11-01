@@ -49,6 +49,38 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: ./
 
+  sandbox:
+    # `belay sandbox` end to end with bubblewrap. The check job runs the same tests, but
+    # they skip themselves where bwrap is missing (every runner without this job's setup),
+    # so this is the job that proves the sandbox works. Linux only: there is no macOS
+    # backend, and the tests skip there.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - name: Allow unprivileged user namespaces
+        # Ubuntu 24.04 blocks unprivileged user namespaces through AppArmor, and the
+        # apt bwrap is not setuid, so every sandbox test would skip. We relax the sysctl
+        # rather than skip the job: the runner VM is thrown away after the job, and a job
+        # that skips proves nothing. CI only: belay never changes this on a user's machine;
+        # `belay sandbox doctor` tells the user instead.
+        run: |
+          knob=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          if [ -r "$knob" ] && [ "$(cat "$knob")" != 0 ]; then
+            echo "AppArmor restricts unprivileged user namespaces here: relaxing it for this job."
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          # The tests skip quietly when bwrap cannot run; here that is a failure.
+          if ! bwrap --unshare-user --unshare-pid --ro-bind / / true; then
+            echo "::error::bwrap still cannot make user namespaces; the sandbox tests would only skip."
+            exit 1
+          fi
+      - run: cargo build
+      - run: cargo test -p belay-cli --test sandbox -- --nocapture
+      - run: ./target/debug/belay sandbox doctor
+
   msrv:
     runs-on: ubuntu-latest
     steps:
