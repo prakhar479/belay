@@ -102,6 +102,23 @@ pub fn notice_for(
             format!("told the agent how session {session} fixed this failure before."),
             "recalls",
         ),
+        ActionKind::MemoryRecalled { ids, compact, .. } => (
+            Act,
+            if *compact {
+                format!(
+                    "after the compaction, gave the agent back its task and {} memor{}.",
+                    ids.len(),
+                    if ids.len() == 1 { "y" } else { "ies" }
+                )
+            } else {
+                format!(
+                    "gave the agent {} memor{} from earlier sessions.",
+                    ids.len(),
+                    if ids.len() == 1 { "y" } else { "ies" }
+                )
+            },
+            "recalls",
+        ),
         ActionKind::Fleet { notice, peer, .. } => (
             Act,
             format!("told the agent about a {} from {peer}.", notice.label()),
@@ -252,6 +269,29 @@ mod tests {
         let (notice, seq) = collapse(&c[..1]).unwrap();
         assert_eq!((notice.text.as_str(), seq), ("summarized a", 1));
         assert!(collapse(&[]).is_none());
+    }
+
+    #[test]
+    fn memory_recalls_are_told_as_acts() {
+        let start = ActionKind::MemoryRecalled {
+            ids: vec!["m-1".into(), "m-2".into()],
+            compact: false,
+            text: String::new(),
+        };
+        let (n, noun) = notice_for("a-1", &start, "", false);
+        assert_eq!(n.level, NoticeLevel::Act);
+        assert_eq!(n.text, "gave the agent 2 memories from earlier sessions.");
+        assert_eq!(noun, "recalls");
+        let carry = ActionKind::MemoryRecalled {
+            ids: vec!["m-1".into()],
+            compact: true,
+            text: String::new(),
+        };
+        let (n, _) = notice_for("a-2", &carry, "", false);
+        assert_eq!(
+            n.text,
+            "after the compaction, gave the agent back its task and 1 memory."
+        );
     }
 
     #[test]

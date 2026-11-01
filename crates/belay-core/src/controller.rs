@@ -49,8 +49,12 @@ pub struct Config {
     /// Wrap test runs in `belay run`, so a failed run can be summarized too. A wrapped
     /// call can cost the agent some permission checking, so this is off by default.
     pub wrap_tests: bool,
-    /// Memory (F2): recall fixes other sessions learned, and the project's notes.
+    /// Memory (F2, U4b): handoffs, recall at the start, fixes other sessions learned,
+    /// and the project's notes.
     pub memory: bool,
+    /// Tokens the recall at a session's start, and the carry pack after a compaction,
+    /// may take, at most.
+    pub recall_tokens: usize,
     /// Awareness (F1): tell the agent what other belay sessions here did that matters.
     pub awareness: bool,
     /// The commons (C1–C4): who else is here, handoffs, and other sessions' messages.
@@ -76,6 +80,7 @@ impl Default for Config {
             shape: true,
             wrap_tests: false,
             memory: true,
+            recall_tokens: 600,
             awareness: true,
             commons: false,
             report: ReportLevel::Quiet,
@@ -105,6 +110,7 @@ impl Config {
                 self.shape_threshold_tokens.to_string(),
             ),
             ("tighten_after", self.tighten_after.to_string()),
+            ("recall_tokens", self.recall_tokens.to_string()),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -244,6 +250,8 @@ pub struct Controller {
     fleet_rules: Option<crate::fleet::scope::Rules>,
     /// Shared learning (F2).
     learning: crate::learn::Learning,
+    /// Memory in this session (U4b): recall, the carry pack, the handoff's failure.
+    mem: memory::MemoryState,
     /// The project's notes, for the session start.
     notes: Vec<String>,
     /// The commons card (C1): who this session is, what it said, what belay saw.
@@ -423,6 +431,7 @@ impl Controller {
             in_fleet: false,
             fleet_rules: None,
             learning: crate::learn::Learning::default(),
+            mem: memory::MemoryState::default(),
             notes: Vec::new(),
             identity: crate::commons::Identity::default(),
             said: crate::commons::AgentCard::default(),
@@ -641,7 +650,10 @@ impl Controller {
     fn note_actions(&mut self, d: &Decision, now: u64) {
         for e in &d.entries {
             if let Body::Action {
-                action, applied, ..
+                id,
+                action,
+                applied,
+                ..
             } = &e.body
             {
                 match action {
@@ -649,11 +661,12 @@ impl Controller {
                         self.card_counts.1 += 1;
                         self.facts.last_steer_ms = Some(now);
                     }
-                    ActionKind::Guard { decision, .. }
+                    ActionKind::Guard { decision, path }
                         if *applied && *decision != GuardDecision::Warn =>
                     {
                         self.card_counts.2 += 1;
                         self.facts.last_deny_ms = Some(now);
+                        self.memory_on_guard(format!("{id} blocked an edit of {path}."));
                     }
                     _ => {}
                 }
@@ -792,6 +805,7 @@ impl Controller {
             vec![],
             Body::Override { action: id.clone() },
         );
+        self.memory_on_guard(format!("The user allowed the edit {id} blocked, once."));
         self.allowed.insert(key, (id, seq));
         Ok(d)
     }
@@ -978,6 +992,8 @@ impl Controller {
                         d.response.add_context.push(text);
                     }
                 }
+                // Memory (U4b): the last handoff here and the best memories.
+                let recalled_handoff = self.recall_at_start(&mut d, ev, now_ms);
                 // The commons (C1): who else is here, and how to say what this does.
                 let (others, here) = self.peers;
                 let findings = self.findings_here;
@@ -1021,7 +1037,7 @@ impl Controller {
                 }
                 // C4: what the last session in this repo left.
                 if let Some(h) = self.handoff.take() {
-                    if self.on(Feature::Commons) && !h.is_empty() {
+                    if self.on(Feature::Commons) && !h.is_empty() && !recalled_handoff {
                         let text = crate::commons::handoff_text(&h, now_ms);
                         let applied = self.says();
                         let reason = format!("{} ended last in this repo and left a card.", h.from);
@@ -1104,6 +1120,7 @@ impl Controller {
                 self.push(&mut d, now_ms, vec![], Body::Event { event });
             }
             Event::ToolRequested { .. } => self.on_tool_requested(&mut d, event, now_ms),
+            Event::ContextRestarted { .. } => self.on_context_restarted(&mut d, event, now_ms),
             Event::ConversationChanged { .. } => {
                 self.push(&mut d, now_ms, vec![], Body::Event { event });
                 // Failures, edits, and blocks of the old conversation are not this one's.
@@ -1448,6 +1465,7 @@ impl Controller {
                 failures: failures.len(),
                 at_ms: now,
             });
+            self.memory_on_run(&failures, passed);
         }
         // Shared learning (F2): fixes learned here, and fixes others learned.
         if matches!(kind, OutputKind::Test | OutputKind::Build) && self.on(Feature::Memory) {
@@ -1468,6 +1486,7 @@ impl Controller {
                 );
             }
             if let Some((failure, fix)) = self.learning.recall(&failures) {
+                self.memory_used_fix(&fix);
                 let text = self.learning.recall_text(&fix, now);
                 let applied = self.says();
                 let reason = format!(
@@ -1492,6 +1511,8 @@ impl Controller {
                 if applied {
                     d.response.add_context.push(text);
                 }
+            } else {
+                self.recall_fix_memory(d, out, &failures, now);
             }
         }
         let mut looped: Vec<(String, String, u64, u64)> = Vec::new();
@@ -2254,6 +2275,7 @@ impl Controller {
             | ActionKind::Notes { .. }
             | ActionKind::Commons { .. }
             | ActionKind::Handoff { .. } => self.caps.inject_context,
+            ActionKind::MemoryRecalled { .. } => self.caps.start_inject,
             ActionKind::Guard { decision, .. } => match decision {
                 GuardDecision::Ask => self.caps.ask,
                 GuardDecision::Deny => self.caps.deny,
@@ -2377,6 +2399,7 @@ impl Controller {
 }
 
 mod features;
+mod memory;
 mod notice;
 mod snapshot;
 

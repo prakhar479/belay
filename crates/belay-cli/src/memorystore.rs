@@ -153,6 +153,48 @@ pub fn add_in(dir: &Path, make: impl FnOnce(&str) -> Memory) -> Result<Memory> {
     })
 }
 
+/// Keep a session's handoff (U4b). One per session: it supersedes the session's
+/// earlier one (a compaction's, before its end). Returns it as kept.
+pub fn save_handoff_in(dir: &Path, handoff: Memory) -> Result<Memory> {
+    with_lock(dir, || {
+        let native = load_native(dir);
+        let m = Memory {
+            id: next_id(dir, &native),
+            ..handoff
+        };
+        let path = file_for(dir, &m);
+        let mut ms = load_file(&path);
+        for old in ms.iter_mut().filter(|o| {
+            o.is_live() && o.kind == Kind::Handoff && o.session.is_some() && o.session == m.session
+        }) {
+            old.superseded_by = Some(m.id.clone());
+        }
+        ms.push(m.clone());
+        write_file(&path, &ms)?;
+        consolidate_file(&path)?;
+        Ok(m)
+    })
+}
+
+pub fn save_handoff(handoff: Memory) -> Result<Memory> {
+    save_handoff_in(&dir(), handoff)
+}
+
+/// What a session in `project` may recall at its start: the project's and the user's
+/// native memories, and the handoffs ended sessions left on their cards.
+pub fn recall_candidates(project: &str, cards: &[(Card, bool)]) -> Vec<Memory> {
+    recall_candidates_in(&dir(), project, cards)
+}
+
+fn recall_candidates_in(dir: &Path, project: &str, cards: &[(Card, bool)]) -> Vec<Memory> {
+    let mine = |m: &Memory| m.project.is_none() || m.project.as_deref() == Some(project);
+    let native: Vec<Memory> = load_native(dir).into_iter().filter(mine).collect();
+    merged(native, from_cards(cards))
+        .into_iter()
+        .filter(|m| m.is_live() && mine(m))
+        .collect()
+}
+
 /// Change the native memories `ids` with `f`; returns those changed, as now.
 fn update_in(dir: &Path, ids: &[String], mut f: impl FnMut(&mut Memory)) -> Result<Vec<Memory>> {
     with_lock(dir, || {
@@ -205,34 +247,7 @@ pub fn from_notes(notes: &[Note]) -> Vec<Memory> {
 
 /// Learned fixes: what belay saw, keyed by their failure signature.
 pub fn from_fixes(fixes: &[KnownFix]) -> Vec<Memory> {
-    fixes
-        .iter()
-        .map(|k| {
-            let what = match (&k.test, k.message.is_empty()) {
-                (Some(t), true) => t.clone(),
-                _ => k.message.clone(),
-            };
-            let text = format!(
-                "`{what}` was fixed by changes to {}; `{}` then passed (learned).",
-                k.files.join(", "),
-                k.command
-            );
-            let key = format!("{}|{}|{}|{}", k.signature, k.project, k.session, k.at_ms);
-            let mut m = Memory::new(
-                &format!("fix-{}", &sha256_hex(&key)[..10]),
-                Scope::Project,
-                Kind::Fix,
-                Provenance::Observed,
-                Some(&k.project),
-                &text,
-                &[],
-                &k.files,
-                k.at_ms,
-            );
-            m.signature = Some(k.signature.clone());
-            m
-        })
-        .collect()
+    fixes.iter().map(memory::fix_memory).collect()
 }
 
 /// Findings keep their `f-N` ids.
@@ -300,9 +315,16 @@ fn adapted() -> Vec<Memory> {
     v
 }
 
-/// Native memories, then adapted ones no native copy shadows.
+/// Native memories, then adapted ones no native copy shadows. A session's handoff in
+/// the store (U4b) holds its card's handoff text, so the card's is left out.
 fn merged(native: Vec<Memory>, adapted: Vec<Memory>) -> Vec<Memory> {
-    let ids: BTreeSet<String> = native.iter().map(|m| m.id.clone()).collect();
+    let mut ids: BTreeSet<String> = native.iter().map(|m| m.id.clone()).collect();
+    ids.extend(
+        native
+            .iter()
+            .filter(|m| m.kind == Kind::Handoff)
+            .filter_map(|m| Some(format!("h-{}", m.session.as_deref()?))),
+    );
     let mut all = native;
     all.extend(adapted.into_iter().filter(|m| !ids.contains(&m.id)));
     all
@@ -731,6 +753,53 @@ mod tests {
         assert!(!d.join("backup-2").exists());
         let all = merged(load_native(&d), adapted());
         assert_eq!(all.len(), 2, "copies shadow their sources");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    fn card(id: &str, handoff: &str) -> Card {
+        let mut c: Card = serde_json::from_value(serde_json::json!({
+            "card": 1, "id": id, "name": "r-1", "agent": "claude-code", "mode": "",
+            "started_ms": 0, "repo": "/r", "top": "/r", "status": "waiting",
+            "last_activity_ms": 3, "ended": true, "tool_calls": 0, "loops": 0, "blocks": 0,
+            "said": {}, "files": []
+        }))
+        .unwrap();
+        c.said.handoff = Some(handoff.into());
+        c
+    }
+
+    #[test]
+    fn a_session_keeps_one_handoff_which_shadows_its_cards() {
+        let d = tmp("handoff");
+        let h = |text: &str| {
+            let mut m = Memory::new(
+                "",
+                Scope::Project,
+                Kind::Handoff,
+                Provenance::Observed,
+                Some("/r"),
+                text,
+                &[],
+                &[],
+                2,
+            );
+            m.session = Some("s1".into());
+            m
+        };
+        let first = save_handoff_in(&d, h("before the compaction")).unwrap();
+        let last = save_handoff_in(&d, h("at the end. The agent's handoff: next: x")).unwrap();
+        add_in(&d, |id| mk(id, Some("/other"), "elsewhere")).unwrap();
+        let all = load_native(&d);
+        let old = all.iter().find(|m| m.id == first.id).unwrap();
+        assert_eq!(old.superseded_by.as_deref(), Some(last.id.as_str()));
+        let cards = vec![(card("s1", "next: x"), false), (card("s0", "older"), false)];
+        let got = recall_candidates_in(&d, "/r", &cards);
+        let ids: Vec<&str> = got.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [last.id.as_str(), "h-s0"],
+            "one handoff per session, this project's"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 }

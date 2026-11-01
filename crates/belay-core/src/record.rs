@@ -217,6 +217,14 @@ pub enum ActionKind {
         count: usize,
         text: String,
     },
+    /// Memories put in the agent's context (U4b): at its start (a handoff and the best
+    /// memories), or after a compaction (the carry pack, `compact`).
+    MemoryRecalled {
+        ids: Vec<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        compact: bool,
+        text: String,
+    },
     /// Tell the agent what another belay session did that affects it (F1).
     Fleet {
         notice: crate::fleet::NoticeKind,

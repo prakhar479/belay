@@ -94,6 +94,11 @@ pub enum Event {
     Compacted {
         trigger: String,
     },
+    /// The same conversation started again on a fresh context: `compact` after a
+    /// compaction, which left the agent a summary of what came before (U4b).
+    ContextRestarted {
+        source: String,
+    },
     /// Where this session works, found once at start (F1): the worktree's top directory
     /// and the repo's common git dir. Outside git both are the working directory.
     Workspace {
