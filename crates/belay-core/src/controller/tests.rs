@@ -11,6 +11,7 @@ fn bash(cmd: &str, out: &str) -> Event {
     Event::ToolCompleted {
         tool_use_id: "t".into(),
         tool: "Bash".into(),
+        kind: ToolKind::Shell,
         input: json!({ "command": cmd }),
         output: out.into(),
         failed: false,
@@ -518,6 +519,7 @@ fn requested(id: &str, cmd: &str, rewrite_ok: bool) -> Event {
     Event::ToolRequested {
         tool_use_id: id.into(),
         tool: "Bash".into(),
+        kind: ToolKind::Shell,
         input: json!({ "command": cmd }),
         rewrite_ok,
     }
@@ -527,6 +529,7 @@ fn failed_bash(id: &str, cmd: &str, out: &str) -> Event {
     Event::ToolCompleted {
         tool_use_id: id.into(),
         tool: "Bash".into(),
+        kind: ToolKind::Shell,
         input: json!({ "command": cmd }),
         output: out.into(),
         failed: true,
@@ -894,6 +897,7 @@ fn context_from_a_wrapped_run_reaches_the_agent_with_its_tool_result() {
         Event::ToolCompleted {
             tool_use_id: "t1".into(),
             tool: "Bash".into(),
+            kind: ToolKind::Shell,
             input: json!({ "command": "'/bin/belay' run --id 't1' --sh 'python3 run_tests.py fmt'" }),
             output: shown.unwrap_or_else(|| FAILED.into()),
             failed: true,
@@ -1382,6 +1386,7 @@ fn a_fleet_session_may_not_forge_its_identity_or_run_fleet_control() {
     let request = |cmd: &str| Event::ToolRequested {
         tool_use_id: "b".into(),
         tool: "Bash".into(),
+        kind: ToolKind::Shell,
         input: json!({ "command": cmd }),
         rewrite_ok: false,
     };
@@ -1502,6 +1507,7 @@ fn a_fleet_role_may_not_write_its_denied_paths_through_the_shell() {
             Event::ToolRequested {
                 tool_use_id: "b".into(),
                 tool: "Bash".into(),
+                kind: ToolKind::Shell,
                 input: json!({ "command": cmd }),
                 rewrite_ok: false,
             },
@@ -1535,6 +1541,7 @@ fn an_agent_may_not_review_project_notes_or_forget_fixes() {
             Event::ToolRequested {
                 tool_use_id: "b".into(),
                 tool: "Bash".into(),
+                kind: ToolKind::Shell,
                 input: json!({ "command": cmd }),
                 rewrite_ok: false,
             },
@@ -1581,6 +1588,7 @@ fn context_of_a_stopped_wrapped_run_is_recorded_as_not_delivered() {
             Event::ToolCompleted {
                 tool_use_id: id.clone(),
                 tool: "Bash".into(),
+                kind: ToolKind::Shell,
                 input: json!({ "command": format!("'/bin/belay' run --id '{id}' --sh 'pytest -v'") }),
                 output: PYTEST.into(),
                 failed: true,
@@ -2047,6 +2055,7 @@ fn an_agent_may_not_change_the_belay_mode() {
             Event::ToolRequested {
                 tool_use_id: "m".into(),
                 tool: "Bash".into(),
+                kind: ToolKind::Shell,
                 input: json!({ "command": cmd }),
                 rewrite_ok: false,
             },
@@ -2067,4 +2076,54 @@ fn an_agent_may_not_change_the_belay_mode() {
         d.response.permission.is_none(),
         "quoted text does not count"
     );
+}
+
+#[test]
+fn response_new_effects_count_as_non_empty_and_merge() {
+    use crate::record::{Notice, NoticeLevel};
+    let notice = |t: &str| Notice {
+        level: NoticeLevel::Info,
+        text: t.into(),
+        action: None,
+    };
+    assert!(Response::default().is_empty());
+    for r in [
+        Response {
+            notices: vec![notice("n")],
+            ..Response::default()
+        },
+        Response {
+            continue_turn: Some("tests fail".into()),
+            ..Response::default()
+        },
+        Response {
+            start_context: vec!["ctx".into()],
+            ..Response::default()
+        },
+    ] {
+        assert!(!r.is_empty(), "{r:?}");
+    }
+
+    let mut a = Response {
+        notices: vec![notice("a")],
+        continue_turn: Some("first".into()),
+        start_context: vec!["a".into()],
+        ..Response::default()
+    };
+    a.merge(Response {
+        notices: vec![notice("b")],
+        continue_turn: Some("second".into()),
+        start_context: vec!["b".into()],
+        ..Response::default()
+    });
+    assert_eq!(a.notices, vec![notice("a"), notice("b")]);
+    assert_eq!(a.continue_turn.as_deref(), Some("first"));
+    assert_eq!(a.start_context, vec!["a".to_string(), "b".to_string()]);
+
+    let mut empty = Response::default();
+    empty.merge(Response {
+        continue_turn: Some("only".into()),
+        ..Response::default()
+    });
+    assert_eq!(empty.continue_turn.as_deref(), Some("only"));
 }

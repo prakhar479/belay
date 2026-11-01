@@ -12,6 +12,24 @@ pub enum Mode {
     Optimize,
 }
 
+/// What a tool does, in words every agent shares. The connector maps the agent's own
+/// tool names to these; the core plans only with the kind and keeps `tool` for display.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    Shell,
+    Edit,
+    Write,
+    Read,
+    Search,
+    Fetch,
+    Mcp,
+    Subagent,
+    /// Unknown tools, and ledgers written before kinds existed.
+    #[default]
+    Other,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
@@ -33,6 +51,8 @@ pub enum Event {
     ToolRequested {
         tool_use_id: String,
         tool: String,
+        #[serde(default)]
+        kind: ToolKind,
         input: Value,
         /// The connector says rewriting this input adds no permission prompt.
         #[serde(default)]
@@ -49,6 +69,8 @@ pub enum Event {
     ToolCompleted {
         tool_use_id: String,
         tool: String,
+        #[serde(default)]
+        kind: ToolKind,
         input: Value,
         output: String,
         failed: bool,
@@ -168,4 +190,50 @@ pub enum PeerActivity {
     Git { command: String },
     /// The peer's daemon is gone.
     Left,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_ledger_tool_events_without_kind_read_as_other() {
+        let done: Event = serde_json::from_str(
+            r#"{"type":"tool_completed","tool_use_id":"t1","tool":"Bash","input":{},"output":"","failed":false}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            done,
+            Event::ToolCompleted {
+                kind: ToolKind::Other,
+                ..
+            }
+        ));
+        let req: Event = serde_json::from_str(
+            r#"{"type":"tool_requested","tool_use_id":"t1","tool":"Bash","input":{}}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            req,
+            Event::ToolRequested {
+                kind: ToolKind::Other,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn tool_kind_round_trips_in_snake_case() {
+        let ev = Event::ToolCompleted {
+            tool_use_id: "t1".into(),
+            tool: "Bash".into(),
+            kind: ToolKind::Shell,
+            input: Value::Null,
+            output: String::new(),
+            failed: false,
+        };
+        let json = serde_json::to_string(&ev).unwrap();
+        assert!(json.contains(r#""kind":"shell""#), "{json}");
+        assert_eq!(serde_json::from_str::<Event>(&json).unwrap(), ev);
+    }
 }
