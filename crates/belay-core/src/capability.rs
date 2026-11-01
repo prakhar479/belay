@@ -41,7 +41,8 @@ impl Capabilities {
     /// `additionalContext` (S2), so failed runs can be steered but not shaped.
     /// `ask` is false: the interactive prompt shows neither user nor agent the reason (S6),
     /// so the guard downgrades to deny, which the agent sees with its reason.
-    /// `notify_user` is `systemMessage`. [Verify] on which events the user sees it (R3.6).
+    /// `notify_user` is `systemMessage`: on PreToolUse it reaches the user's transcript and
+    /// not the model (conformance, 2.1.316). [Verify] other events (R3.6).
     /// `compact_source` is PreCompact `trigger` (manual or auto). [Verify] live.
     pub const CLAUDE_CODE: Self = Self {
         replace_output: true,

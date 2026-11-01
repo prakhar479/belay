@@ -399,8 +399,8 @@ fn resume_of(args: &[String]) -> crate::daemon::Resume {
         Some(ResumeTarget::Latest) => connector.latest_conversation(&cwd),
         Some(ResumeTarget::Conversation(id)) => Some(id),
     };
-    // [Verify] conformance `resume_keeps_session_id`: `--resume <id>` keeps the id (and
-    // `--fork-session` makes a new one, which still continues this story).
+    // `--resume <id>` keeps the id, and `--fork-session` makes a new one, which still
+    // continues this story (conformance, Claude Code 2.1.316).
     match conversation.and_then(|c| Some((paths::conversation_dir(&c)?, c))) {
         Some((dir, c)) => Resume::From {
             dir,
