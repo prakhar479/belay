@@ -243,6 +243,22 @@ def main() -> int:
           for_user, ", ".join(sorted({str(d.get("type")) for d in for_user})) or "not in transcript")
     check("The model never saw the notice", not to_model and
           not any(notice_text in t for t in seen.values()))
+    # U6.1 [Verify]: the `sed` in step 3 changes a file after the last test run, so the
+    # first Stop gets `{"decision":"block","reason":…}`. Claude Code must keep the agent
+    # going, the agent must run the command, and the next Stop (stop_hook_active) passes.
+    verifies = [a for a in actions("verify") if a.get("applied")]
+    check("belay asked to verify before done (a Stop block)", verifies,
+          "; ".join(a["reason"] for a in actions("verify")) or "no verify action")
+    order = [(h.get("event"), h["payload"]) for h in hooks]
+    first_stop = next((i for i, (ev, _) in enumerate(order) if ev == "Stop"), None)
+    ran_after = first_stop is not None and any(
+        ev in ("PostToolUse", "PostToolUseFailure") and "pytest" in
+        p.get("tool_input", {}).get("command", "")
+        for ev, p in order[first_stop + 1:])
+    check("A Stop block keeps the agent working: it ran the tests after it", ran_after)
+    check("The next Stop came with stop_hook_active and was let through",
+          any(p.get("stop_hook_active") for p in payloads("Stop"))
+          and len(verifies) == 1)
     denied = payloads("PermissionDenied")
     check("Settings with a PermissionDenied hook load (the session ran)", ledger)
     # [Verify] U8 `project_dir_name`: Claude Code names a project's transcript dir after

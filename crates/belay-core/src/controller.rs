@@ -49,6 +49,9 @@ pub struct Config {
     /// Wrap test runs in `belay run`, so a failed run can be summarized too. A wrapped
     /// call can cost the agent some permission checking, so this is off by default.
     pub wrap_tests: bool,
+    /// Verify before done (U6.1): at the end of a turn with files changed since the
+    /// last passing test run, ask the agent to run it before it finishes.
+    pub verify: bool,
     /// Memory (F2, U4b): handoffs, recall at the start, fixes other sessions learned,
     /// and the project's notes.
     pub memory: bool,
@@ -79,6 +82,7 @@ impl Default for Config {
             loops: true,
             shape: true,
             wrap_tests: false,
+            verify: true,
             memory: true,
             recall_tokens: 600,
             awareness: true,
@@ -99,6 +103,7 @@ impl Config {
             ("loops", on_off(self.loops)),
             ("shape", on_off(self.shape)),
             ("wrap_tests", self.wrap_tests.to_string()),
+            ("verify", on_off(self.verify)),
             ("memory", on_off(self.memory)),
             ("awareness", on_off(self.awareness)),
             ("commons", on_off(self.commons)),
@@ -215,8 +220,9 @@ pub struct Controller {
     next_output: u64,
     next_action: u64,
     outputs: HashMap<String, OutputKind>,
-    /// Blocked guard actions, by action id, and the most recent one.
-    blocked: BTreeMap<String, EditKey>,
+    /// Blocked guard actions, by action id, with the guard rules behind each, and the
+    /// most recent one.
+    blocked: BTreeMap<String, (EditKey, Vec<String>)>,
     last_blocked: Option<String>,
     /// Edits the user allowed once, with the action id and the override entry seq.
     allowed: BTreeMap<EditKey, (String, u64)>,
@@ -277,6 +283,10 @@ pub struct Controller {
     /// This session continues earlier runs (U8): its start gets the carry pack, not the
     /// recall a new session gets.
     restored: bool,
+    /// Verify before done (U6.1): edits since the last passing run.
+    verify: verify::VerifyState,
+    /// Guard rules the user's allows made warn (U6.3).
+    guard_fb: features::GuardFeedback,
 }
 
 /// The costly, pure part of handling an output: hash, failures, and summary.
@@ -462,6 +472,8 @@ impl Controller {
             questions_from: std::collections::BTreeSet::new(),
             run_failed: None,
             restored: false,
+            verify: verify::VerifyState::default(),
+            guard_fb: features::GuardFeedback::default(),
         }
     }
 
@@ -649,7 +661,10 @@ impl Controller {
             _ => self.facts.last_activity_ms = now,
         }
         match event {
-            Event::PromptSubmitted { .. } => self.facts.turn_open = true,
+            Event::PromptSubmitted { .. } => {
+                self.facts.turn_open = true;
+                self.verify.on_prompt();
+            }
             Event::TurnEnded => self.facts.turn_open = false,
             Event::ToolCompleted { failed, .. } => {
                 self.card_counts.0 += 1;
@@ -815,7 +830,7 @@ impl Controller {
                 .clone()
                 .ok_or("No edit was blocked in this session.")?,
         };
-        let key = self
+        let (key, rules) = self
             .blocked
             .get(&id)
             .cloned()
@@ -829,6 +844,7 @@ impl Controller {
         );
         self.memory_on_guard(format!("The user allowed the edit {id} blocked, once."));
         self.allowed.insert(key, (id, seq));
+        self.guard_allowed(&mut d, now_ms, &rules, seq);
         Ok(d)
     }
 
@@ -1232,12 +1248,14 @@ impl Controller {
             Event::TurnEnded => {
                 let ev = self.push(&mut d, now_ms, vec![], Body::Event { event });
                 self.end_turn(&mut d, now_ms, ev);
+                self.verify_at_end(&mut d, now_ms, ev);
             }
             other => {
                 self.push(&mut d, now_ms, vec![], Body::Event { event: other });
             }
         }
         if let Some(path) = my_edit {
+            self.verify.on_edit(&path);
             self.fleet.on_my_edit(&path, now_ms);
         }
         if delivers {
@@ -1499,6 +1517,7 @@ impl Controller {
                 Some(false) => self.facts.last_run_failed = true,
                 None => {}
             }
+            self.verify.on_run(&key, passed, out);
             self.last_test = Some(crate::commons::LastTest {
                 command: key.clone(),
                 passed,
@@ -2050,6 +2069,14 @@ impl Controller {
         };
 
         let decision = self.effective_guard(self.session.guard);
+        // U6.3: rules the user allowed twice only warn for the rest of the session.
+        let rules = features::rules_of(&reasons);
+        let relaxed = decision != GuardDecision::Warn && self.guard_fb.warns(&rules);
+        let decision = if relaxed {
+            GuardDecision::Warn
+        } else {
+            decision
+        };
         if let Some((id, override_seq)) = self.allowed.remove(&key) {
             let reason = format!("Allowed once by the user (`belay allow {id}`).");
             let action = ActionKind::Guard { path, decision };
@@ -2080,11 +2107,19 @@ impl Controller {
                 reasons.join("; ")
             )
         };
+        let reason = if relaxed {
+            format!(
+                "{message} It warns instead of blocking: the user allowed {} twice this session.",
+                rules.join(", ")
+            )
+        } else {
+            message.clone()
+        };
         let action = ActionKind::Guard { path, decision };
         let id = format!("a-{}", self.next_action);
-        if self.act(d, now, j, action, message.clone()) {
+        if self.act(d, now, j, action, reason) {
             if blocking {
-                self.blocked.insert(id.clone(), key);
+                self.blocked.insert(id.clone(), (key, rules));
                 self.last_blocked = Some(id);
             }
             match decision {
@@ -2310,6 +2345,7 @@ impl Controller {
             ActionKind::BlockCommand { .. } => self.caps.deny,
             ActionKind::Wrap { .. } => self.caps.rewrite_input,
             ActionKind::Retry { .. } => self.caps.retry_denied,
+            ActionKind::Verify { .. } => self.caps.continue_turn,
             ActionKind::Shape { .. } => self.caps.replace_output,
             ActionKind::Steer { .. }
             | ActionKind::Fleet { .. }
@@ -2445,6 +2481,7 @@ mod memory;
 mod notice;
 mod restore;
 mod snapshot;
+mod verify;
 
 pub use features::{Feature, GuardSetting, ReportLevel, ALL_FEATURES};
 pub use notice::notice_for;

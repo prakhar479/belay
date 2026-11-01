@@ -5,6 +5,6 @@ Loops (13 s in loops): 1
 Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages
 Tool calls: 7 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
 Bash output by kind: test 100%
-Test runs: 4 · wrapped (or would be, in auto mode): 0 (0%)
+Test runs: 4 · test runs are not wrapped (wrap_tests = off)
 Edits: 3 through Edit/Write (guarded before they run) · 0 Bash writes, 0 naming a test file (guarded after they run)
 Loop nudges: 1 · failure stopped within 1 more run: 1 (100%)

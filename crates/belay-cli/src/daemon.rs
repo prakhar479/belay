@@ -1437,7 +1437,12 @@ fn serve(
                 let message = match st.controller.allow(action.as_deref(), now_ms()) {
                     Ok(d) => {
                         st.store.persist(&d)?;
-                        "Allowed once. The agent can retry the edit now.".to_string()
+                        // A rule allowed twice drops to warn (U6.3): the user hears it here.
+                        let mut m = "Allowed once. The agent can retry the edit now.".to_string();
+                        for n in &d.response.notices {
+                            m.push_str(&format!("\nbelay: {}", n.text));
+                        }
+                        m
                     }
                     Err(m) => m,
                 };

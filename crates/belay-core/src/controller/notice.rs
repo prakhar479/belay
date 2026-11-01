@@ -135,6 +135,14 @@ pub fn notice_for(
             "handoffs",
         ),
         ActionKind::Commons { .. } => (Act, reason.trim_end_matches('.').to_string() + ".", "commons notes"),
+        ActionKind::Verify { command, .. } => (
+            Act,
+            format!(
+                "files changed since the last passing `{}`: belay asked the agent to run it before it finishes.",
+                crate::text::truncate_chars(command, 60)
+            ),
+            "verify requests",
+        ),
         ActionKind::Wrap { .. } => (
             Info,
             "ran the test command through `belay run`.".to_string(),

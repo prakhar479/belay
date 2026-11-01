@@ -86,7 +86,7 @@ enum Cmd {
     #[command(hide = true)]
     Init { agent: String },
     /// Pause belay in a live session: one feature, or all of them. Run it yourself;
-    /// the agent may not. Features: guard, loops, shape, wrap_tests, memory, awareness,
+    /// the agent may not. Features: guard, loops, shape, wrap_tests, verify, memory, awareness,
     /// commons.
     Pause {
         feature: Option<String>,

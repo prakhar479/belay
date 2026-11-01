@@ -158,6 +158,8 @@ pub struct Totals {
     pub test_runs: u64,
     /// Test runs belay wrapped (or would wrap, in retro).
     pub wrapped: u64,
+    /// `wrap_tests` was on (the session's config said so, or a run was wrapped).
+    pub wrap_on: bool,
     /// Edits through Edit/Write (the test guard sees these).
     pub tool_edits: u64,
     /// Bash calls that write files (`sed -i`, heredocs).
@@ -249,6 +251,9 @@ pub fn totals(entries: &[Entry]) -> Totals {
             Body::Event {
                 event: Event::FileEdited { .. },
             } => t.tool_edits += 1,
+            Body::Config { overrides } => {
+                t.wrap_on |= overrides.get("wrap_tests").is_some_and(|v| v == "true");
+            }
             Body::Event {
                 event: Event::ToolCompleted { tool, input, .. },
             } if tool == "Bash" => {
@@ -267,6 +272,7 @@ pub fn coverage(
     by_kind: &BTreeMap<OutputKind, u64>,
     test_runs: u64,
     wrapped: u64,
+    wrap_on: bool,
     tool_edits: u64,
     bash_writes: u64,
     bash_test_writes: u64,
@@ -275,11 +281,17 @@ pub fn coverage(
     if by_kind.values().any(|n| *n > 0) {
         let _ = writeln!(out, "Bash output by kind: {}", kind_shares(by_kind));
     }
-    if test_runs > 0 {
+    // With wrapping off, a count of 0 would read as a measurement: say it is off.
+    if test_runs > 0 && (wrap_on || wrapped > 0) {
         let _ = writeln!(
             out,
             "Test runs: {test_runs} · wrapped (or would be, in auto mode): {wrapped} ({}%)",
             pct(wrapped, test_runs)
+        );
+    } else if test_runs > 0 {
+        let _ = writeln!(
+            out,
+            "Test runs: {test_runs} · test runs are not wrapped (wrap_tests = off)"
         );
     }
     if tool_edits + bash_writes > 0 {
@@ -512,6 +524,8 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
     // The commons (C2, C3): what this session told others, shared, and asked.
     let mut commons = Vec::new();
     let mut recalled = Vec::new();
+    // Verify before done (U6.1): turns belay kept going until the tests ran.
+    let mut verified = Vec::new();
 
     let overrides: HashSet<u64> = entries
         .iter()
@@ -670,6 +684,11 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                     text.trim_start_matches("belay: ")
                 )),
                 ActionKind::Wrap { .. } => wrapped += u64::from(*applied),
+                ActionKind::Verify { text, .. } => verified.push(format!(
+                    "{} {}",
+                    status(*applied, "told"),
+                    text.trim_start_matches("belay: ")
+                )),
                 ActionKind::Retry { .. } => denied += 1,
                 ActionKind::BlockCommand { command } => guards.push(format!(
                     "{} the agent's `{}`: {reason}",
@@ -782,6 +801,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
         ("Test guard", &guards),
         ("Fleet notices", &fleet),
         ("Recalled", &recalled),
+        ("Verify before done", &verified),
     ];
     if !full {
         let mut parts: Vec<String> = attention
@@ -879,6 +899,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
             &t.by_kind,
             t.test_runs,
             t.wrapped,
+            t.wrap_on,
             t.tool_edits,
             t.bash_writes,
             t.bash_test_writes
@@ -950,6 +971,7 @@ fn describe(e: &Entry) -> String {
                 ActionKind::BlockCommand { .. } => "block",
                 ActionKind::Wrap { .. } => "wrap",
                 ActionKind::Retry { .. } => "retry",
+                ActionKind::Verify { .. } => "verify",
                 ActionKind::Fleet { .. } => "fleet",
                 ActionKind::Recall { .. } => "recall",
                 ActionKind::Notes { .. } => "notes",

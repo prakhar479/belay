@@ -310,6 +310,8 @@ impl Controller {
         put("last_summary", format!("{:?}", self.last_summary));
         put("clock", format!("{:?} {}", self.last_ms, self.active_ms));
         put("memory", self.mem.digest());
+        put("verify", self.verify.digest());
+        put("guard_feedback", self.guard_fb.digest());
         put("card", format!("{:?} {:?}", self.said, self.started));
         sha256_hex(&s)
     }
