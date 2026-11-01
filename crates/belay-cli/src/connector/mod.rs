@@ -160,6 +160,22 @@ pub trait Connector: Send {
     fn transcript(&self) -> Option<Box<dyn TranscriptSource>> {
         None
     }
+    /// What this agent needs inside a sandbox (`belay sandbox`). The sandbox code never
+    /// names an agent's files: it asks here.
+    fn sandbox_files(&self) -> SandboxFiles {
+        SandboxFiles::default()
+    }
+}
+
+/// An agent's config inside a sandbox. Paths are relative to the user's home.
+#[derive(Debug, Default, Clone)]
+pub struct SandboxFiles {
+    /// Files copied into the sandbox's private home, read-only.
+    pub copy: Vec<PathBuf>,
+    /// Directories bound read-only at the same place in the private home.
+    pub ro_dirs: Vec<PathBuf>,
+    /// The agent's API and auth environment variables, passed through when set.
+    pub env: Vec<&'static str>,
 }
 
 /// An agent's transcripts, read as the core events its hooks would have produced.

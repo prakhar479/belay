@@ -26,6 +26,7 @@ mod plugin;
 mod report;
 mod retro;
 mod run;
+mod sandbox;
 mod sessions;
 mod shim;
 mod store;
@@ -374,6 +375,12 @@ enum Cmd {
         /// Do not ask before writing the files.
         #[arg(long)]
         yes: bool,
+    },
+    /// Sandboxes: run a command on a worktree of this repo with a private home and
+    /// limits; its changes land on branch `belay/sandbox/<id>` for you to merge.
+    Sandbox {
+        #[command(subcommand)]
+        cmd: sandbox::SandboxCmd,
     },
     /// What belay would have done in an existing Claude Code transcript, or in all of them.
     Retro {
@@ -801,6 +808,7 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Launch { agent, args } => launcher::launch(&agent, args),
         Cmd::Codex { .. } => bail!("`belay codex` is not built yet"),
         Cmd::Init { agent } => bail!("`belay init {agent}` is not built yet"),
+        Cmd::Sandbox { cmd } => sandbox::cli(cmd),
         Cmd::Undo { id, session, yes } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
             undo::run(&dir, id.as_deref(), yes)

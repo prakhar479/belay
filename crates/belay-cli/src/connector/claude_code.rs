@@ -377,6 +377,29 @@ impl Connector for ClaudeCode {
         self.socket = Some(socket.to_path_buf());
     }
 
+    fn sandbox_files(&self) -> super::SandboxFiles {
+        super::SandboxFiles {
+            copy: [
+                ".claude.json",
+                ".claude/.credentials.json",
+                ".claude/settings.json",
+            ]
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+            ro_dirs: vec![".claude/plugins".into()],
+            env: vec![
+                "ANTHROPIC_API_KEY",
+                "ANTHROPIC_AUTH_TOKEN",
+                "ANTHROPIC_BASE_URL",
+                "ANTHROPIC_MODEL",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_USE_BEDROCK",
+                "CLAUDE_CODE_USE_VERTEX",
+            ],
+        }
+    }
+
     fn transcript(&self) -> Option<Box<dyn TranscriptSource>> {
         Some(Box::new(transcript::ClaudeTranscripts))
     }

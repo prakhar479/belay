@@ -500,6 +500,29 @@ Claude Code's `/rewind` restores only what its own edit tools wrote. `belay undo
 
 Only you can undo. belay refuses `belay undo` from an agent's shell, and denies it when the agent tries. `belay purge` and the cleanup of old sessions delete their refs.
 
+## Sandboxes
+
+`belay sandbox run` runs a command where it cannot reach your other files. It runs on a git worktree of the repo, on branch `belay/sandbox/<id>`, with a private home and limits. At the end, belay commits what changed on that branch. You review and merge it.
+
+```sh
+belay sandbox run -- make test       # a new sandbox; the worktree goes, the branch stays
+belay sandbox run --id fix --keep -- cargo build   # name it, keep it for the next run
+belay sandbox list                   # every sandbox: running, kept, or removed
+belay sandbox show fix               # branch, commits, the audit of the branch, limit stops
+belay sandbox diff fix               # what the branch changed since it started
+belay sandbox stop fix               # stop a running one
+belay sandbox rm fix [--branch]      # remove its worktree and home (yours to run)
+belay sandbox doctor                 # try to escape a fresh sandbox; exit 1 if one gets out
+```
+
+The command starts in the same subdirectory of the worktree as yours in the repo. Its output streams, and belay returns its exit code. The sandbox starts from your HEAD commit: uncommitted changes are not in it.
+
+Inside, the command sees the system dirs read-only, your toolchains read-only (`sandbox_ro`), the worktree, and a private home. It does not see the rest of your home (`~/.ssh`, cloud credentials, other repos), `/mnt`, the Docker socket, your ssh agent, or your display. On WSL it cannot run Windows programs. The network is the host's. The environment is cleared, then a short list is passed: `PATH`, locale, `TERM`, `USER`, `SHELL`, `TZ`, `BELAY_*`, and the agent's API keys. `BELAY_SANDBOX` is set to the sandbox id, and `belay sandbox` refuses to nest. git does not work inside; belay commits from outside.
+
+belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`sandbox_procs`), disk use of the worktree and home (`sandbox_disk`), and wall time (`sandbox_wall`). When one is passed, belay stops the sandbox and records why. `belay sandbox show` lists these stops. Run from a belay session, the start and stop are also in the session's ledger, and the card shows the sandbox.
+
+There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` (`sandbox_agent = off` stops that). Only you may run `belay sandbox rm`: belay refuses it outside your terminal and denies it to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
+
 ## Audit (experimental)
 
 `belay audit` reads a git diff and lists what changed in the project's checks:
@@ -547,6 +570,12 @@ awareness = on                  # what other belay sessions here did
 commons = off                   # other sessions' messages and handoffs reach the agent
 report = quiet                  # how much belay tells you: quiet, normal, verbose
 experimental_audit = false      # audit each session's changes to tests and checks
+sandbox_memory = 4G             # sandbox: most memory its processes use together
+sandbox_procs = 512             # sandbox: most processes
+sandbox_disk = 10G              # sandbox: most disk its worktree and private home use
+sandbox_wall = 4h               # sandbox: longest a command runs (also 30m, 90s)
+sandbox_agent = on              # agents may run `belay sandbox run`
+sandbox_ro = ~/.cargo, ~/.rustup, ~/.nvm, ~/.pyenv, ~/.local/bin   # read-only in a sandbox, when they exist
 ```
 
 0.1 config files still load, with a warning for each old key: `look` reads as `on`, `fleet` is now `awareness`, `learn` is now `memory`, and `plugin_mode` is ignored. Fleet sessions always run with `guard = deny` and `commons = on`.
@@ -591,6 +620,10 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay pause [feature]` · `belay resume [feature]` | Pause belay in the live session, or resume it (yours to run) |
 | `belay allow [a-N]` | Lift one guard block (yours to run) |
 | `belay undo [t-N] [--yes]` | List snapshots, or roll the files back to one (yours to run) |
+| `belay sandbox run [--id S] [--keep] -- <cmd…>` | Run a command in a sandbox; its changes land on `belay/sandbox/<id>` |
+| `belay sandbox list \| show S \| diff S \| stop S` | The sandboxes, one in detail, its changes; stop a running one |
+| `belay sandbox rm S [--branch]` | Remove a sandbox's worktree and home (yours to run) |
+| `belay sandbox doctor` | Try to escape a fresh sandbox; exit 1 if a probe gets out |
 | `belay report [--session S] [--full]` | What happened in a session |
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |

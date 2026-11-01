@@ -545,6 +545,7 @@ mod tests {
             blocks: 0,
             last_activity_ms: 1_000,
             ended: false,
+            sandbox: None,
         }
     }
 

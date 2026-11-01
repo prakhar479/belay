@@ -257,6 +257,8 @@ pub struct Controller {
     /// The commons card (C1): who this session is, what it said, what belay saw.
     identity: crate::commons::Identity,
     said: crate::commons::AgentCard,
+    /// The sandbox this session runs work in now, for its card.
+    sandbox: Option<String>,
     facts: crate::commons::Facts,
     last_test: Option<crate::commons::LastTest>,
     card_counts: (u64, u64, u64),
@@ -332,6 +334,14 @@ fn runs_belay(command: &str, verb: &str) -> bool {
     shell::parse(command).segments.iter().any(|seg| {
         let w = shell::program_words(seg);
         w.len() >= 2 && shell::program_name(&w[0]) == "belay" && w[1] == verb
+    })
+}
+
+/// A simple command runs `belay sandbox rm` (rule 12).
+fn runs_belay_sandbox_rm(command: &str) -> bool {
+    shell::parse(command).segments.iter().any(|seg| {
+        let w = shell::program_words(seg);
+        w.len() >= 3 && shell::program_name(&w[0]) == "belay" && w[1] == "sandbox" && w[2] == "rm"
     })
 }
 
@@ -435,6 +445,7 @@ impl Controller {
             notes: Vec::new(),
             identity: crate::commons::Identity::default(),
             said: crate::commons::AgentCard::default(),
+            sandbox: None,
             facts: crate::commons::Facts::default(),
             last_test: None,
             card_counts: (0, 0, 0),
@@ -619,6 +630,7 @@ impl Controller {
             blocks: self.card_counts.2,
             last_activity_ms: self.facts.last_activity_ms,
             ended: false,
+            sandbox: self.sandbox.clone(),
         }
     }
 
@@ -1166,6 +1178,16 @@ impl Controller {
                 } else {
                     self.fleet.on_message(&from, &kind, &text, ev, now_ms);
                 }
+            }
+            Event::SandboxStarted { ref id, .. } => {
+                self.sandbox = Some(id.clone());
+                self.push(&mut d, now_ms, vec![], Body::Event { event });
+            }
+            Event::SandboxStopped { ref id, .. } => {
+                if self.sandbox.as_deref() == Some(id.as_str()) {
+                    self.sandbox = None;
+                }
+                self.push(&mut d, now_ms, vec![], Body::Event { event });
             }
             Event::Workspace { top, common } => {
                 self.fleet.set_workspace(&top, &common, now_ms);
@@ -1852,6 +1874,8 @@ impl Controller {
             "belay: only the user can allow a blocked edit. Ask the user to run `! belay allow`, then retry the edit.".to_string()
         } else if runs_belay(&command, "undo") {
             "belay: only the user rolls files back. Ask the user to run `belay undo` in their own terminal.".to_string()
+        } else if runs_belay_sandbox_rm(&command) {
+            "belay: only the user removes a sandbox. Ask the user to run `belay sandbox rm` in their own terminal.".to_string()
         } else if runs_belay(&command, "pause") || runs_belay(&command, "resume") {
             // Pausing would lift every guard at once.
             "belay: only the user pauses or resumes belay. Ask the user if belay should pause."

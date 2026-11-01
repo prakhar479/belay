@@ -132,6 +132,9 @@ pub struct Card {
     /// ended looping or blocked).
     #[serde(default)]
     pub ended: bool,
+    /// The sandbox this session runs work in now (`belay sandbox`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
 }
 
 impl Card {
@@ -748,6 +751,7 @@ mod tests {
             blocks: 0,
             last_activity_ms: 0,
             ended: true,
+            sandbox: None,
         };
         let h = Handoff::from_card(&c);
         assert!(h.looping);
