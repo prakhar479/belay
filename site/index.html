@@ -1275,7 +1275,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-loop reveal" style="--rd:.08s" aria-labelledby="f-loop">
         <p class="kicker">Loop detection</p>
         <h3 id="f-loop">Three rounds. Same failure. One message.</h3>
-        <p class="body">It matches failures by a normalized signature. It also catches edit cycles: edit, revert, edit. It tells the agent once.</p>
+        <p class="body">It matches failures by a normalized signature. It also catches edit cycles: edit, revert, edit. It tells the agent once. And when the agent ends its turn with files changed since the last passing run, belay asks it once to run the tests before it finishes.</p>
         <div class="demo">
           <div class="loopviz" id="loopviz" aria-hidden="true">
             <div class="ring">

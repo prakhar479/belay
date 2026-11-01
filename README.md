@@ -55,6 +55,7 @@ belay: memory for this project (`belay memory list` shows it all; check that eac
 | **Test guard** | Before an edit lands in a test file, belay checks it. It flags assertions removed, skips added, expected values changed to the failing actual, tolerances raised, and golden files rewritten. The edit is denied until *you* run `! belay allow` (or set `guard = warn`). |
 | **Loop detection** | The same failure after 3 rounds of edit-then-run, or an edit that reverts the last one. belay tells the agent, with the failure it keeps hitting. |
 | **Faithful summaries** | Long test output is cut to what matters, and every failure line is kept. One pytest run went from 6,407 to 1,576 tokens. `belay show o-3` prints the original. |
+| **Verify before done** | When the agent ends its turn with files changed since the last passing test run, belay asks it once to run the tests first. It asks at most once per turn, so it cannot loop. |
 | **Learned fixes** | When a failure is fixed and the full suite passes, belay remembers the change. The next session that hits the same failure is told how it was fixed. |
 
 The agent tries to make a failing test pass by changing what it expects. This is what it reads back, and the edit does not land:
