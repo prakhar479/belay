@@ -377,6 +377,15 @@ impl Connector for ClaudeCode {
         self.socket = Some(socket.to_path_buf());
     }
 
+    /// `~/.claude/skills` (under `CLAUDE_CONFIG_DIR` if set) and `<repo>/.claude/skills`.
+    /// [Verify] whether a skill added during a running session is picked up (U9).
+    fn skill_dir(&self, scope: belay_core::skills::Scope, repo: Option<&Path>) -> Option<PathBuf> {
+        match scope {
+            belay_core::skills::Scope::User => Some(crate::install::claude_dir().join("skills")),
+            belay_core::skills::Scope::Project => repo.map(|r| r.join(".claude/skills")),
+        }
+    }
+
     fn transcript(&self) -> Option<Box<dyn TranscriptSource>> {
         Some(Box::new(transcript::ClaudeTranscripts))
     }

@@ -12,7 +12,7 @@ use anyhow::{anyhow, bail, Result};
 use belay_core::memory::{Kind, Memory, Provenance, Scope};
 use serde_json::{json, Value};
 
-use crate::{commons, fleet, learnstore, memorystore, paths, report, sessions, store};
+use crate::{commons, fleet, learnstore, memorystore, paths, report, sessions, skillstore, store};
 
 /// The newest protocol revision this server speaks; a client's own is echoed back.
 const PROTOCOL: &str = "2025-06-18";
@@ -127,6 +127,20 @@ fn tools() -> Value {
             "inputSchema": schema(json!({ "id": { "type": "string", "description": "o-N" } }), &["id"]),
         },
         {
+            "name": "skill_preview",
+            "description": "Fetch a skill (GitHub tree or blob URL, raw SKILL.md URL, .zip or .tar.gz, or a path) and show its name, files, risk warnings, and digest. Installs nothing.",
+            "inputSchema": schema(json!({ "url": { "type": "string" } }), &["url"]),
+        },
+        {
+            "name": "skill_stage",
+            "description": "Stage a skill for the user to approve. Nothing is installed until the user runs `belay skill approve <name>` in their own terminal.",
+            "inputSchema": schema(json!({
+                "url": { "type": "string" },
+                "scope": { "type": "string", "enum": ["user", "project"], "description": "Default: user." },
+                "name": { "type": "string", "description": "Install under this name instead of the one in SKILL.md." },
+            }), &["url"]),
+        },
+        {
             "name": "why",
             "description": "Why belay did something in this session: the cause chain of an action (a-N), output (o-N), or entry number.",
             "inputSchema": schema(json!({ "id": { "type": "string", "description": "a-N, o-N, or an entry number" } }), &["id"]),
@@ -148,6 +162,12 @@ fn call(params: &Value) -> Result<Value, (i64, String)> {
         "handoff_get" => handoff_get(),
         "output_show" => str_arg(&args, "id").and_then(|id| output_show(&session()?, id)),
         "why" => str_arg(&args, "id").and_then(|id| why(&session()?, id)),
+        "skill_preview" => str_arg(&args, "url").and_then(skillstore::preview),
+        // Always a stage: the server runs under the agent, whoever started it.
+        "skill_stage" => str_arg(&args, "url").and_then(|url| {
+            let opt = |k: &str| args.get(k).and_then(Value::as_str);
+            skillstore::stage(url, opt("scope"), opt("name"))
+        }),
         _ => return Err((INVALID_PARAMS, format!("no tool {name}"))),
     };
     let (text, is_error) = match said {
@@ -325,6 +345,8 @@ mod tests {
                 "memory_add",
                 "handoff_get",
                 "output_show",
+                "skill_preview",
+                "skill_stage",
                 "why"
             ]
         );

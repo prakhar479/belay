@@ -28,6 +28,7 @@ mod retro;
 mod run;
 mod sessions;
 mod shim;
+mod skillstore;
 mod store;
 mod undo;
 mod watch;
@@ -325,6 +326,12 @@ enum Cmd {
     Memory {
         #[command(subcommand)]
         action: Option<MemoryCmd>,
+    },
+    /// Skills from URLs: preview, add (an agent's add only stages), list, update;
+    /// approve, reject, remove (yours to run).
+    Skill {
+        #[command(subcommand)]
+        action: Option<SkillCmd>,
     },
     /// An MCP server over stdio: memory search and add, the handoff, outputs, and why.
     Mcp,
@@ -669,6 +676,45 @@ enum MemoryCmd {
     Approve { id: String },
     /// Copy notes, fixes, findings, and handoffs into the memory store, once.
     Migrate,
+}
+
+/// `belay skill` actions.
+#[derive(Subcommand)]
+enum SkillCmd {
+    /// Fetch a skill and show its name, files, warnings, and digest. Installs nothing.
+    Preview { url: String },
+    /// Install a skill after a preview. From an agent, it is staged for you to approve.
+    Add {
+        /// A GitHub tree or blob URL, a raw SKILL.md URL, a .zip or .tar.gz, or a path.
+        url: String,
+        /// user (default: every project) or project (this repo's .claude/skills).
+        #[arg(long)]
+        scope: Option<String>,
+        /// Install under this name instead of the one in SKILL.md.
+        #[arg(long)]
+        name: Option<String>,
+        /// Do not ask before installing.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Install a staged skill (yours to run).
+    Approve {
+        name: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Drop a staged skill (yours to run).
+    Reject { name: String },
+    /// Uninstall a skill (yours to run).
+    Remove {
+        name: String,
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Installed and staged skills, with drift from what was approved (the default).
+    List,
+    /// Fetch installed skills again; a change waits for your approval.
+    Update { name: Option<String> },
 }
 
 fn main() {
@@ -1301,6 +1347,24 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Cmd::Mcp => mcp::run(),
+        Cmd::Skill { action } => {
+            let said = match action.unwrap_or(SkillCmd::List) {
+                SkillCmd::Preview { url } => skillstore::preview(&url)?,
+                SkillCmd::Add {
+                    url,
+                    scope,
+                    name,
+                    yes,
+                } => skillstore::add(&url, scope.as_deref(), name.as_deref(), yes)?,
+                SkillCmd::Approve { name, yes } => skillstore::approve(&name, yes)?,
+                SkillCmd::Reject { name } => skillstore::reject(&name)?,
+                SkillCmd::Remove { name, scope } => skillstore::remove(&name, scope.as_deref())?,
+                SkillCmd::List => skillstore::list()?,
+                SkillCmd::Update { name } => skillstore::update(name.as_deref())?,
+            };
+            println!("{}", said.trim_end());
+            Ok(0)
+        }
         Cmd::Memory { action } => {
             let said = match action.unwrap_or(MemoryCmd::List { all: false }) {
                 MemoryCmd::List { all } => memorystore::list(all)?,

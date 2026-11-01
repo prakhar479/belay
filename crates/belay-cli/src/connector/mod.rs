@@ -160,6 +160,15 @@ pub trait Connector: Send {
     fn transcript(&self) -> Option<Box<dyn TranscriptSource>> {
         None
     }
+    /// The directory this agent loads skills from (`belay skill`), one subdirectory per
+    /// skill. `repo` is the project's root, for `Scope::Project`. None: no such place.
+    fn skill_dir(
+        &self,
+        _scope: belay_core::skills::Scope,
+        _repo: Option<&Path>,
+    ) -> Option<PathBuf> {
+        None
+    }
 }
 
 /// An agent's transcripts, read as the core events its hooks would have produced.

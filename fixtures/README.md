@@ -24,3 +24,4 @@ Rules:
 - Every parser change needs a fixture here and a test.
 - Captured payloads come from `<session>/hooks.jsonl` (run the session with `BELAY_CAPTURE=1`). Make fixtures with `scripts/capture_fixtures.py`; it removes personal paths and ids and refuses output that still has `$HOME` or `$USER`. Read the result before you commit it.
 - In captures, paths are `/home/dev/shop`, the session id is `9b1d6f2e-0000-4000-8000-000000000001`, and tool-use ids are `toolu_0N`.
+| `skills/<rule>/` | A skill per risk rule (pipe-to-shell, base64-blob, executable, disables-guard, ignore-instructions, hidden-unicode) and a clean one | Written by hand 2026-11-01 (U9) |

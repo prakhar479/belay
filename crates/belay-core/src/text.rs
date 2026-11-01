@@ -31,7 +31,12 @@ pub fn estimate_tokens(s: &str) -> usize {
 
 /// Lowercase hex SHA-256. Use this for every hash that reaches the ledger.
 pub fn sha256_hex(s: &str) -> String {
-    Sha256::digest(s.as_bytes())
+    sha256_hex_bytes(s.as_bytes())
+}
+
+/// Lowercase hex SHA-256 of raw bytes (files that need not be text).
+pub fn sha256_hex_bytes(b: &[u8]) -> String {
+    Sha256::digest(b)
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
