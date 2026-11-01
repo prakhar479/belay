@@ -94,6 +94,17 @@ static LAST_CARD_ACTIVITY: std::sync::atomic::AtomicU64 = std::sync::atomic::Ato
 /// CARD_LAST after the card was marked ended: no later write may undo it.
 const ENDED: &str = "\u{0}ended";
 
+/// Keep the handoff this session leaves now in the project's memory (U4b): at its end
+/// and before a compaction. A later one replaces it.
+fn keep_handoff(st: &State) {
+    let Some(project) = &st.project else { return };
+    if let Some(m) = st.controller.handoff_memory(project, now_ms()) {
+        if let Err(e) = crate::memorystore::save_handoff(m) {
+            eprintln!("belayd: keep the handoff: {e:#}");
+        }
+    }
+}
+
 fn card_ended() {
     if let Some(dir) = CARD_DIR.get() {
         let mut last = CARD_LAST.lock().unwrap_or_else(|e| e.into_inner());
@@ -836,7 +847,8 @@ fn watch_idle(minutes: u64, sock: &Path, state: &Mutex<State>) {
         if now_ms().saturating_sub(last) > minutes * 60_000 {
             eprintln!("belayd: idle for {minutes} min; exiting");
             // No request may be writing the ledger when the process ends.
-            let _done = lock(state);
+            let done = lock(state);
+            keep_handoff(&done);
             card_ended();
             let _ = fs::remove_file(sock);
             std::process::exit(0);
@@ -853,7 +865,8 @@ fn watch_parent(pid: i32, sock: &Path, state: &Mutex<State>) {
             || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH);
         if !alive {
             eprintln!("belayd: launcher {pid} is gone; exiting");
-            let _done = lock(state);
+            let done = lock(state);
+            keep_handoff(&done);
             card_ended();
             let _ = fs::remove_file(sock);
             std::process::exit(0);
@@ -936,6 +949,11 @@ fn decide_hook(
                     fleet: std::env::var("BELAY_FLEET").ok(),
                     slot,
                 });
+                // Memory (U4b): the last handoff here and what to recall, as data.
+                if controller.config().memory {
+                    controller
+                        .set_memories(crate::memorystore::recall_candidates(&project, &cards));
+                }
             }
             // Shared learning (F2): other sessions' fixes and this project's notes.
             if let Some(ws) = ws.as_ref().filter(|_| controller.config().memory) {
@@ -1203,6 +1221,17 @@ fn serve(
                     }
                 }
                 remember(st, &decisions)?;
+                let compacting = decisions.iter().flat_map(|d| &d.entries).any(|e| {
+                    matches!(
+                        e.body,
+                        belay_core::Body::Event {
+                            event: belay_core::Event::Compacted { .. }
+                        }
+                    )
+                });
+                if compacting {
+                    keep_handoff(st);
+                }
                 snapshot = snapshot_due(st, &decisions);
                 if st.notify {
                     notify(&notifications(&decisions));
@@ -1305,7 +1334,8 @@ fn serve(
             thread::sleep(Duration::from_millis(20));
         }
         // Wait for any request that is writing the ledger, then exit (R0.6).
-        let _done = state.lock().unwrap_or_else(|e| e.into_inner());
+        let done = state.lock().unwrap_or_else(|e| e.into_inner());
+        keep_handoff(&done);
         card_ended();
         let _ = fs::remove_file(sock);
         std::process::exit(0);

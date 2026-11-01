@@ -6,8 +6,10 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::commons::{clean, valid_name, words};
-use crate::text::{estimate_tokens, sha256_hex};
+use crate::commons::{clean, valid_name, words, Card};
+use crate::learn::KnownFix;
+use crate::perception::Failure;
+use crate::text::{estimate_tokens, sha256_hex, truncate_chars};
 
 /// A memory's text, at most, in characters.
 pub const MAX_TEXT: usize = 1000;
@@ -117,6 +119,9 @@ pub struct Memory {
     pub uses: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub superseded_by: Option<String>,
+    /// The belay session it came from, for handoffs: a newer one replaces it (U4b).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
     /// The user vouched for it (`belay memory approve`). Provenance stays as it was.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub approved: bool,
@@ -165,6 +170,7 @@ impl Memory {
             last_used_ms: now_ms,
             uses: 0,
             superseded_by: None,
+            session: None,
             approved: provenance == Provenance::User,
         }
     }
@@ -402,6 +408,267 @@ pub fn budget<'a>(
     out
 }
 
+// --- Memory in sessions (U4b): handoffs, recall at start, the carry pack ------------
+
+/// A learned fix as a memory: what belay saw, keyed by its failure signature. Its id is
+/// stable, so a session can name the fixes it used.
+pub fn fix_memory(k: &KnownFix) -> Memory {
+    let what = match (&k.test, k.message.is_empty()) {
+        (Some(t), true) => t.clone(),
+        _ => k.message.clone(),
+    };
+    let text = format!(
+        "`{what}` was fixed by changes to {}; `{}` then passed (learned).",
+        k.files.join(", "),
+        k.command
+    );
+    let key = format!("{}|{}|{}|{}", k.signature, k.project, k.session, k.at_ms);
+    let mut m = Memory::new(
+        &format!("fix-{}", &sha256_hex(&key)[..10]),
+        Scope::Project,
+        Kind::Fix,
+        Provenance::Observed,
+        Some(&k.project),
+        &text,
+        &[],
+        &k.files,
+        k.at_ms,
+    );
+    m.signature = Some(k.signature.clone());
+    m
+}
+
+/// The first line of a failure: its test, then its message's first line.
+pub fn failure_line(f: &Failure) -> String {
+    let first = f.message.lines().next().unwrap_or("").trim();
+    let line = match &f.test {
+        Some(t) if !first.is_empty() => format!("{t}: {first}"),
+        Some(t) => t.clone(),
+        None => first.to_string(),
+    };
+    truncate_chars(&line, 200)
+}
+
+/// The handoff a session leaves at its end or before a compaction, from what belay saw:
+/// the card's task, files, and last test, the open failure, and a loop or block. The
+/// agent's own `belay handoff` text is added, labelled. None when there is nothing to
+/// hand over. The id is empty: the store gives one.
+pub fn handoff_from(
+    card: &Card,
+    failure: Option<&Failure>,
+    project: &str,
+    now_ms: u64,
+) -> Option<Memory> {
+    use crate::commons::CardStatus;
+    let mut parts = Vec::new();
+    if let Some(t) = &card.said.task {
+        parts.push(format!("Task: {t}."));
+    }
+    let files: Vec<String> = card.files.iter().map(|(p, _)| p.clone()).collect();
+    if !files.is_empty() {
+        let shown: Vec<&str> = files.iter().take(5).map(String::as_str).collect();
+        let more = files.len().saturating_sub(5);
+        let more = if more > 0 {
+            format!(" and {more} more")
+        } else {
+            String::new()
+        };
+        parts.push(format!("Changed: {}{more}.", shown.join(", ")));
+    }
+    if let Some(t) = &card.last_test {
+        let how = match t.passed {
+            Some(true) => "passed".to_string(),
+            Some(false) if t.failures > 0 => format!("failed ({} failing)", t.failures),
+            Some(false) => "failed".to_string(),
+            None => "ran".to_string(),
+        };
+        parts.push(format!("Last test: `{}` {how}.", t.command));
+    }
+    if let Some(f) = failure {
+        parts.push(format!("Open failure: {}.", failure_line(f)));
+    }
+    match card.status {
+        CardStatus::Looping => parts.push("It was looping on a failure.".into()),
+        CardStatus::Blocked => parts.push("The test guard had blocked its last edit.".into()),
+        _ => {}
+    }
+    if parts.is_empty() && card.said.handoff.is_none() {
+        return None;
+    }
+    if let Some(t) = &card.said.handoff {
+        parts.push(format!("The agent's handoff: {t}"));
+    }
+    let mut m = Memory::new(
+        "",
+        Scope::Project,
+        Kind::Handoff,
+        Provenance::Observed,
+        Some(project),
+        &format!("From {}. {}", card.name, parts.join(" ")),
+        &[],
+        &files,
+        now_ms,
+    );
+    m.signature = failure.map(|f| f.signature.clone());
+    m.session = Some(card.id.clone()).filter(|s| !s.is_empty());
+    Some(m)
+}
+
+/// The session a handoff came from: its own field, or an adapted card's `h-<id>`.
+fn handoff_session(m: &Memory) -> Option<&str> {
+    m.session.as_deref().or_else(|| m.id.strip_prefix("h-"))
+}
+
+/// What a session starts with: the newest handoff another session left in the project,
+/// then the best other memories, all within `max_tokens`.
+#[derive(Debug, Default)]
+pub struct Recall<'a> {
+    pub handoff: Option<&'a Memory>,
+    pub memories: Vec<&'a Memory>,
+}
+
+impl Recall<'_> {
+    pub fn ids(&self) -> Vec<String> {
+        self.handoff
+            .iter()
+            .chain(&self.memories)
+            .map(|m| m.id.clone())
+            .collect()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.handoff.is_none() && self.memories.is_empty()
+    }
+}
+
+fn cost(m: &Memory) -> usize {
+    estimate_tokens(&m.text) + OVERHEAD_TOKENS
+}
+
+/// The recall at a session's start. Fixes wait for their failure, and only one handoff
+/// is shown: the newest one not from `session`.
+pub fn recall<'a>(
+    memories: &'a [Memory],
+    project: &str,
+    session: &str,
+    max_tokens: usize,
+    now_ms: u64,
+) -> Recall<'a> {
+    let handoff = memories
+        .iter()
+        .filter(|m| m.is_live() && m.kind == Kind::Handoff)
+        .filter(|m| m.project.as_deref() == Some(project))
+        .filter(|m| handoff_session(m) != Some(session))
+        .filter(|m| cost(m) <= max_tokens)
+        .max_by(|a, b| {
+            a.created_ms
+                .cmp(&b.created_ms)
+                .then_with(|| b.id.cmp(&a.id))
+        });
+    let left = max_tokens - handoff.map_or(0, cost);
+    let rest: Vec<Memory> = memories
+        .iter()
+        .filter(|m| !matches!(m.kind, Kind::Handoff | Kind::Fix))
+        .cloned()
+        .collect();
+    let q = Query {
+        project: Some(project.to_string()),
+        now_ms,
+        ..Query::default()
+    };
+    let ranked = rank(&rest, &q);
+    let ids: Vec<String> = budget(&ranked, &rest, left)
+        .into_iter()
+        .map(|m| m.id.clone())
+        .collect();
+    let memories_out = ids
+        .iter()
+        .filter_map(|id| memories.iter().find(|m| &m.id == id))
+        .collect();
+    Recall {
+        handoff,
+        memories: memories_out,
+    }
+}
+
+/// "5 min ago", "3 h ago", "2 days ago".
+pub fn ago(ms: u64) -> String {
+    match ms / 60_000 {
+        0 => "just now".to_string(),
+        m @ 1..=119 => format!("{m} min ago"),
+        m if m < 48 * 60 => format!("{} h ago", m / 60),
+        m => format!("{} days ago", m / (24 * 60)),
+    }
+}
+
+/// What the agent reads at its start for a recall.
+pub fn recall_text(r: &Recall, now_ms: u64) -> String {
+    let mut out = String::from("belay: memory for this project (`belay memory list` shows it all; check that each still fits):");
+    if let Some(h) = r.handoff {
+        out.push_str(&format!(
+            "\n- The last session's handoff ({}, {}): {}",
+            h.id,
+            ago(now_ms.saturating_sub(h.created_ms)),
+            h.text
+        ));
+    }
+    for m in &r.memories {
+        out.push_str(&format!(
+            "\n- {} ({}, by {}): {}",
+            m.id,
+            m.kind.name(),
+            m.provenance.name(),
+            m.text
+        ));
+    }
+    out
+}
+
+/// What a compaction may have cut from the agent's context, from this session alone.
+#[derive(Debug, Default)]
+pub struct Carry<'a> {
+    pub task: Option<&'a str>,
+    pub failure: Option<&'a Failure>,
+    /// Guard blocks and the user's decisions on them, oldest first.
+    pub guard: &'a [String],
+    /// Memories this session was given, oldest first.
+    pub used: &'a [Memory],
+}
+
+/// The carry pack: what the session is on, its open failure, guard blocks and
+/// decisions, and the memories it used, in that order until `max_tokens`. None when
+/// there is nothing to carry.
+pub fn carry_text(c: &Carry, max_tokens: usize) -> Option<String> {
+    let head = "belay: carried over from before the compaction (this session's own state):";
+    let mut lines = Vec::new();
+    if let Some(t) = c.task {
+        lines.push(format!("- Task: {t}"));
+    }
+    if let Some(f) = c.failure {
+        lines.push(format!("- Open failure: {}", failure_line(f)));
+    }
+    for g in c.guard {
+        lines.push(format!("- Guard: {g}"));
+    }
+    for m in c.used {
+        lines.push(format!("- {} ({}): {}", m.id, m.kind.name(), m.text));
+    }
+    let mut left = max_tokens.saturating_sub(estimate_tokens(head));
+    let mut out = head.to_string();
+    let mut any = false;
+    for l in lines {
+        let cost = estimate_tokens(&l) + 1;
+        if cost > left {
+            continue;
+        }
+        left -= cost;
+        out.push('\n');
+        out.push_str(&l);
+        any = true;
+    }
+    any.then_some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +826,37 @@ mod tests {
             (user.text.as_str(), user.tags.as_slice()),
             ("a b", ["py".to_string()].as_slice())
         );
+    }
+
+    #[test]
+    fn recall_takes_the_newest_handoff_of_another_session_and_carry_fits_its_budget() {
+        let mut a = mem("m-1", Some("/r"), "older handoff", 1);
+        a.kind = Kind::Handoff;
+        a.session = Some("s1".into());
+        let mut b = mem("h-s3", Some("/r"), "a card's handoff", 3);
+        b.kind = Kind::Handoff;
+        let mut own = mem("m-2", Some("/r"), "mine", 4);
+        own.kind = Kind::Handoff;
+        own.session = Some("s2".into());
+        let mut elsewhere = mem("m-5", Some("/x"), "other repo", 9);
+        elsewhere.kind = Kind::Handoff;
+        let all = vec![a, b, own, elsewhere];
+        let r = recall(&all, "/r", "s2", 600, 10);
+        assert_eq!(r.handoff.map(|m| m.id.as_str()), Some("h-s3"));
+        let r = recall(&all, "/r", "s3", 600, 10);
+        assert_eq!(r.handoff.map(|m| m.id.as_str()), Some("m-2"));
+
+        let used = vec![mem("m-9", None, &"z".repeat(400), 1)];
+        let guard = vec!["a-1 blocked an edit of t.py.".to_string()];
+        let c = Carry {
+            task: Some("the task"),
+            failure: None,
+            guard: &guard,
+            used: &used,
+        };
+        let text = carry_text(&c, 40).unwrap();
+        assert!(text.contains("- Task: the task") && text.contains("- Guard: a-1"));
+        assert!(!text.contains("m-9"), "over the budget: {text}");
+        assert!(carry_text(&Carry::default(), 600).is_none());
     }
 }

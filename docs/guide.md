@@ -140,7 +140,7 @@ belay always acts within what the agent supports, and records every action with 
 | `loops` | `on` | Tells the agent when a failure is unchanged after several fixes, or an edit cycles |
 | `shape` | `on` | Summarizes large test and build output (above `shape_threshold_tokens`) |
 | `wrap_tests` | `false` | Runs test commands through `belay run`, so a failed run can be summarized too |
-| `memory` | `on` | Recalls fixes other sessions learned, and the project's notes |
+| `memory` | `on` | Handoffs between sessions, recall at the start and after a compaction, learned fixes, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
 | `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
 | `report` | `quiet` | How much belay tells you about what it did: `quiet`, `normal`, `verbose` |
@@ -293,7 +293,7 @@ The next session in that repo (any worktree) gets the newest card that ended the
 - its last test;
 - whether it was looping or blocked.
 
-`belay handoff` with no text shows what the next session would get. With `commons = on` the agent hears it at start.
+`belay handoff` with no text shows what the next session would get. With `commons = on` the agent hears it at start. With `memory = on` (the default), belay also keeps the handoff in memory, and the next session hears that one instead (see [Memory](#memory)).
 
 ### Awareness notices
 
@@ -344,6 +344,16 @@ belay memory migrate                          # copy notes, fixes, findings, and
 Kinds are `fact`, `decision`, `gotcha`, `fix`, `handoff`, and `note` (the default). A memory you add in your terminal is yours. One added from an agent's shell is the agent's until you approve it. belay denies an agent's `belay memory approve` and `drop`.
 
 Search ranks a matching failure signature highest, then a word in a tag, a file path, and the text. This project and your approval add a little, and so does a recent memory. The same text twice in a project and kind keeps only the newer one. A project keeps at most 500 memories; past that, the least used are retired.
+
+### Handoffs and recall
+
+When a session ends, and before each compaction, belay keeps a handoff in the project's memory. It says what belay saw: the task from `belay card --task`, the files changed, the last test and its result, the failure still open (its test and first line), and whether the session was looping or blocked. The agent's own `belay handoff` text comes last, labelled as its own. A session keeps one handoff: a later one replaces the earlier.
+
+When a session starts, the agent gets the newest handoff another session left in this project, and then the memories that rank best for the project (yours and approved ones first, then the newest). All of it fits in `recall_tokens` (600 by default). Fixes are left out here: a fix comes up when its failure does. The ledger records a `memory_recalled` action with the ids, so `belay why` can tell what the agent was given.
+
+A failure whose signature matches a `fix` memory gets that memory, once per failure, like a learned fix.
+
+After a compaction, the agent gets a carry pack: its task, the open failure, the guard's blocks and your decisions on them, and the memories it was given in this session. The carry pack only adds to the context; it changes nothing the agent already has. It also fits in `recall_tokens`.
 
 Notes, learned fixes, findings, and the handoffs of ended sessions show up in `belay memory` as they are, with ids `note-N`, `fix-…`, `f-N`, and `h-…`. `belay memory migrate` copies them into the store and backs up the old files first. Running it again copies nothing new. The old commands keep working.
 
@@ -496,7 +506,8 @@ guard = deny                    # test guard: deny, warn, off
 loops = on                      # tell the agent about loops and edit cycles
 shape = on                      # summarize large test output
 wrap_tests = false              # run tests through `belay run` (~1-2 s each in auto mode)
-memory = on                     # learned fixes and project notes
+memory = on                     # handoffs, recall at start, learned fixes, project notes
+recall_tokens = 600             # most tokens the start recall and the carry pack take
 awareness = on                  # what other belay sessions here did
 commons = off                   # other sessions' messages and handoffs reach the agent
 report = quiet                  # how much belay tells you: quiet, normal, verbose

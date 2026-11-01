@@ -599,6 +599,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                 ActionKind::Recall { text, .. }
                 | ActionKind::Notes { text, .. }
                 | ActionKind::Commons { text, .. }
+                | ActionKind::MemoryRecalled { text, .. }
                 | ActionKind::Handoff { text, .. } => recalled.push(format!(
                     "{} {}",
                     status(*applied, "told", "would tell"),
@@ -888,6 +889,7 @@ fn describe(e: &Entry) -> String {
                 ActionKind::Notes { .. } => "notes",
                 ActionKind::Commons { .. } => "commons",
                 ActionKind::Handoff { .. } => "handoff",
+                ActionKind::MemoryRecalled { .. } => "memory",
             };
             let state = match (applied, unsupported) {
                 (true, _) => "applied",

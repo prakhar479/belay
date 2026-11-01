@@ -401,6 +401,16 @@ impl Connector for ClaudeCode {
                 transcript_path,
                 mode: None,
             });
+        } else if hook_event == "SessionStart"
+            && session_id == self.session_id
+            && s(p, "source") == "compact"
+        {
+            // The same conversation on a fresh context after a compaction.
+            // [Verify] live: SessionStart `source: "compact"` keeps the session id (U4b;
+            // fixtures/claude_code/session_start_compact.json is from the hook docs).
+            evs.push(Event::ContextRestarted {
+                source: s(p, "source").to_string(),
+            });
         } else if !session_id.is_empty()
             && !self.session_id.is_empty()
             && session_id != self.session_id
@@ -783,6 +793,28 @@ mod tests {
                 .unwrap();
             assert_eq!(preview.len(), preview_len, "{name}");
         }
+    }
+
+    /// U4b: a SessionStart after a compaction keeps the session id; it restarts the
+    /// context, not the conversation.
+    #[test]
+    fn a_compact_session_start_restarts_the_context() {
+        let mut c = ClaudeCode::default();
+        let evs = c.map("SessionStart", &fixture("session_start.json"));
+        assert!(matches!(&evs[..], [Event::SessionStarted { .. }]));
+        let evs = c.map("SessionStart", &fixture("session_start_compact.json"));
+        assert!(
+            matches!(&evs[..], [Event::ContextRestarted { source }] if source == "compact"),
+            "{evs:?}"
+        );
+        let r = Response {
+            start_context: vec!["carried".into()],
+            ..Response::default()
+        };
+        let out = c
+            .encode("SessionStart", &fixture("session_start_compact.json"), &r)
+            .unwrap();
+        assert_eq!(out["hookSpecificOutput"]["additionalContext"], "carried");
     }
 
     /// R3: a new session id in the same process (`/clear`, `/resume`) is a new

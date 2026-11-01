@@ -3018,7 +3018,8 @@ fn a_handoff_reaches_the_next_session_in_the_repo() {
     let dir = tmp("handoff");
     let home = dir.join("home");
     let on = dir.join("on.toml");
-    fs::write(&on, "commons = on\nwrap_tests = false\n").unwrap();
+    // Memory off: its handoff (U4b) would take the card's place.
+    fs::write(&on, "commons = on\nmemory = off\nwrap_tests = false\n").unwrap();
     let look = dir.join("off.toml");
     fs::write(&look, "commons = off\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
@@ -3220,7 +3221,8 @@ fn a_request_from_another_sessions_shell_is_refused() {
     let dir = tmp("identity");
     let home = dir.join("home");
     let on = dir.join("on.toml");
-    fs::write(&on, "commons = on\nwrap_tests = false\n").unwrap();
+    // Memory off: its handoff (U4b) would take the card's place.
+    fs::write(&on, "commons = on\nmemory = off\nwrap_tests = false\n").unwrap();
     let start_in = |cwd: &Path| {
         fs::create_dir_all(cwd).unwrap();
         let mut s: serde_json::Value =
@@ -3277,7 +3279,8 @@ fn commons_messages_between_sessions() {
     let dir = tmp("commons-msg");
     let home = dir.join("home");
     let on = dir.join("on.toml");
-    fs::write(&on, "commons = on\nwrap_tests = false\n").unwrap();
+    // Memory off: its handoff (U4b) would take the card's place.
+    fs::write(&on, "commons = on\nmemory = off\nwrap_tests = false\n").unwrap();
     let look = dir.join("off.toml");
     fs::write(&look, "commons = off\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
@@ -3546,6 +3549,131 @@ fn session_cards_and_the_board() {
     wait_card(&sess_c, "quiet");
     assert!(sess_c.join("card.json").exists());
     let _ = sess_b;
+}
+
+/// Ask a daemon to shut down, as the launcher does when the agent exits.
+fn shutdown(sock: &Path) {
+    use std::io::{BufRead, BufReader, Write};
+    let mut s = std::os::unix::net::UnixStream::connect(sock).unwrap();
+    writeln!(s, r#"{{"type":"shutdown"}}"#).unwrap();
+    let mut line = String::new();
+    let _ = BufReader::new(&s).read_line(&mut line);
+}
+
+/// U4b: session 1 edits, fails a test, says its handoff, and ends: belay keeps a handoff
+/// memory. Session 2 in the same project starts with it, failing test and all.
+#[test]
+fn a_session_starts_with_the_last_sessions_handoff_memory() {
+    let dir = tmp("memory-handoff");
+    let home = dir.join("home");
+    let config = dir.join("config.toml");
+    fs::write(&config, "").unwrap();
+    let load = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
+    };
+    let shop = dir.join("shop");
+    fs::create_dir_all(&shop).unwrap();
+    let at_shop = |mut v: serde_json::Value| {
+        v["cwd"] = shop.display().to_string().into();
+        v
+    };
+    let (_a, sock_a, sess_a) = start_fleet_daemon(&home, "1000000001-1", &config);
+    let got = hook(
+        &sock_a,
+        "SessionStart",
+        &at_shop(load("session_start.json")),
+    );
+    assert!(!got.contains("handoff"), "nothing yet: {got}");
+    let mut edit = at_shop(load("post_tool_use_edit.json"));
+    edit["tool_input"]["file_path"] = shop.join("shop/orders.py").display().to_string().into();
+    hook(&sock_a, "PostToolUse", &edit);
+    hook(
+        &sock_a,
+        "PostToolUseFailure",
+        &at_shop(load("post_tool_use_failure_bash.json")),
+    );
+    let o = Command::new(bin())
+        .args(["handoff", "next: fix get_order's status code"])
+        .current_dir(&shop)
+        .env("BELAY_HOME", &home)
+        .env("BELAY_CONFIG", &config)
+        .env("BELAY_SOCKET", &sock_a)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    shutdown(&sock_a);
+    // The handoff is kept before the card is marked ended.
+    for _ in 0..100 {
+        if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| c.contains("\"ended\"")) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+
+    let (_b, sock_b, sess_b) = start_fleet_daemon(&home, "1000000002-2", &config);
+    let got = hook(
+        &sock_b,
+        "SessionStart",
+        &at_shop(load("session_start.json")),
+    );
+    assert!(
+        got.contains("The last session's handoff (m-1")
+            && got.contains("tests/test_api.py::test_get_order")
+            && got.contains("Changed: shop/orders.py")
+            && got.contains("The agent's handoff: next: fix get_order's status code"),
+        "{got}"
+    );
+    assert_eq!(got.matches("handoff (").count(), 1, "one handoff: {got}");
+    let ledger = fs::read_to_string(sess_b.join("ledger.jsonl")).unwrap();
+    assert!(
+        ledger.contains(r#""type":"memory_recalled","ids":["m-1"]"#),
+        "{ledger}"
+    );
+}
+
+/// U4b: after a compaction (SessionStart `source: "compact"`), the agent gets the carry
+/// pack: its task and open failure.
+#[test]
+fn a_compaction_brings_the_carry_pack() {
+    let dir = tmp("memory-carry");
+    let home = dir.join("home");
+    let config = dir.join("config.toml");
+    fs::write(&config, "").unwrap();
+    let load = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
+    };
+    let (_a, sock, _sess) = start_fleet_daemon(&home, "1000000001-1", &config);
+    hook(&sock, "SessionStart", &load("session_start.json"));
+    let o = Command::new(bin())
+        .args(["card", "--task", "fix the orders api"])
+        .env("BELAY_HOME", &home)
+        .env("BELAY_CONFIG", &config)
+        .env("BELAY_SOCKET", &sock)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    hook(
+        &sock,
+        "PostToolUseFailure",
+        &load("post_tool_use_failure_bash.json"),
+    );
+    let mut pre = load("session_start.json");
+    pre["hook_event_name"] = "PreCompact".into();
+    pre["trigger"] = "auto".into();
+    hook(&sock, "PreCompact", &pre);
+    let got = hook(&sock, "SessionStart", &load("session_start_compact.json"));
+    assert!(
+        got.contains("carried over from before the compaction")
+            && got.contains("- Task: fix the orders api")
+            && got.contains("- Open failure: tests/test_api.py::test_get_order"),
+        "{got}"
+    );
+    // PreCompact kept a handoff already.
+    let store = fs::read_dir(home.join("memory"))
+        .unwrap()
+        .filter_map(|e| fs::read_to_string(e.unwrap().path()).ok())
+        .collect::<String>();
+    assert!(store.contains(r#""kind":"handoff""#), "{store}");
 }
 
 /// F2: session A fails a test run, edits, and passes it: a learned fix in the machine's

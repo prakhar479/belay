@@ -15,7 +15,8 @@
 //! loops = on                 # tell the agent when a failure loops
 //! shape = on                 # summarize large test output
 //! wrap_tests = false         # run tests through `belay run` (costs ~1-2 s each in auto mode)
-//! memory = on                # recall fixes other sessions learned, and project notes
+//! memory = on                # handoffs, recall at start, learned fixes, project notes
+//! recall_tokens = 600        # most tokens the start recall and the carry pack take
 //! awareness = on             # tell the agent what other belay sessions here did
 //! commons = off              # pass other sessions' messages to the agent
 //! report = quiet             # how much belay tells the user: quiet, normal, verbose
@@ -146,7 +147,7 @@ pub fn load() -> Config {
     c
 }
 
-const KEYS: [&str; 19] = [
+const KEYS: [&str; 20] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -160,6 +161,7 @@ const KEYS: [&str; 19] = [
     "shape",
     "wrap_tests",
     "memory",
+    "recall_tokens",
     "awareness",
     "commons",
     "report",
@@ -281,6 +283,7 @@ fn apply(
         "loops" => c.core.loops = on_off()?,
         "shape" => c.core.shape = on_off()?,
         "memory" => c.core.memory = on_off()?,
+        "recall_tokens" => c.core.recall_tokens = int(0, 20_000)? as usize,
         "awareness" => c.core.awareness = on_off()?,
         "commons" => c.core.commons = on_off()?,
         "wrap_tests" => c.core.wrap_tests = boolean()?,
