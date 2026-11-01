@@ -868,6 +868,46 @@ fn bash_write_that_weakens_a_test_is_warned() {
     assert!(report.contains("Test guard: 1"), "{report}");
 }
 
+/// U6.1: an edit after the last passing run makes Stop a block with the command to run;
+/// once the run passes again, Stop lets the agent finish.
+#[test]
+fn verify_before_done_blocks_stop_until_the_tests_pass() {
+    let dir = tmp("verify");
+    let session = dir.join("session");
+    let (_daemon, sock) = start_daemon(&session, "shape = off\n");
+    let repo = dir.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/app.py"), "def f():\n    return 2\n").unwrap();
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
+    };
+    let mut pytest = read("post_tool_use_bash.json");
+    pytest["cwd"] = repo.display().to_string().into();
+    pytest["tool_input"]["command"] = "pytest".into();
+    pytest["tool_response"]["stdout"] = "===== 3 passed in 0.10s =====\n".into();
+    pytest["tool_response"]["stderr"] = "".into();
+    let mut edit = read("post_tool_use_edit.json");
+    edit["cwd"] = repo.display().to_string().into();
+    edit["tool_input"]["file_path"] = repo.join("src/app.py").display().to_string().into();
+    let mut stop = read("stop.json");
+    stop["cwd"] = repo.display().to_string().into();
+
+    hook(&sock, "PostToolUse", &pytest);
+    hook(&sock, "PostToolUse", &edit);
+    let out: serde_json::Value = serde_json::from_str(&hook(&sock, "Stop", &stop)).unwrap();
+    assert_eq!(out["decision"], "block", "{out}");
+    let reason = out["reason"].as_str().unwrap();
+    assert!(reason.contains("`pytest`"), "{reason}");
+
+    pytest["tool_use_id"] = "toolu_again".into();
+    hook(&sock, "PostToolUse", &pytest);
+    stop["stop_hook_active"] = true.into();
+    let out = hook(&sock, "Stop", &stop);
+    assert!(!out.contains("block"), "{out}");
+    let report = belay(&["report"], &session);
+    assert!(report.contains("Verify before done: 1"), "{report}");
+}
+
 /// R3.7: auto mode denies a wrapped call; belay says the agent may retry, and the retry
 /// is not wrapped.
 #[test]

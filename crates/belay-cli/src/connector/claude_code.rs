@@ -763,8 +763,15 @@ fn user_notice(notices: &[belay_core::Notice]) -> Option<String> {
 impl ClaudeCode {
     /// The part of the reply the agent acts on. Notices never go here (rule 5).
     fn encode_for_agent(&self, hook_event: &str, payload: &Value, r: &Response) -> Option<Value> {
-        // `continue_turn` at Stop would be `{"decision":"block","reason":…}`: [Verify]
-        // live before encoding it.
+        // Verify before done (U6.1): a Stop block keeps the agent working, with the
+        // reason as its next instruction. [Verify] live: scripts/conformance.py
+        // `stop_block` checks that the agent continues and runs the command.
+        if hook_event == "Stop" {
+            return r
+                .continue_turn
+                .as_ref()
+                .map(|reason| json!({ "decision": "block", "reason": reason }));
+        }
         let mut context = Vec::new();
         if hook_event == "SessionStart" {
             context.extend(r.start_context.iter().cloned());
@@ -1591,7 +1598,6 @@ mod tests {
                 text: "for the user".into(),
                 action: None,
             }],
-            continue_turn: Some("not yet encoded".into()),
             start_context: vec!["only at start".into()],
             ..Default::default()
         };
@@ -1623,6 +1629,38 @@ mod tests {
         assert_eq!(
             c.encode("Stop", &fixture("stop.json"), &Response::default()),
             None
+        );
+    }
+
+    #[test]
+    fn continue_turn_is_a_stop_block_and_only_at_stop() {
+        let c = ClaudeCode::default();
+        let r = Response {
+            continue_turn: Some("run it".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            c.encode("Stop", &fixture("stop.json"), &r),
+            Some(json!({ "decision": "block", "reason": "run it" }))
+        );
+        assert_eq!(
+            c.encode("UserPromptSubmit", &fixture("user_prompt_submit.json"), &r),
+            None
+        );
+        // A notice rides along for the user; the reason is the agent's.
+        let both = Response {
+            notices: vec![belay_core::Notice {
+                level: belay_core::NoticeLevel::Act,
+                text: "asked for tests".into(),
+                action: None,
+            }],
+            ..r
+        };
+        assert_eq!(
+            c.encode("Stop", &fixture("stop.json"), &both),
+            Some(
+                json!({ "decision": "block", "reason": "run it", "systemMessage": "belay: asked for tests" })
+            )
         );
     }
 

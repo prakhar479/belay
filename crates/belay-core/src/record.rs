@@ -236,6 +236,12 @@ pub enum ActionKind {
         compact: bool,
         text: String,
     },
+    /// Keep the agent working at the end of its turn: files changed since the last
+    /// passing run of `command`, so it should run it before it finishes (U6.1).
+    Verify {
+        command: String,
+        text: String,
+    },
     /// Tell the agent what another belay session did that affects it (F1).
     Fleet {
         notice: crate::fleet::NoticeKind,

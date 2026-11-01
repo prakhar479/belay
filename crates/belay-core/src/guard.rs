@@ -453,9 +453,70 @@ fn looser_tolerance(old: &str, new: &str) -> Option<String> {
     })
 }
 
+/// The rule behind a guard reason, as a stable name: the user's allows count per rule
+/// (U6.3), and `guard:<rule>` names it in the ledger. Reasons come from `assess`,
+/// `expected_to_actual`, and the protected-path check.
+pub fn rule_of(reason: &str) -> &'static str {
+    const RULES: [(&str, &str); 14] = [
+        ("assertions removed", "assertions_removed"),
+        ("tests removed", "tests_removed"),
+        ("skip marker", "skip"),
+        ("focus marker", "focus"),
+        ("`#[should_panic]`", "should_panic"),
+        ("`|| true`", "or_true"),
+        ("handler that swallows", "swallow"),
+        ("`return` before", "early_return"),
+        ("assertion that always passes", "always_passes"),
+        ("precision lowered", "tolerance"),
+        ("time limit raised", "tolerance"),
+        ("tolerance raised", "tolerance"),
+        ("expected value changed", "expected_to_actual"),
+        ("the path is protected", "protected"),
+    ];
+    RULES
+        .iter()
+        .find(|(prefix, _)| reason.starts_with(prefix))
+        .map_or("other", |(_, rule)| rule)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_reason_has_a_rule() {
+        let cases = [
+            ("assert a == 1\nassert b == 2\n", "assert a == 1\n"),
+            ("def test_a():\n    assert x\n", "def test_b():\n    pass\n"),
+            (
+                "def test_a():\n    assert x\n",
+                "@pytest.mark.skip\ndef test_a():\n    assert x\n",
+            ),
+            ("assert x == 1\n", "assert True\n"),
+            (
+                "assert x == pytest.approx(0.3, rel=1e-6)\n",
+                "assert x == pytest.approx(0.3, rel=0.1)\n",
+            ),
+        ];
+        for (old, new) in cases {
+            let Answer::Weakened { reasons } = assess(old, new) else {
+                panic!("not weakened: {new}");
+            };
+            for r in reasons {
+                assert_ne!(rule_of(&r), "other", "{r}");
+            }
+        }
+        let e4 = expected_to_actual(
+            "assert f() == 6",
+            "assert f() == 5",
+            &[("5".into(), "6".into())],
+        );
+        assert_eq!(rule_of(&e4.unwrap()), "expected_to_actual");
+        assert_eq!(
+            rule_of("the path is protected by .belay.toml (`x`)"),
+            "protected"
+        );
+    }
 
     #[test]
     fn test_paths() {

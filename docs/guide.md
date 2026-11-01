@@ -92,7 +92,7 @@ Loops (13 s in loops): 1
     tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total' …
 Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages
 Tool calls: 7 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
-Test runs: 4 · wrapped (or would be, in auto mode): 0 (0%)
+Test runs: 4 · test runs are not wrapped (wrap_tests = off)
 Edits: 3 through Edit/Write (guarded before they run)
 ```
 
@@ -141,6 +141,7 @@ belay always acts within what the agent supports, and records every action with 
 | `loops` | `on` | Tells the agent when a failure is unchanged after several fixes, or an edit cycles |
 | `shape` | `on` | Summarizes large test and build output (above `shape_threshold_tokens`) |
 | `wrap_tests` | `false` | Runs test commands through `belay run`, so a failed run can be summarized too |
+| `verify` | `on` | At the end of a turn with files changed since the last passing test run, asks the agent to run it before it finishes |
 | `memory` | `on` | Handoffs between sessions, recall at the start and after a compaction, learned fixes, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
 | `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
@@ -196,6 +197,18 @@ you can retry the same edit.
 ```
 
 Only you can lift a block: type `! belay allow` in Claude Code, or run `belay allow` in a terminal. belay tells an agent's own `belay allow` apart from yours and refuses it. A shell command that writes a test file cannot be stopped before it runs, so belay checks the file after the command and tells the agent if it may have weakened tests.
+
+If you allow blocks of the same rule twice in a session (say, two removed assertions), that rule only warns for the rest of the session: the agent still hears about it, but the edit goes through. `belay allow` tells you when this happens, and the ledger records it as a `feature_changed` entry on `guard:<rule>`. `belay resume guard` makes the rule deny again.
+
+### Verify before done
+
+When the agent ends its turn with files changed since the last passing run of its tests, belay keeps it going once:
+
+```text
+belay: files changed since the last passing run of `pytest`. Run it before you finish.
+```
+
+The command is the last test or check command the session ran. belay asks at most once per turn, and never twice for the same unchanged state, so it cannot loop with the agent. Changes to docs (`.md`, `.txt`, `.rst`) do not count. A fleet session is left alone: the hub runs its task's check. Turn it off with `verify = off`.
 
 ### Loops
 
@@ -630,6 +643,7 @@ guard = deny                    # test guard: deny, warn, off
 loops = on                      # tell the agent about loops and edit cycles
 shape = on                      # summarize large test output
 wrap_tests = false              # run tests through `belay run` (~1-2 s each in auto mode)
+verify = on                     # ask the agent to run its tests before it finishes a turn
 memory = on                     # handoffs, recall at start, learned fixes, project notes
 recall_tokens = 600             # most tokens the start recall and the carry pack take
 awareness = on                  # what other belay sessions here did

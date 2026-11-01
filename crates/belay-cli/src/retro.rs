@@ -193,6 +193,7 @@ pub fn run_all(root: &Path, top: usize, include_tmp: bool, summary: bool) -> Res
             &by_kind,
             sum(|r| r.totals.test_runs),
             sum(|r| r.totals.wrapped),
+            rows.iter().any(|r| r.totals.wrap_on),
             sum(|r| r.totals.tool_edits),
             sum(|r| r.totals.bash_writes),
             sum(|r| r.totals.bash_test_writes),
@@ -285,16 +286,11 @@ mod tests {
         assert!(with_tmp.contains("Retro over 4 transcripts"), "{with_tmp}");
         // Wrapping is the user's choice (`wrap_tests`, off by default).
         let wrapped = if crate::config::load().wrap_tests {
-            "12 (100%)"
+            "wrapped (or would be, in auto mode): 12 (100%)"
         } else {
-            "0 (0%)"
+            "test runs are not wrapped (wrap_tests = off)"
         };
-        assert!(
-            out.contains(&format!(
-                "Test runs: 12 · wrapped (or would be, in auto mode): {wrapped}"
-            )),
-            "{out}"
-        );
+        assert!(out.contains(&format!("Test runs: 12 · {wrapped}")), "{out}");
         assert!(out.contains("3 loops (41 s in loops)"), "{out}");
         assert!(out.contains("  Main sessions: Bash output"), "{out}");
         assert!(out.contains("  Subagents: Bash output"), "{out}");
@@ -378,16 +374,11 @@ mod tests {
         // R2.2: coverage lines.
         assert!(out.contains("Bash output by kind: test 100%"), "{out}");
         let wrapped = if crate::config::load().wrap_tests {
-            "4 (100%)"
+            "wrapped (or would be, in auto mode): 4 (100%)"
         } else {
-            "0 (0%)"
+            "test runs are not wrapped (wrap_tests = off)"
         };
-        assert!(
-            out.contains(&format!(
-                "Test runs: 4 · wrapped (or would be, in auto mode): {wrapped}"
-            )),
-            "{out}"
-        );
+        assert!(out.contains(&format!("Test runs: 4 · {wrapped}")), "{out}");
         assert!(out.contains("Edits: 3 through Edit/Write"), "{out}");
         // The live session of this transcript reported "Tool calls: 7 (Bash 4)".
         assert!(out.contains("Tool calls: 7 (Bash 4)"), "{out}");
