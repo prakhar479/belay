@@ -339,6 +339,20 @@ Search ranks a matching failure signature highest, then a word in a tag, a file 
 
 Notes, learned fixes, findings, and the handoffs of ended sessions show up in `belay memory` as they are, with ids `note-N`, `fix-…`, `f-N`, and `h-…`. `belay memory migrate` copies them into the store and backs up the old files first. Running it again copies nothing new. The old commands keep working.
 
+### Memory over MCP
+
+`belay mcp` is an MCP server over stdio. The plugin declares it, so an agent in Claude Code gets these tools without a shell call:
+
+| Tool | Does |
+|---|---|
+| `memory_search {query, limit?}` | The best matches, as `belay memory search` shows them (10 by default, at most 50) |
+| `memory_add {text, kind?, tags?, files?}` | Keeps a project memory as the agent's, until you approve it |
+| `handoff_get {}` | The newest handoff for this project, as `belay handoff` shows it |
+| `output_show {id}` | The original of `o-N` in this session, as `belay show` |
+| `why {id}` | The cause chain of `a-N`, `o-N`, or an entry, as `belay why` |
+
+The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. Everything stays on this machine. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
+
 ## Fleets
 
 A fleet is a team of headless Claude Code sessions that belay starts and manages for you. A hub process:
@@ -547,6 +561,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay handoff ["text"]` | Leave or read a handoff |
 | `belay note "…"` · `belay notes` · `belay fixes` | Project notes and learned fixes |
 | `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
+| `belay mcp` | MCP server over stdio: memory, the handoff, outputs, and why |
 | `belay fleet up\|status\|report\|merge\|down\|…` | Fleets |
 | `belay task add\|list\|show\|claim\|done\|blocked\|drop` | A fleet's task board |
 | `belay audit [range]` | (Experimental) what a diff did to tests and checks |

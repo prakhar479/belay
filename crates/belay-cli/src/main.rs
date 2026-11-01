@@ -19,6 +19,7 @@ mod install;
 mod ipc;
 mod launcher;
 mod learnstore;
+mod mcp;
 mod memorystore;
 mod paths;
 mod plugin;
@@ -300,6 +301,8 @@ enum Cmd {
         #[command(subcommand)]
         action: Option<MemoryCmd>,
     },
+    /// An MCP server over stdio: memory search and add, the handoff, outputs, and why.
+    Mcp,
     /// Leave a handoff for the next session in this repo ("done: …; open: …; next: …"),
     /// from inside a session. With no text, show what the next session here would get.
     Handoff {
@@ -1269,6 +1272,7 @@ fn run(cli: Cli) -> Result<i32> {
             print!("{said}");
             Ok(0)
         }
+        Cmd::Mcp => mcp::run(),
         Cmd::Memory { action } => {
             let said = match action.unwrap_or(MemoryCmd::List { all: false }) {
                 MemoryCmd::List { all } => memorystore::list(all)?,

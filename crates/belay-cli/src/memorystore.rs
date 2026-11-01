@@ -368,8 +368,13 @@ pub fn list(all: bool) -> Result<String> {
 
 /// `belay memory search <q>`: the best matches. A native hit counts as a use.
 pub fn search(query: &str) -> Result<String> {
+    search_top(query, MAX_HITS)
+}
+
+/// The best `limit` matches, rendered as `belay memory search` shows them.
+pub fn search_top(query: &str, limit: usize) -> Result<String> {
     let project = here()?;
-    search_in(&dir(), adapted(), query, &project, paths::now_ms())
+    search_in(&dir(), adapted(), query, &project, paths::now_ms(), limit)
 }
 
 fn search_in(
@@ -378,6 +383,7 @@ fn search_in(
     query: &str,
     project: &str,
     now: u64,
+    limit: usize,
 ) -> Result<String> {
     let all = merged(load_native(dir), adapted);
     let q = Query {
@@ -387,7 +393,7 @@ fn search_in(
         ..Query::default()
     };
     let mut ranked = memory::rank(&all, &q);
-    ranked.truncate(MAX_HITS);
+    ranked.truncate(limit);
     if ranked.is_empty() {
         return Ok(format!("No memories about \"{query}\".\n"));
     }
@@ -695,12 +701,12 @@ mod tests {
         let d = tmp("search");
         add_in(&d, |id| mk(id, Some("/r"), "pytest needs DB_URL set")).unwrap();
         let adapted = from_findings(&[finding("f-1", "pytest asyncio mode")]);
-        let out = search_in(&d, adapted, "pytest", "/r", 100).unwrap();
+        let out = search_in(&d, adapted, "pytest", "/r", 100, MAX_HITS).unwrap();
         assert!(out.contains("m-1 · gotcha · this project"), "{out}");
         assert!(out.contains("f-1 · fact · this project · by user"), "{out}");
         let m = &load_native(&d)[0];
         assert_eq!((m.uses, m.last_used_ms), (1, 100));
-        assert!(search_in(&d, vec![], "cargo", "/r", 100)
+        assert!(search_in(&d, vec![], "cargo", "/r", 100, MAX_HITS)
             .unwrap()
             .starts_with("No memories"));
         let _ = fs::remove_dir_all(&d);

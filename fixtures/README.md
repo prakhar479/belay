@@ -15,6 +15,7 @@
 | `claude_code/permission_denied_bash.json` | PermissionDenied for a wrapped Bash call | **Synthetic**, from the 2.1.303 hook schema; replace with a capture when a denial happens (R3.7) |
 | `outputs/pytest_grep_e_lines.txt`, `outputs/pytest_summary_only.txt`, `outputs/go_test_grep_n.txt` | Output as an agent trims it (`grep -E`, `tail -1`, `grep -n`) | **Hand-made** from the captured runs above |
 | `transcripts/loop_session.jsonl` | Claude Code transcript: 4 failing runs, 3 edits | Captured 2026-10-19 (docs/dev/TASKS.md S5). Only user/assistant lines and the fields belay reads |
+| `sessions/mcp/` | A session dir: ledger with one test output `o-1` (and its blob) and the shape action `a-1` | **Hand-made** in ledger format 1, for `belay mcp` |
 
 Rules:
 

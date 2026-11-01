@@ -7,16 +7,18 @@ description: How to work with belay, the local supervisor that records this sess
 
 belay records what you do in this session. It may summarize long outputs, warn you about loops, and deny edits that weaken tests. Every action it takes has a reason you can look up. Run the commands below with your shell tool.
 
+belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, and `why`. When they are present, use them instead of the matching commands.
+
 ## When you start
 
-- Read the last handoff for this repo: `belay handoff`.
-- Look for what is already known about your task: `belay ask "<topic>"`. If this belay has `belay memory`, also run `belay memory search "<topic>"`.
+- Read the last handoff for this repo: `handoff_get`, or `belay handoff`.
+- Look for what is already known about your task: `memory_search`, or `belay memory search "<topic>"`. Also run `belay ask "<topic>"`.
 - Say what you work on: `belay card --task "<short task>"`. Update it when the task changes.
 
 ## When a test failure repeats
 
 - If the same failure comes back after a fix, stop and read it again. Do not repeat the same edit.
-- Search for a known fix: `belay ask "<error text>"`, and `belay memory search "<error text>"` if available.
+- Search for a known fix with the error text: `memory_search`, or `belay memory search "<error text>"`. Also run `belay ask "<error text>"`.
 - If belay says you are in a loop, change your approach or ask the user.
 
 ## When belay denies an edit
@@ -29,13 +31,13 @@ belay records what you do in this session. It may summarize long outputs, warn y
 ## When an output is summarized
 
 - belay keeps every failure line, but may cut passing lines. The summary names an id like `o-3`.
-- To read the full original: `belay show o-3`.
-- To see why belay did something (an action `a-N`): `belay why a-N`.
+- To read the full original: `output_show` with `o-3`, or `belay show o-3`.
+- To see why belay did something (an action `a-N`): `why` with `a-N`, or `belay why a-N`.
 
 ## When you learn something useful
 
 - Share a fact other sessions can use: `belay share "<fact>"`.
-- If this belay has `belay memory`, save it for later sessions: `belay memory add "<fact>"`.
+- Save it for later sessions: `memory_add`, or `belay memory add "<fact>"`.
 
 ## Before you stop
 
