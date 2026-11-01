@@ -1,25 +1,25 @@
-//! Retro look: run the look-mode pipeline over an existing Claude Code transcript.
+//! Retro look: run the look-mode pipeline over an existing agent transcript.
 //! The user gets a report without changing how they work.
 //!
-//! Time comes from each line's `timestamp`. Limit: edit hashes are approximate (hash of
-//! path + new text), so edit-cycle detection is weaker than in a live session.
-//! Transcript shape checked in S5.
+//! The agent's connector reads the transcript into events (`TranscriptSource`); this
+//! module is the same for every agent. Time comes from each step's timestamp.
 
-use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use anyhow::{Context, Result};
-use belay_core::text::sha256_hex;
-use belay_core::{Capabilities, Controller, Entry, Event, Mode};
-use serde_json::Value;
+use anyhow::{anyhow, Result};
+use belay_core::{Controller, Entry, Event, Mode};
 
-use crate::connector::claude_code::{
-    extract_output, runner_is_executable, tool_kind, HOOKED_TOOLS,
-};
+use crate::connector::{self, Connector, TranscriptSource};
 use crate::report;
+
+/// The agent whose transcripts `belay retro` reads.
+const AGENT: &str = "claude-code";
+
+fn source(c: &dyn Connector) -> Result<Box<dyn TranscriptSource>> {
+    c.transcript()
+        .ok_or_else(|| anyhow!("belay cannot read {} transcripts", c.agent()))
+}
 
 pub fn run(transcript: &Path, full: bool) -> Result<String> {
     let entries = analyze(transcript)?;
@@ -32,15 +32,26 @@ pub fn run(transcript: &Path, full: bool) -> Result<String> {
 
 /// Ledger entries look mode would have written for this transcript.
 pub fn analyze(transcript: &Path) -> Result<Vec<Entry>> {
-    let f = File::open(transcript).with_context(|| format!("open {}", transcript.display()))?;
-    let mut ctl = Controller::new(crate::config::load(), Capabilities::CLAUDE_CODE, Mode::Look);
-    let mut entries = Vec::new();
-    let mut pending: HashMap<String, (String, Value)> = HashMap::new();
+    let c = connector::for_agent(AGENT)?;
+    analyze_with(c.as_ref(), source(c.as_ref())?.as_ref(), transcript)
+}
 
+fn analyze_with(
+    c: &dyn Connector,
+    src: &dyn TranscriptSource,
+    transcript: &Path,
+) -> Result<Vec<Entry>> {
+    let steps = src.read(transcript)?;
+    let mut ctl = Controller::new(
+        crate::config::load().session(),
+        c.capabilities(),
+        Mode::Look,
+    );
+    let mut entries = Vec::new();
     entries.extend(
         ctl.handle(
             Event::SessionStarted {
-                agent: "claude-code (retro)".into(),
+                agent: format!("{} (retro)", c.agent()),
                 cwd: String::new(),
                 transcript_path: Some(transcript.display().to_string()),
                 mode: None,
@@ -55,16 +66,11 @@ pub fn analyze(transcript: &Path) -> Result<Vec<Entry>> {
     // and one such line made a 14-second session read as 8,000 years.
     let latest = crate::paths::now_ms() + 24 * 3_600_000;
     let mut cwd = String::new();
-    let mut seen = std::collections::HashSet::new();
-    // Bytes, not `lines()`: one line that is not UTF-8 must not end the analysis.
-    for line in BufReader::new(f).split(b'\n').map_while(Result::ok) {
-        let Ok(v) = serde_json::from_slice::<Value>(&line) else {
-            continue;
-        };
-        if let Some(c) = v["cwd"].as_str() {
+    for step in steps {
+        if let Some(c) = step.cwd {
             // The first cwd names the project, as a live session's start does.
             if cwd.is_empty() && !c.is_empty() {
-                let at = Path::new(c);
+                let at = Path::new(&c);
                 ctl.set_learning(
                     &crate::learnstore::project_of(at),
                     &crate::learnstore::root_of(at),
@@ -72,146 +78,17 @@ pub fn analyze(transcript: &Path) -> Result<Vec<Entry>> {
                     Vec::new(),
                 );
             }
-            cwd = c.to_string();
+            cwd = c;
         }
-        // Keep time monotonic even if a line has no timestamp or goes backwards.
-        if let Some(t) = v["timestamp"]
-            .as_str()
-            .and_then(parse_rfc3339_ms)
-            .filter(|t| *t <= latest)
-        {
+        // Keep time monotonic even if a step has no timestamp or goes backwards.
+        if let Some(t) = step.at_ms.filter(|t| *t <= latest) {
             now = now.max(t);
         }
-        let Some(items) = v["message"]["content"].as_array() else {
-            continue;
-        };
-        for item in items {
-            match item["type"].as_str() {
-                Some("tool_use") => {
-                    let id = item["id"].as_str().unwrap_or("").to_string();
-                    // One API message can appear on several transcript lines with the same
-                    // content blocks: handle each tool call once.
-                    if !seen.insert(id.clone()) {
-                        continue;
-                    }
-                    let name = item["name"].as_str().unwrap_or("").to_string();
-                    // Live hooks never see other tools (Read, Grep, …).
-                    if !HOOKED_TOOLS.contains(&name.as_str()) {
-                        continue;
-                    }
-                    let input = item["input"].clone();
-                    if name == "Bash" {
-                        // What PreToolUse would have seen, assuming auto mode: lets the
-                        // report say how many test runs belay would wrap.
-                        let cmd = input["command"].as_str().unwrap_or("");
-                        let ev = Event::ToolRequested {
-                            tool_use_id: id.clone(),
-                            tool: name.clone(),
-                            kind: tool_kind(&name),
-                            input: input.clone(),
-                            rewrite_ok: runner_is_executable(cmd, &cwd),
-                        };
-                        entries.extend(ctl.handle(ev, now).entries);
-                    }
-                    if name == "Edit" || name == "MultiEdit" {
-                        let ev = Event::EditProposed {
-                            tool_use_id: id.clone(),
-                            path: input["file_path"].as_str().unwrap_or("").into(),
-                            old_text: input["old_string"].as_str().unwrap_or("").into(),
-                            new_text: input["new_string"].as_str().unwrap_or("").into(),
-                        };
-                        entries.extend(ctl.handle(ev, now).entries);
-                    }
-                    pending.insert(id, (name, input));
-                }
-                Some("tool_result") => {
-                    let id = item["tool_use_id"].as_str().unwrap_or("");
-                    let Some((tool, input)) = pending.remove(id) else {
-                        continue;
-                    };
-                    let failed = item["is_error"].as_bool().unwrap_or(false);
-                    if !failed && matches!(tool.as_str(), "Edit" | "MultiEdit" | "Write") {
-                        let path = input["file_path"].as_str().unwrap_or("").to_string();
-                        let approx = format!(
-                            "{path}\n{}",
-                            input["new_string"]
-                                .as_str()
-                                .or(input["content"].as_str())
-                                .unwrap_or("")
-                        );
-                        let ev = Event::FileEdited {
-                            tool_use_id: id.to_string(),
-                            path,
-                            after_hash: Some(sha256_hex(&approx)),
-                        };
-                        entries.extend(ctl.handle(ev, now).entries);
-                    }
-                    let ev = Event::ToolCompleted {
-                        tool_use_id: id.to_string(),
-                        kind: tool_kind(&tool),
-                        tool,
-                        input,
-                        output: extract_output(&item["content"]),
-                        failed,
-                    };
-                    entries.extend(ctl.handle(ev, now).entries);
-                }
-                _ => {}
-            }
+        for ev in step.events {
+            entries.extend(ctl.handle(ev, now).entries);
         }
     }
     Ok(entries)
-}
-
-/// The transcripts under a Claude Code projects dir, sorted: `<project>/<session>.jsonl`
-/// and `<project>/<session>/subagents/*.jsonl`. A subagent's tool calls appear only in
-/// its own transcript, so counting both counts nothing twice.
-pub fn transcripts(root: &Path) -> Vec<PathBuf> {
-    let jsonl = |d: &Path| -> Vec<PathBuf> {
-        fs::read_dir(d)
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.is_file() && p.extension().is_some_and(|x| x == "jsonl"))
-            .collect()
-    };
-    let mut out = Vec::new();
-    for project in fs::read_dir(root)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-    {
-        let project = project.path();
-        if !project.is_dir() {
-            continue;
-        }
-        out.extend(jsonl(&project));
-        for session in fs::read_dir(&project)
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-        {
-            out.extend(jsonl(&session.path().join("subagents")));
-        }
-    }
-    out.sort();
-    out
-}
-
-/// A project dir for a working directory under `/tmp`: scratch work, such as belay's
-/// own conformance runs, rather than real sessions (checkpoint C3).
-fn is_tmp_project(root: &Path, path: &Path) -> bool {
-    path.strip_prefix(root)
-        .ok()
-        .and_then(|p| p.components().next())
-        .is_some_and(|c| c.as_os_str().to_string_lossy().starts_with("-tmp-"))
-}
-
-fn is_subagent(path: &Path) -> bool {
-    path.parent()
-        .and_then(|p| p.file_name())
-        .is_some_and(|n| n == "subagents")
 }
 
 struct Row {
@@ -225,14 +102,17 @@ struct Row {
 /// Subagent transcripts count too, on their own line. Projects under `/tmp` are left out
 /// unless `include_tmp`.
 pub fn run_all(root: &Path, top: usize, include_tmp: bool, summary: bool) -> Result<String> {
+    let c = connector::for_agent(AGENT)?;
+    let src = source(c.as_ref())?;
     let mut rows = Vec::new();
     let (mut skipped, mut tmp) = (0, 0);
-    for path in transcripts(root) {
-        if !include_tmp && is_tmp_project(root, &path) {
+    for file in src.list(root) {
+        let path = file.path;
+        if !include_tmp && file.scratch {
             tmp += 1;
             continue;
         }
-        let Ok(entries) = analyze(&path) else {
+        let Ok(entries) = analyze_with(c.as_ref(), src.as_ref(), &path) else {
             skipped += 1;
             continue;
         };
@@ -243,8 +123,8 @@ pub fn run_all(root: &Path, top: usize, include_tmp: bool, summary: bool) -> Res
             .to_string();
         rows.push(Row {
             label,
-            subagent: is_subagent(&path),
-            prompt: report::usage_from_transcript(&path).map_or(0, |u| u.prompt_total()),
+            subagent: file.subagent,
+            prompt: src.usage(&path).map_or(0, |u| u.prompt_total()),
             totals: report::totals(&entries),
         });
     }
@@ -367,40 +247,11 @@ pub fn run_all(root: &Path, top: usize, include_tmp: bool, summary: bool) -> Res
     Ok(out)
 }
 
-/// Parse `2026-10-19T08:35:44.123Z` (UTC, optional fraction) to unix milliseconds.
-fn parse_rfc3339_ms(s: &str) -> Option<u64> {
-    let (date, time) = s.strip_suffix('Z')?.split_once('T')?;
-    let mut d = date.split('-').map(|x| x.parse::<i64>().ok());
-    let (y, m, day) = (d.next()??, d.next()??, d.next()??);
-    let (hms, frac) = time.split_once('.').unwrap_or((time, "0"));
-    let mut t = hms.split(':').map(|x| x.parse::<i64>().ok());
-    let (hh, mm, ss) = (t.next()??, t.next()??, t.next()??);
-    let ok = (0..=9999).contains(&y)
-        && (1..=12).contains(&m)
-        && (1..=31).contains(&day)
-        && (0..24).contains(&hh)
-        && (0..60).contains(&mm)
-        && (0..61).contains(&ss)
-        && !frac.is_empty()
-        && frac.bytes().all(|b| b.is_ascii_digit());
-    if !ok {
-        return None;
-    }
-    let ms: i64 = format!("{frac:0<3}")[..3].parse().ok()?;
-    // Days from civil date (Howard Hinnant's algorithm).
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * ((m + 9) % 12) + 2) / 5 + day - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146_097 + doe - 719_468;
-    let total = ((days * 24 + hh) * 60 + mm) * 60 + ss;
-    u64::try_from(total * 1000 + ms).ok()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
+    use std::fs;
 
     #[test]
     fn retro_all_ranks_sessions() {
@@ -480,19 +331,6 @@ mod tests {
         assert_eq!(clean.len(), odd.len());
     }
 
-    /// A bad timestamp in a transcript is skipped, never a panic.
-    #[test]
-    fn odd_timestamps_do_not_panic() {
-        for s in [
-            "2026-10-19T08:35:44.éé9Z",
-            "2026-10-19T08:35:44.-1Z",
-            "99999999999999999-01-01T00:00:00Z",
-            "2026-13-45T99:99:99Z",
-        ] {
-            assert_eq!(parse_rfc3339_ms(s), None, "{s}");
-        }
-    }
-
     /// D3: one far-future timestamp made the whole session read as millennia long.
     #[test]
     fn a_timestamp_from_the_future_is_skipped() {
@@ -517,20 +355,6 @@ mod tests {
             "{report}"
         );
         let _ = std::fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn parses_transcript_timestamps() {
-        assert_eq!(parse_rfc3339_ms("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(
-            parse_rfc3339_ms("2026-10-19T08:35:44.123Z"),
-            Some(1_792_398_944_123)
-        );
-        assert_eq!(
-            parse_rfc3339_ms("2024-02-29T23:59:59.5Z"),
-            Some(1_709_251_199_500)
-        );
-        assert_eq!(parse_rfc3339_ms("not a time"), None);
     }
 
     #[test]

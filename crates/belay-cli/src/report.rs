@@ -10,7 +10,7 @@ use anyhow::{anyhow, Result};
 use belay_core::perception::{classify, test_write_targets, writes_files, OutputKind};
 use belay_core::record::SteerTrigger;
 use belay_core::text::truncate_chars;
-use belay_core::{ActionKind, Body, Config, Entry, Event, PeerActivity};
+use belay_core::{ActionKind, Body, Entry, Event, PeerActivity};
 use serde_json::Value;
 
 /// Token usage from a Claude Code transcript. Field names confirmed in S5: totals match
@@ -415,7 +415,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
     let (mut loops, mut cycles, mut guards, mut adaptations, mut modes) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut config = Vec::new();
-    let defaults = Config::default().fields();
+    let defaults = crate::config::Config::default().fields();
     // Fleet (F1): this session's workspace, the peers it saw, and the notices.
     let mut workspace: Option<(String, String)> = None;
     let mut peers: BTreeMap<String, (String, String)> = BTreeMap::new();

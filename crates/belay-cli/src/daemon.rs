@@ -148,7 +148,11 @@ pub fn run(
     if idle_exit_minutes.is_some() {
         connector.set_socket(&sock);
     }
-    let mut controller = Controller::new(crate::config::load(), connector.capabilities(), mode);
+    let mut controller = Controller::new(
+        crate::config::load().session(),
+        connector.capabilities(),
+        mode,
+    );
     // A ledger from an earlier daemon of this session: go on from its ids.
     if let Ok(old) = crate::store::read_entries(&dir) {
         let id = |e: &belay_core::Entry, p: &str| -> u64 {
