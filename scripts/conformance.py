@@ -12,6 +12,7 @@ It costs one short model session. Exit code 0 if every check passes.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -207,6 +208,17 @@ def main() -> int:
     check("PreToolUse Bash payload has tool_use_id, tool_input.command, permission_mode",
           pre and all(p.get("tool_use_id") and p.get("tool_input", {}).get("command")
                       and p.get("permission_mode") for p in pre))
+    # U5.1 [Verify]: a Read fires PostToolUse after it runs, and `tool_response` holds
+    # the file's text as `file.content` (the shape of a transcript's `toolUseResult`).
+    reads = payloads("PostToolUse", "Read")
+    check("A Read fires PostToolUse with the file text (tool_response.file.content)",
+          any(isinstance(p.get("tool_response"), dict)
+              and (p["tool_response"].get("file") or {}).get("content") == TEST_API
+              for p in reads),
+          f"{len(reads)} Read payload(s)")
+    text_hash = hashlib.sha256(TEST_API.encode()).hexdigest()
+    check("belay recorded the Read as an output with the file's content hash",
+          any(e.get("kind") == "output" and e.get("blob") == text_hash for e in ledger))
     fail = payloads("PostToolUseFailure", "Bash")
     check("A failing Bash call fires PostToolUseFailure with error 'Exit code N'",
           any(str(p.get("error", "")).startswith("Exit code") for p in fail))

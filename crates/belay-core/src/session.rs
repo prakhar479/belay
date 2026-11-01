@@ -1,7 +1,7 @@
 //! Session model: the small, readable state that decisions depend on.
 //! Scope is one session. Nothing carries over.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::guard::GuardDecision;
 use crate::perception::OutputKind;
@@ -25,6 +25,44 @@ pub struct SessionModel {
     levels: BTreeMap<OutputKind, u8>,
     unreopened: BTreeMap<OutputKind, u32>,
     tighten_after: u32,
+    reads: Reads,
+}
+
+/// Most distinct (path, content) pairs `Reads` remembers between compactions. Past it,
+/// new pairs are counted but not remembered: a repeat of one of them goes unseen.
+const MAX_TRACKED_READS: usize = 4096;
+
+/// File reads since the last compaction, by path and content hash (U5.1). A read is
+/// repeated when the same content of the same path was read before, with no compaction
+/// in between: the agent already had it in context. Data for a later step (U5.2); belay
+/// does nothing with it yet. The report replays the ledger through this too.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Reads {
+    seen: BTreeSet<(String, String)>,
+    /// Reads in the session.
+    pub total: u64,
+    /// Reads of content already read since the last compaction.
+    pub repeated: u64,
+}
+
+impl Reads {
+    /// Count a read of `path` whose content hashes to `hash`. True if it repeats one.
+    pub fn on_read(&mut self, path: &str, hash: &str) -> bool {
+        self.total += 1;
+        let key = (path.to_string(), hash.to_string());
+        let repeated = self.seen.contains(&key);
+        if repeated {
+            self.repeated += 1;
+        } else if self.seen.len() < MAX_TRACKED_READS {
+            self.seen.insert(key);
+        }
+        repeated
+    }
+
+    /// The context was compacted or replaced: earlier reads are no longer in it.
+    pub fn on_compacted(&mut self) {
+        self.seen.clear();
+    }
 }
 
 impl SessionModel {
@@ -49,6 +87,7 @@ impl SessionModel {
                 .collect(),
             unreopened: BTreeMap::new(),
             tighten_after,
+            reads: Reads::default(),
         }
     }
 
@@ -63,6 +102,14 @@ impl SessionModel {
 
     pub fn levels(&self) -> &BTreeMap<OutputKind, u8> {
         &self.levels
+    }
+
+    pub fn reads(&self) -> &Reads {
+        &self.reads
+    }
+
+    pub fn reads_mut(&mut self) -> &mut Reads {
+        &mut self.reads
     }
 
     /// Call after a summary reached the agent. Tightens after `tighten_after`
@@ -128,6 +175,20 @@ mod tests {
         assert_eq!((c.from.as_str(), c.to.as_str()), ("2", "3"));
         assert_eq!(s.shape_level(OutputKind::Test), 3);
         assert_eq!(s.shape_level(OutputKind::Build), DEFAULT_LEVEL);
+    }
+
+    #[test]
+    fn same_content_read_again_is_repeated_until_a_compaction() {
+        let mut r = Reads::default();
+        assert!(!r.on_read("a.rs", "h1"));
+        assert!(!r.on_read("b.rs", "h1"));
+        assert!(r.on_read("a.rs", "h1"));
+        // The file changed: a new read, not a repeat.
+        assert!(!r.on_read("a.rs", "h2"));
+        r.on_compacted();
+        assert!(!r.on_read("a.rs", "h1"));
+        assert!(r.on_read("a.rs", "h1"));
+        assert_eq!((r.total, r.repeated), (6, 2));
     }
 
     #[test]

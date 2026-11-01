@@ -14,7 +14,7 @@ use belay_core::text::sha256_hex;
 use belay_core::Event;
 use serde_json::Value;
 
-use super::{extract_output, runner_is_executable, tool_kind, HOOKED_TOOLS};
+use super::{extract_output, runner_is_executable, tool_kind, HOOKED_TOOLS, READ_TOOLS};
 use crate::connector::{TranscriptFile, TranscriptSource, TranscriptStep};
 use crate::report::{self, Usage};
 
@@ -44,7 +44,9 @@ impl TranscriptSource for ClaudeTranscripts {
             for item in v["message"]["content"].as_array().into_iter().flatten() {
                 match item["type"].as_str() {
                     Some("tool_use") => tool_use(item, &cwd, &mut seen, &mut pending, &mut step),
-                    Some("tool_result") => tool_result(item, &mut pending, &mut step),
+                    Some("tool_result") => {
+                        tool_result(item, &v["toolUseResult"], &mut pending, &mut step)
+                    }
                     _ => {}
                 }
             }
@@ -115,8 +117,8 @@ fn tool_use(
         return;
     }
     let name = item["name"].as_str().unwrap_or("").to_string();
-    // Live hooks never see other tools (Read, Grep, …).
-    if !HOOKED_TOOLS.contains(&name.as_str()) {
+    // Live hooks never see other tools (WebFetch, Task, …).
+    if !HOOKED_TOOLS.contains(&name.as_str()) && !READ_TOOLS.contains(&name.as_str()) {
         return;
     }
     let input = item["input"].clone();
@@ -143,8 +145,12 @@ fn tool_use(
     pending.insert(id, (name, input));
 }
 
+/// `result`: the line's `toolUseResult`, the structured result a hook gets as
+/// `tool_response`. For reads it gives the text the hook sees (a Read's file without
+/// line numbers), so retro hashes reads as a live session does.
 fn tool_result(
     item: &Value,
+    result: &Value,
     pending: &mut HashMap<String, (String, Value)>,
     step: &mut TranscriptStep,
 ) {
@@ -168,12 +174,17 @@ fn tool_result(
             after_hash: Some(sha256_hex(&approx)),
         });
     }
+    let output = if READ_TOOLS.contains(&tool.as_str()) && result.is_object() && !failed {
+        extract_output(result)
+    } else {
+        extract_output(&item["content"])
+    };
     step.events.push(Event::ToolCompleted {
         tool_use_id: id.to_string(),
         kind: tool_kind(&tool),
         tool,
         input,
-        output: extract_output(&item["content"]),
+        output,
         failed,
     });
 }
@@ -253,6 +264,43 @@ mod tests {
             Some(1_709_251_199_500)
         );
         assert_eq!(parse_rfc3339_ms("not a time"), None);
+    }
+
+    /// Retro sees reads as live hooks do: the file's text from `toolUseResult`, not
+    /// the line-numbered text the model got; tools no hook sees stay out.
+    #[test]
+    fn reads_and_searches_are_read() {
+        let fixture = format!(
+            "{}/../../fixtures/transcripts/reads_session.jsonl",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let done: Vec<(String, belay_core::ToolKind, String)> = ClaudeTranscripts
+            .read(Path::new(&fixture))
+            .unwrap()
+            .into_iter()
+            .flat_map(|s| s.events)
+            .filter_map(|e| match e {
+                Event::ToolCompleted {
+                    tool, kind, output, ..
+                } => Some((tool, kind, output)),
+                _ => None,
+            })
+            .collect();
+        use belay_core::ToolKind::{Read, Search};
+        let file = "def total(xs):\n    return sum(xs)\n";
+        assert_eq!(
+            done,
+            vec![
+                ("Read".into(), Read, file.into()),
+                ("Read".into(), Read, file.into()),
+                ("Grep".into(), Search, "shop/__init__.py".into()),
+                (
+                    "Glob".into(),
+                    Search,
+                    "/home/dev/shop/tests/test_api.py".into()
+                ),
+            ]
+        );
     }
 
     /// Claude Code repeats a message's content blocks on several lines.

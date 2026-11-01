@@ -3,7 +3,8 @@ Needs attention: 1 loops
 Loops (13 s in loops): 1
   - [would have steered] after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run): tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyE…
 Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages
-Tool calls: 7 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
+Tool calls: 8 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
+Reads: 1 (0 repeated) · 0 searches · 20 tokens (est.)
 Bash output by kind: test 100%
 Test runs: 4 · test runs are not wrapped (wrap_tests = off)
 Edits: 3 through Edit/Write (guarded before they run) · 0 Bash writes, 0 naming a test file (guarded after they run)

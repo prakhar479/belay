@@ -935,6 +935,22 @@ impl Controller {
                 ..
             }
         );
+        let is_read = matches!(
+            &event,
+            Event::ToolCompleted {
+                kind: ToolKind::Read | ToolKind::Search,
+                ..
+            }
+        );
+        // Reads before a compaction or in another conversation are out of context (U5.1).
+        if matches!(
+            event,
+            Event::Compacted { .. }
+                | Event::ContextRestarted { .. }
+                | Event::ConversationChanged { .. }
+        ) {
+            self.session.reads_mut().on_compacted();
+        }
         // Fleet (F1): hook events can carry notices; this session's edits and failures
         // are what peers' activity is compared with.
         let delivers = matches!(
@@ -980,6 +996,7 @@ impl Controller {
         }
         match event {
             _ if is_bash => self.on_bash(&mut d, event, now_ms),
+            _ if is_read => self.on_read(&mut d, event, now_ms),
             Event::EditProposed { .. } => self.on_edit_proposed(&mut d, event, now_ms),
             Event::FileEdited { .. } => self.on_file_edited(&mut d, event, now_ms),
             Event::FileChanged { .. } => self.on_file_changed(&mut d, event, now_ms),
@@ -2479,6 +2496,7 @@ impl Controller {
 mod features;
 mod memory;
 mod notice;
+mod reads;
 mod restore;
 mod snapshot;
 mod verify;

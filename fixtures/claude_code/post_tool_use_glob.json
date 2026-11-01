@@ -1,0 +1,22 @@
+{
+  "cwd": "/home/dev/shop",
+  "duration_ms": 3,
+  "hook_event_name": "PostToolUse",
+  "permission_mode": "default",
+  "session_id": "9b1d6f2e-0000-4000-8000-000000000001",
+  "tool_input": {
+    "pattern": "tests/*.py"
+  },
+  "tool_name": "Glob",
+  "tool_response": {
+    "durationMs": 4,
+    "filenames": [
+      "/home/dev/shop/tests/test_api.py",
+      "/home/dev/shop/tests/test_cart.py"
+    ],
+    "numFiles": 2,
+    "truncated": false
+  },
+  "tool_use_id": "toolu_07",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-shop/9b1d6f2e-0000-4000-8000-000000000001.jsonl"
+}

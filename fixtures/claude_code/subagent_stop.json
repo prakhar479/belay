@@ -1,0 +1,12 @@
+{
+  "agent_id": "a1b2c3d4",
+  "agent_transcript_path": "/home/dev/.claude/projects/-home-dev-shop/9b1d6f2e-0000-4000-8000-000000000001/subagents/agent-a1b2c3d4.jsonl",
+  "agent_type": "Explore",
+  "cwd": "/home/dev/shop",
+  "hook_event_name": "SubagentStop",
+  "last_assistant_message": "Found it in shop/__init__.py.",
+  "permission_mode": "default",
+  "session_id": "9b1d6f2e-0000-4000-8000-000000000001",
+  "stop_hook_active": false,
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-shop/9b1d6f2e-0000-4000-8000-000000000001.jsonl"
+}

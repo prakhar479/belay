@@ -11,7 +11,7 @@ use belay_core::guard::GuardDecision;
 use belay_core::perception::{classify, test_write_targets, writes_files, OutputKind};
 use belay_core::record::SteerTrigger;
 use belay_core::text::truncate_chars;
-use belay_core::{ActionKind, Body, Entry, Event, NoticeLevel, PeerActivity};
+use belay_core::{ActionKind, Body, Entry, Event, NoticeLevel, PeerActivity, ToolKind};
 use serde_json::Value;
 
 /// Token usage from a Claude Code transcript. Field names confirmed in S5: totals match
@@ -172,6 +172,13 @@ pub struct Totals {
     pub guard_allowed: u64,
     /// Loop nudges after which the failure recurred at most once more (R2.3).
     pub loops_stopped: u64,
+    /// File reads (U5.1), and those of content already read since the last compaction.
+    pub reads: u64,
+    pub reads_repeated: u64,
+    /// Grep and Glob calls.
+    pub searches: u64,
+    /// Output tokens of reads and searches (est.); not in `bash_tokens`.
+    pub read_tokens: u64,
 }
 
 /// A loop nudge counts as followed when its failures recur at most this often after it.
@@ -207,8 +214,44 @@ pub fn totals(entries: &[Entry]) -> Totals {
             _ => {}
         }
     }
+    // Reads and searches by their event's seq: (kind, path, failed). Their outputs are
+    // not Bash output.
+    let mut read_events: HashMap<u64, (ToolKind, &str, bool)> = HashMap::new();
+    // The same rule the session model applies live (U5.1).
+    let mut reads = belay_core::session::Reads::default();
     for e in entries {
         match &e.body {
+            Body::Event {
+                event:
+                    Event::ToolCompleted {
+                        kind: kind @ (ToolKind::Read | ToolKind::Search),
+                        input,
+                        failed,
+                        ..
+                    },
+            } => {
+                let path = input.get("file_path").and_then(Value::as_str).unwrap_or("");
+                read_events.insert(e.seq, (*kind, path, *failed));
+            }
+            Body::Event {
+                event:
+                    Event::Compacted { .. }
+                    | Event::ContextRestarted { .. }
+                    | Event::ConversationChanged { .. },
+            } => reads.on_compacted(),
+            Body::Output { tokens, blob, .. }
+                if e.causes
+                    .first()
+                    .is_some_and(|c| read_events.contains_key(c)) =>
+            {
+                let (kind, path, failed) = read_events[&e.causes[0]];
+                t.read_tokens += *tokens as u64;
+                if kind == ToolKind::Search {
+                    t.searches += 1;
+                } else if !failed && !path.is_empty() {
+                    reads.on_read(path, blob);
+                }
+            }
             Body::Output {
                 tokens,
                 output_kind,
@@ -264,7 +307,21 @@ pub fn totals(entries: &[Entry]) -> Totals {
             _ => {}
         }
     }
+    t.reads = reads.total;
+    t.reads_repeated = reads.repeated;
     t
+}
+
+/// "Reads: 12 (3 repeated) · 4 searches · 8.1k tokens (est.)".
+pub fn reads_line(t: &Totals) -> String {
+    format!(
+        "Reads: {} ({} repeated) · {} search{} · {} tokens (est.)",
+        t.reads,
+        t.reads_repeated,
+        t.searches,
+        if t.searches == 1 { "" } else { "es" },
+        k(t.read_tokens)
+    )
 }
 
 /// Where Bash output goes, how many test runs belay wraps, and which edits the guard sees.
@@ -308,7 +365,8 @@ pub fn coverage(
 pub struct Did {
     /// Edits and commands belay stopped.
     pub blocked: u64,
-    /// Tool output tokens summaries kept from the agent.
+    /// Tool output tokens summaries kept from the agent: the sum of (from − to) over
+    /// shapes that reached it (U5.5).
     pub kept_out: u64,
     /// Fixes this session learned, and ones it was told about.
     pub memories: u64,
@@ -322,6 +380,15 @@ pub struct Did {
 
 pub fn did(entries: &[Entry]) -> Did {
     let mut d = Did::default();
+    // Actions whose reply came too late (D9): not applied.
+    let late: HashSet<&str> = entries
+        .iter()
+        .filter_map(|e| match &e.body {
+            Body::Undelivered { actions, .. } => Some(actions.iter().map(String::as_str)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
     for e in entries {
         match &e.body {
             Body::Action {
@@ -330,7 +397,7 @@ pub fn did(entries: &[Entry]) -> Did {
                 reason,
                 applied: true,
                 ..
-            } => {
+            } if !late.contains(id.as_str()) => {
                 let (_, noun) = belay_core::notice_for(id, action, reason, false);
                 *d.by_kind.entry(noun).or_default() += 1;
                 match action {
@@ -862,6 +929,9 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
         k(t.bash_tokens),
         pct(t.noise, t.bash_tokens)
     );
+    if full || t.reads + t.searches > 0 {
+        let _ = writeln!(out, "{}", reads_line(&t));
+    }
     let saved = before.saturating_sub(after);
     let verb = if shaped_applied > 0 {
         "applied"
@@ -876,6 +946,15 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
             k(after),
             k(saved),
             pct(saved, t.bash_tokens)
+        );
+    }
+    // U5.5: only what reached the agent; a "would have" summary saved nothing.
+    let kept_out = did(entries).kept_out;
+    if full || kept_out > 0 {
+        let _ = writeln!(
+            out,
+            "Tokens kept out: {} (summaries that reached the agent: original − summary, est.)",
+            k(kept_out)
         );
     }
     if wrapped > 0 {
@@ -1301,6 +1380,84 @@ mod tests {
             lines: 10,
             tokens,
         }
+    }
+
+    /// U5.5: tokens kept out sum (from − to) of shapes that reached the agent: not
+    /// "would have" ones, and not ones whose reply came too late.
+    #[test]
+    fn kept_out_counts_only_delivered_applied_shapes() {
+        let entries = [
+            entry(0, shape("a-1", 5_000, 400, true, false)),
+            entry(1, shape("a-2", 3_000, 1_000, true, false)),
+            entry(2, shape("a-3", 9_000, 100, false, false)),
+            entry(
+                3,
+                Body::Undelivered {
+                    actions: vec!["a-2".into()],
+                    reason: "late".into(),
+                },
+            ),
+        ];
+        assert_eq!(did(&entries).kept_out, 4_600);
+        assert!(status_line(&entries).contains("4.6k tokens kept out"));
+        let r = render("s", &entries, true, false);
+        assert!(r.contains("Tokens kept out: 4.6k"), "{r}");
+    }
+
+    /// U5.1: reads are counted apart from Bash output; a read of the same content of
+    /// the same file is repeated until a compaction.
+    #[test]
+    fn reads_are_counted_and_repeats_found() {
+        let read = |path: &str, kind: ToolKind| Body::Event {
+            event: Event::ToolCompleted {
+                tool_use_id: "r".into(),
+                tool: "Read".into(),
+                kind,
+                input: serde_json::json!({ "file_path": path }),
+                output: "<blob:h>".into(),
+                failed: false,
+            },
+        };
+        let out = |seq: u64, cause: u64, blob: &str| Entry {
+            seq,
+            ts_ms: 0,
+            causes: vec![cause],
+            body: Body::Output {
+                id: format!("o-{seq}"),
+                blob: blob.into(),
+                output_kind: OutputKind::View,
+                lines: 1,
+                tokens: 100,
+            },
+        };
+        let compacted = Body::Event {
+            event: Event::Compacted {
+                trigger: "auto".into(),
+            },
+        };
+        let entries = [
+            entry(0, read("a.py", ToolKind::Read)),
+            out(1, 0, "h1"),
+            entry(2, read("a.py", ToolKind::Read)),
+            out(3, 2, "h1"),
+            entry(4, read("", ToolKind::Search)),
+            out(5, 4, "h2"),
+            entry(6, compacted),
+            entry(7, read("a.py", ToolKind::Read)),
+            out(8, 7, "h1"),
+            entry(9, output("o-9", 50)),
+        ];
+        let t = totals(&entries);
+        assert_eq!(
+            (t.reads, t.reads_repeated, t.searches, t.read_tokens),
+            (3, 1, 1, 400)
+        );
+        assert_eq!(t.bash_tokens, 50, "reads are not Bash output");
+        let r = render("s", &entries, true, false);
+        assert!(
+            r.contains("Reads: 3 (1 repeated) · 1 search · 400 tokens (est.)"),
+            "{r}"
+        );
     }
 
     #[test]
