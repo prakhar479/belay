@@ -99,6 +99,20 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         change: Option<String>,
     },
+    /// The working tree kept as a private git commit (`refs/belay/<session>/<id>`), at
+    /// the session's start (`t-0`) and each turn's end (`t-N`) (U6.2). With `undo`, the
+    /// user's `belay undo` back to snapshot `id`; `commit` is then the tree as it was
+    /// before the undo, so the undo can be undone. `files`: what changed since the
+    /// previous snapshot, or what the undo restored or removed.
+    Snapshot {
+        id: String,
+        commit: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        files: Vec<String>,
+        reason: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        undo: bool,
+    },
 }
 
 /// Read actions that an `undelivered` entry names as not applied, with a note in the

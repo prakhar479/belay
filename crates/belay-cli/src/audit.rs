@@ -14,7 +14,7 @@ const MAX_TEXT_BYTES: u64 = 2 << 20;
 
 pub const LABEL: &str = "belay audit (experimental)";
 
-fn git(root: &Path, args: &[&str], index: Option<&Path>) -> Result<String> {
+pub(crate) fn git(root: &Path, args: &[&str], index: Option<&Path>) -> Result<String> {
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(root).args(args);
     if let Some(i) = index {
@@ -67,6 +67,41 @@ pub fn worktree_tree(root: &Path, scratch: &Path) -> Result<String> {
         .and_then(|_| git(root, &["write-tree"], Some(&index)));
     let _ = std::fs::remove_file(&index);
     Ok(tree?.trim().to_string())
+}
+
+/// A commit of the working tree as it is now (see `worktree_tree`), on no branch: the
+/// caller keeps it reachable with a ref. Its own author, so it works where the user set
+/// none, and never signed, so it never asks for a key.
+pub fn worktree_commit(
+    root: &Path,
+    scratch: &Path,
+    message: &str,
+    parent: Option<&str>,
+) -> Result<String> {
+    let tree = worktree_tree(root, scratch)?;
+    let mut cmd = Command::new("git");
+    cmd.arg("-C")
+        .arg(root)
+        .args(["commit-tree", "--no-gpg-sign", &tree, "-m", message]);
+    if let Some(p) = parent {
+        cmd.args(["-p", p]);
+    }
+    for (k, v) in [
+        ("GIT_AUTHOR_NAME", "belay"),
+        ("GIT_AUTHOR_EMAIL", "belay@localhost"),
+        ("GIT_COMMITTER_NAME", "belay"),
+        ("GIT_COMMITTER_EMAIL", "belay@localhost"),
+    ] {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().context("run git commit-tree")?;
+    if !out.status.success() {
+        bail!(
+            "git commit-tree: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// The changes between two tree-ishes (commits or trees).

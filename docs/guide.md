@@ -429,6 +429,24 @@ audit_ignore = ["vendor/**"]                      # left out of `belay audit`
 
 An edit of a protected path is denied in optimize mode (and recorded in look mode) until you run `! belay allow`. Globs are relative to the repo root. `*` stays within a directory, `**` crosses them, and a pattern without `/` matches a file name anywhere. When `belay claude` starts, it skips a bad line with a warning; the other lines still apply.
 
+## Undo
+
+In a git repo, belay keeps the working tree as it is when the session starts (`t-0`) and at the end of each agent turn (`t-1`, `t-2`, …). A snapshot holds tracked and untracked files. Ignored files are left out. Each one is a private ref, `refs/belay/<session>/t-N`, so it is not on any branch and `git log` does not show it. belay takes it after the agent has its reply, so the agent does not wait.
+
+To roll the files back, run `belay undo` in your own terminal:
+
+```sh
+belay undo                 # list the snapshots, and how many files differ from now
+belay undo t-2             # show the files that would change, ask, then write them back
+belay undo t-2 --yes       # the same, without asking
+```
+
+Files the snapshot does not have are deleted. Your index, HEAD, stash, and branches are not touched: what you staged stays staged. Before it writes, belay keeps the files as they were as `u-N`, so `belay undo u-1` brings them back. `--session` picks the session, as for `belay report`. Each snapshot and each undo is in the ledger.
+
+Claude Code's `/rewind` restores only what its own edit tools wrote. `belay undo` restores files changed in any way: by a shell command, a formatter, or a code generator. It works the same for any agent belay runs.
+
+Only you can undo. belay refuses `belay undo` from an agent's shell, and denies it when the agent tries. `belay purge` and the cleanup of old sessions delete their refs.
+
 ## Audit (experimental)
 
 `belay audit` reads a git diff and lists what changed in the project's checks:
@@ -515,6 +533,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay launch <agent> [args…]` | Start an agent under belay. `belay launch claude-code` is `belay claude` |
 | `belay mode look\|optimize` | Change the mode of the live session |
 | `belay allow [a-N]` | Lift one guard block (yours to run) |
+| `belay undo [t-N] [--yes]` | List snapshots, or roll the files back to one (yours to run) |
 | `belay report [--session S] [--full]` | What happened in a session |
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |

@@ -1834,6 +1834,8 @@ impl Controller {
         }
         let message = if runs_belay_allow(&command) {
             "belay: only the user can allow a blocked edit. Ask the user to run `! belay allow`, then retry the edit.".to_string()
+        } else if runs_belay(&command, "undo") {
+            "belay: only the user rolls files back. Ask the user to run `belay undo` in their own terminal.".to_string()
         } else if runs_belay(&command, "mode") {
             // Look mode never blocks: switching to it would lift every guard at once.
             "belay: only the user changes belay's mode. Ask the user if this session should run in another mode.".to_string()
@@ -2363,6 +2365,8 @@ impl Controller {
         seq
     }
 }
+
+mod snapshot;
 
 #[cfg(test)]
 mod tests;

@@ -81,6 +81,7 @@ pub fn prune(root: &Path, days: u64, now_secs: u64) -> Result<Vec<PathBuf>> {
             continue;
         }
         let _ = fs::remove_file(socket_path(&dir));
+        crate::undo::delete_refs(&dir);
         fs::remove_dir_all(&dir).with_context(|| format!("remove {}", dir.display()))?;
         removed.push(dir);
     }

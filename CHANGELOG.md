@@ -6,6 +6,7 @@
 - **Memory:** `belay memory` lists, searches, adds, shows, approves, and drops memories in one store, each with its provenance. It reads notes, learned fixes, findings, and handoffs as memories; `belay memory migrate` copies them in once.
 - **`belay install` / `belay uninstall`:** the Claude Code plugin, `belay status` as the status line (with a backup, never over another status line without `--force`), and a printed launcher alias, each shown and confirmed first. `belay doctor` says whether the plugin is installed and the status line is belay's.
 - **The plugin teaches the agent:** a `belay` skill (handoffs, findings, denied edits, `belay show`, `belay why`) and slash commands `/belay:report`, `/belay:handoff`, `/belay:recall`, `/belay:remember`. Plugin version 0.2.0.
+- **Undo:** belay keeps the working tree at the start and at the end of each agent turn, as private git refs. `belay undo t-N` rolls the files back to one, also what shell commands changed, without touching your index, HEAD, stash, or branches.
 
 ## 0.1.0
 

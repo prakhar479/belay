@@ -529,6 +529,16 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
             }
             Body::Undelivered { actions, .. } => undelivered += actions.len() as u64,
             Body::Override { action } => guards.push(format!("[user allowed] {action} once")),
+            Body::Snapshot {
+                id,
+                files,
+                undo: true,
+                ..
+            } => guards.push(format!(
+                "[user undid] {} file(s) rolled back to {id}",
+                files.len()
+            )),
+            Body::Snapshot { .. } => {}
             Body::Judgment { .. } => judgments += 1,
             Body::Action {
                 action,
@@ -888,6 +898,20 @@ fn describe(e: &Entry) -> String {
         Body::Config { overrides } => format!("config {overrides:?}"),
         Body::Format { version } => format!("ledger format {version}"),
         Body::Override { action } => format!("user allowed {action} once"),
+        Body::Snapshot {
+            id,
+            commit,
+            reason,
+            undo,
+            ..
+        } => {
+            let short = commit.get(..12).unwrap_or(commit);
+            if *undo {
+                format!("undo to {id} (files before: {short}): {reason}")
+            } else {
+                format!("snapshot {id} ({short}): {reason}")
+            }
+        }
         Body::Learned {
             message,
             test,
