@@ -323,7 +323,7 @@ Each daemon reads the other live sessions' ledgers once a second and notices fou
 - **Peer edit.** In the same checkout, another session edited a file after this one did.
 - **Peer git.** In the same checkout, another session ran a git command that changes files or HEAD (`stash`, `checkout`, `reset`, `commit`, …).
 - **Peer failure.** A failed run names a file another session in this checkout edited in the last 30 minutes.
-- **Worktree overlap.** In another worktree of the same repo, both sessions edited one file, so a merge will conflict there.
+- **Worktree overlap.** In another worktree of the same repo, both sessions edited one file, so a merge will conflict there. Not once the other session's version of the file is in your HEAD (its branch was merged), and not once that session has ended and its worktree is removed. For a session that has ended, the notice says so, once per file.
 
 With `awareness = on` (the default), the agent gets these at its next hook. For example: "belay: shop-1 edited shop/payments.py after you did. Read it again before you change it." They are also shown in `belay report`.
 

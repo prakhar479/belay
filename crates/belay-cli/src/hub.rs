@@ -2756,23 +2756,9 @@ fn changes_in_head(repo: &Path, wt: &Path, base: &str) -> bool {
         return false;
     };
     paths.extend(new);
-    paths.iter().all(|p| {
-        let at_head = Command::new("git")
-            .arg("-C")
-            .arg(repo)
-            .args(["cat-file", "blob", &format!("HEAD:{p}")])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| o.stdout);
-        match (fs::read(wt.join(p)).ok(), at_head) {
-            (Some(w), Some(h)) => w == h,
-            (None, None) => true,
-            _ => false,
-        }
-    })
+    paths
+        .iter()
+        .all(|p| crate::audit::same_as_head(repo, wt, p))
 }
 
 /// `belay fleet prune`: worktrees of fleets that are down, with no uncommitted changes

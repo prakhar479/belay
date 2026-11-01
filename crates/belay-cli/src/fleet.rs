@@ -76,21 +76,42 @@ struct Tail {
     workspace: Option<Workspace>,
     live: bool,
     probed_ms: u64,
+    /// `PeerActivity::Removed` was sent.
+    removed: bool,
+}
+
+/// A peer's edit in another worktree of this repo, not (yet) in this session's HEAD.
+#[derive(Debug)]
+struct Unmerged {
+    agent: String,
+    /// Repo-relative.
+    rel: String,
+    /// The HEAD this was last compared with, unless the peer edited it since.
+    checked_head: Option<String>,
+    /// (HEAD, sha256 of the peer's file) of the last git comparison: the cache that
+    /// keeps a re-edit to the same bytes from another git call.
+    compared: Option<(String, String)>,
 }
 
 /// Follows the ledgers of other live sessions for one session.
 pub struct Watcher {
     me: PathBuf,
-    my_common: String,
+    my: Workspace,
     tails: BTreeMap<PathBuf, Tail>,
+    /// (peer session, absolute path) → its edit not yet found in this HEAD.
+    unmerged: BTreeMap<(String, String), Unmerged>,
+    /// This worktree's git dir, once looked up (None inside: not in git).
+    git_dir: Option<Option<PathBuf>>,
 }
 
 impl Watcher {
-    pub fn new(me: PathBuf, my_common: String) -> Self {
+    pub fn new(me: PathBuf, my: Workspace) -> Self {
         Self {
             me,
-            my_common,
+            my,
             tails: BTreeMap::new(),
+            unmerged: BTreeMap::new(),
+            git_dir: None,
         }
     }
 
@@ -120,13 +141,161 @@ impl Watcher {
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
             if tail.live {
-                read_new(&dir, &session, tail, &self.my_common, &mut out);
-            } else if was_live && tail.workspace.is_some() {
+                let start = out.len();
+                read_new(&dir, &session, tail, &self.my.common, &mut out);
+                track_edits(&out[start..], tail, &self.my, &mut self.unmerged);
+                continue;
+            }
+            let Some(ws) = &tail.workspace else { continue };
+            if was_live {
                 out.push(peer(&session, 0, now, &tail.agent, PeerActivity::Left));
             }
+            // A worktree removed after its session ended (`belay fleet prune`, `git
+            // worktree remove`): nothing of it can conflict any more.
+            if !tail.removed
+                && ws.common == self.my.common
+                && ws.top != self.my.top
+                && !Path::new(&ws.top).exists()
+            {
+                tail.removed = true;
+                out.push(peer(&session, 0, now, &tail.agent, PeerActivity::Removed));
+                self.unmerged.retain(|(s, _), _| *s != session);
+            }
         }
+        self.check_merged(now, &mut out);
         out
     }
+
+    /// Peers' edits whose bytes are now in this HEAD (a merge, a cherry-pick, the same
+    /// change made here) become `PeerActivity::Merged`. A path is compared again only
+    /// when HEAD moved or the peer edited it, and git runs only for a new (HEAD, file
+    /// hash). On this watcher thread, never in a hook (rule 7).
+    fn check_merged(&mut self, now: u64, out: &mut Vec<Event>) {
+        if self.unmerged.is_empty() {
+            return;
+        }
+        let Some(head) = self.head_key() else {
+            return;
+        };
+        let top = Path::new(&self.my.top);
+        let mut merged: BTreeMap<String, (String, Vec<String>)> = BTreeMap::new();
+        for ((session, abs), u) in &mut self.unmerged {
+            if u.checked_head.as_ref() == Some(&head) {
+                continue;
+            }
+            u.checked_head = Some(head.clone());
+            // A file the peer does not have (deleted, or not written yet) is not taken
+            // as merged: the notice stays, as before W4c (the safe side).
+            let Ok(bytes) = std::fs::read(abs) else {
+                continue;
+            };
+            let key = (head.clone(), belay_core::text::sha256_hex_bytes(&bytes));
+            if u.compared.as_ref() == Some(&key) {
+                continue;
+            }
+            u.compared = Some(key);
+            if crate::audit::head_blob(top, &u.rel).as_deref() == Some(bytes.as_slice()) {
+                let m = merged
+                    .entry(session.clone())
+                    .or_insert_with(|| (u.agent.clone(), Vec::new()));
+                m.1.push(abs.clone());
+            }
+        }
+        for (session, (agent, paths)) in merged {
+            for p in &paths {
+                self.unmerged.remove(&(session.clone(), p.clone()));
+            }
+            out.push(peer(
+                &session,
+                0,
+                now,
+                &agent,
+                PeerActivity::Merged { paths },
+            ));
+        }
+    }
+
+    /// What identifies this session's HEAD for the cache: the size and time of the
+    /// HEAD reflog, which every commit, merge, or reset appends to (no process); else
+    /// the commit, from git.
+    fn head_key(&mut self) -> Option<String> {
+        let top = Path::new(&self.my.top);
+        let dir = self
+            .git_dir
+            .get_or_insert_with(|| {
+                git_line(top, &["rev-parse", "--absolute-git-dir"]).map(PathBuf::from)
+            })
+            .as_ref()?;
+        if let Ok(m) = std::fs::metadata(dir.join("logs/HEAD")) {
+            let t = m
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos());
+            return Some(format!("log:{}:{t}", m.len()));
+        }
+        git_line(top, &["rev-parse", "HEAD"])
+    }
+}
+
+/// Peer edits in `events` (from one peer's ledger) in another worktree of this repo:
+/// each is tracked again until its bytes are found in this HEAD.
+fn track_edits(
+    events: &[Event],
+    tail: &Tail,
+    my: &Workspace,
+    unmerged: &mut BTreeMap<(String, String), Unmerged>,
+) {
+    let Some(ws) = &tail.workspace else { return };
+    if ws.common != my.common || ws.top == my.top {
+        return;
+    }
+    for e in events {
+        let Event::Peer {
+            session,
+            activity: PeerActivity::Edited { path },
+            ..
+        } = e
+        else {
+            continue;
+        };
+        let Some(rel) = Path::new(path)
+            .strip_prefix(&ws.top)
+            .ok()
+            .and_then(|r| r.to_str())
+            .filter(|r| !r.is_empty())
+        else {
+            continue;
+        };
+        let u = unmerged
+            .entry((session.clone(), path.clone()))
+            .or_insert_with(|| Unmerged {
+                agent: tail.agent.clone(),
+                rel: rel.to_string(),
+                checked_head: None,
+                compared: None,
+            });
+        u.checked_head = None;
+    }
+}
+
+/// The first line of a git command's output in `dir`, if it succeeds.
+fn git_line(dir: &Path, args: &[&str]) -> Option<String> {
+    let o = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let line = String::from_utf8_lossy(&o.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .to_string();
+    (!line.is_empty()).then_some(line)
 }
 
 fn session_dirs(root: &Path) -> Vec<PathBuf> {
@@ -553,6 +722,130 @@ mod tests {
         assert_eq!(tail.offset, text.len() as u64, "read past the long line");
     }
 
+    /// W4c: a peer's edits in its worktree overlap with this checkout's, unless its
+    /// version is merged into this HEAD, or it ended and its worktree is gone.
+    #[test]
+    fn merged_and_removed_peer_worktrees_make_no_overlap() {
+        use belay_core::fleet::{Fleet, NoticeKind};
+        let d = tmp("w4c");
+        let repo = d.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        let commit = |dir: &Path, msg: &str| {
+            git(dir, &["add", "-A"]);
+            git(
+                dir,
+                &[
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "-q",
+                    "-m",
+                    msg,
+                ],
+            );
+        };
+        git(&repo, &["init", "-q", "-b", "main"]);
+        for f in ["f", "g", "h"] {
+            std::fs::write(repo.join(f), "base\n").unwrap();
+        }
+        commit(&repo, "base");
+        let wt = d.join("wt");
+        git(
+            &repo,
+            &["worktree", "add", "-q", "-b", "peer", wt.to_str().unwrap()],
+        );
+        // The peer changes f and commits; g and h stay its own.
+        std::fs::write(wt.join("f"), "peer f\n").unwrap();
+        commit(&wt, "peer f");
+        std::fs::write(wt.join("g"), "peer g\n").unwrap();
+        std::fs::write(wt.join("h"), "peer h\n").unwrap();
+        let peer_dir = d.join("sessions").join("peer");
+        std::fs::create_dir_all(&peer_dir).unwrap();
+        let line = |seq: u64, ev: Event| {
+            serde_json::to_string(&Entry {
+                seq,
+                ts_ms: 1000 + seq,
+                causes: vec![],
+                body: Body::Event { event: ev },
+            })
+            .unwrap()
+        };
+        let mut ledger = line(
+            1,
+            Event::SessionStarted {
+                agent: "claude-code".into(),
+                cwd: wt.display().to_string(),
+                transcript_path: None,
+                mode: None,
+            },
+        ) + "\n";
+        for (i, f) in ["f", "g", "h"].iter().enumerate() {
+            let ev = Event::FileEdited {
+                tool_use_id: format!("t{i}"),
+                path: wt.join(f).display().to_string(),
+                after_hash: None,
+            };
+            ledger += &(line(2 + i as u64, ev) + "\n");
+        }
+        std::fs::write(peer_dir.join("ledger.jsonl"), ledger).unwrap();
+        let sock = std::os::unix::net::UnixListener::bind(socket_path(&peer_dir)).unwrap();
+
+        let me = workspace(&repo);
+        let mut core = Fleet::default();
+        core.set_workspace(&me.top, &me.common, 0);
+        let mut w = Watcher::new(d.join("sessions").join("me"), me.clone());
+        let feed = |w: &mut Watcher, core: &mut Fleet, now: u64| {
+            for (i, ev) in w.poll(&d.join("sessions"), now).into_iter().enumerate() {
+                if let Event::Peer {
+                    session,
+                    at_ms,
+                    agent,
+                    activity,
+                    ..
+                } = ev
+                {
+                    core.on_peer(&session, &agent, at_ms, &activity, now * 100 + i as u64);
+                }
+            }
+        };
+        feed(&mut w, &mut core, 1);
+        // Nothing is merged yet: an edit of f here would conflict.
+        assert_eq!(w.unmerged.len(), 3, "{:?}", w.unmerged.keys());
+        // The peer's branch (f) is merged here.
+        git(&repo, &["merge", "-q", "--ff-only", "peer"]);
+        feed(&mut w, &mut core, 2);
+        let overlaps = |core: &mut Fleet, path: &Path| {
+            core.on_my_edit(&path.display().to_string(), 10_000);
+            core.take()
+                .into_iter()
+                .flatten()
+                .filter(|n| n.kind == NoticeKind::WorktreeOverlap)
+                .count()
+        };
+        assert_eq!(overlaps(&mut core, &repo.join("f")), 0, "f is merged");
+        assert_eq!(overlaps(&mut core, &repo.join("g")), 1, "g is not");
+        // A quiet round runs no git: HEAD and the files are as compared.
+        let before: Vec<_> = w.unmerged.values().map(|u| u.compared.clone()).collect();
+        feed(&mut w, &mut core, 3);
+        let after: Vec<_> = w.unmerged.values().map(|u| u.compared.clone()).collect();
+        assert_eq!(before, after);
+        // The peer ends and its worktree is removed: h no longer conflicts.
+        drop(sock);
+        let _ = std::fs::remove_file(socket_path(&peer_dir));
+        git(
+            &repo,
+            &["worktree", "remove", "--force", wt.to_str().unwrap()],
+        );
+        feed(&mut w, &mut core, 4);
+        assert_eq!(overlaps(&mut core, &repo.join("h")), 0, "worktree is gone");
+        assert!(w.unmerged.is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn a_round_over_many_idle_peers_is_cheap_and_quiet() {
         let d = tmp("many");
@@ -563,7 +856,13 @@ mod tests {
             std::fs::write(dir.join("ledger.jsonl"), PEER_LEDGER).unwrap();
             socks.push(std::os::unix::net::UnixListener::bind(socket_path(&dir)).unwrap());
         }
-        let mut w = Watcher::new(d.join("me"), "/elsewhere/.git".into());
+        let mut w = Watcher::new(
+            d.join("me"),
+            Workspace {
+                top: "/elsewhere".into(),
+                common: "/elsewhere/.git".into(),
+            },
+        );
         let first = w.poll(&d, 0);
         assert_eq!(first.len(), 25, "one start per peer");
         let t = std::time::Instant::now();
