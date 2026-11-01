@@ -32,6 +32,7 @@ pub mod policy;
 pub mod record;
 pub mod session;
 pub mod shape;
+pub mod skills;
 pub mod text;
 
 pub use capability::Capabilities;

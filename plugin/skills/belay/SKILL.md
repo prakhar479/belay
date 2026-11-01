@@ -7,7 +7,7 @@ description: How to work with belay, the local supervisor that records this sess
 
 belay records what you do in this session. It may summarize long outputs, warn you about loops, and deny edits that weaken tests. Every action it takes has a reason you can look up. Run the commands below with your shell tool.
 
-belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, and `why`. When they are present, use them instead of the matching commands.
+belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `skill_preview`, and `skill_stage`. When they are present, use them instead of the matching commands.
 
 ## When you start
 
@@ -38,6 +38,12 @@ belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_
 
 - Share a fact other sessions can use: `belay share "<fact>"`.
 - Save it for later sessions: `memory_add`, or `belay memory add "<fact>"`.
+
+## When a skill would help
+
+- Look at it first: `skill_preview`, or `belay skill preview <url>`. Read its warnings.
+- Stage it: `skill_stage`, or `belay skill add <url>`. This installs nothing.
+- Ask the user to run `belay skill approve <name>` in their own terminal. Only the user can approve, reject, or remove a skill.
 
 ## Before you stop
 

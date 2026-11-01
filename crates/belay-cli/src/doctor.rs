@@ -8,7 +8,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::{config, install, paths, sessions};
+use crate::{config, install, paths, sessions, skillstore};
 
 /// The report, and whether everything that must work does.
 pub fn run() -> (String, bool) {
@@ -153,6 +153,10 @@ pub fn run() -> (String, bool) {
             retention(cfg.keep_days)
         ),
     );
+    // Installed skills whose files no longer match the digest the user approved (U9).
+    for (status, text) in skillstore::doctor_lines() {
+        line(status, text);
+    }
     (out, healthy)
 }
 

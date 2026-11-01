@@ -100,6 +100,8 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
             "memory_add",
             "handoff_get",
             "output_show",
+            "skill_preview",
+            "skill_stage",
             "why"
         ]
     );

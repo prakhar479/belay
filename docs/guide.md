@@ -389,8 +389,42 @@ Notes, learned fixes, findings, and the handoffs of ended sessions show up in `b
 | `handoff_get {}` | The newest handoff for this project, as `belay handoff` shows it |
 | `output_show {id}` | The original of `o-N` in this session, as `belay show` |
 | `why {id}` | The cause chain of `a-N`, `o-N`, or an entry, as `belay why` |
+| `skill_preview {url}` | Fetches a skill and shows it, as `belay skill preview`. Installs nothing |
+| `skill_stage {url, scope?, name?}` | Stages a skill for you to approve, as an agent's `belay skill add` |
 
-The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. Everything stays on this machine. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
+The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. Everything stays on this machine, except that the two skill tools fetch the URL they are given. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
+
+## Skills
+
+A skill is a folder of instructions (`SKILL.md` and its files) that the agent loads in every session. That makes it a lasting way into the agent's instructions. belay makes installing one deliberate: it fetches, checks, pins, and records it, and only you approve it.
+
+```sh
+belay skill preview https://github.com/o/r/tree/main/skills/pdf   # look; installs nothing
+belay skill add https://github.com/o/r/tree/main/skills/pdf      # preview, confirm, install
+belay skill add ./my-skill --scope project --name pdf --yes
+belay skill list                                                 # installed, waiting, drift
+belay skill update [name]                                        # fetch again; a change waits for approval
+belay skill approve pdf | reject pdf | remove pdf                # yours to run
+```
+
+Sources:
+
+- A GitHub tree or blob URL (`github.com/<owner>/<repo>/tree/<ref>/<path>`). belay makes a shallow, sparse clone of that directory and pins the commit. A ref with a `/` in it is not supported: use a commit or a tag.
+- A raw URL to a `SKILL.md` (a skill of one file). The server's ETag is kept.
+- A `.zip` or `.tar.gz` archive. belay lists it first and refuses absolute paths, `..`, symlinks, and links before anything is extracted.
+- A local path or a `file://` URL.
+
+belay uses `git`, `curl`, `tar`, and `unzip`, with a 60 s limit for each download. A skill has at most 200 files and 1 MB. It needs a `SKILL.md` whose frontmatter has `name` and `description`; the name is cut to `a-z`, `0-9`, and `-`.
+
+Preview shows the name, the description, the files, the warnings, and a digest (SHA-256 over the files). Warnings do not block. belay warns about a download piped to a shell (`curl … | sh`), a base64 blob over 200 characters, an executable script, text that asks to disable belay, hooks, permissions, or a sandbox, "ignore previous instructions", and hidden Unicode (bidi controls, zero-width characters).
+
+Where skills go (Claude Code): `--scope user` (the default) is `~/.claude/skills/<name>` (under `CLAUDE_CONFIG_DIR` if set). `--scope project` is `<repo>/.claude/skills/<name>`. Each of these dirs has a `.belay-skills.lock`: for each skill, its URL, commit or ETag, digest, who approved it, and when. Commit the project's lock with the skills. `belay skill list` and `belay doctor` say when a skill's files no longer match the digest you approved (drift).
+
+**Agents stage; you approve.** From your terminal, `add` previews, asks, and installs. From an agent (a shell in a belay session, or the `skill_stage` MCP tool), `add` only stages the skill and tells the agent to ask you. `belay skill approve <name>` shows it again (with what changed, for an update) and installs it. `approve`, `reject`, and `remove` refuse to run outside your own terminal, and belay denies the agent's run of them. `update` stages a change the same way.
+
+belay keeps a record of each stage, approval, install, rejection, and removal in `<data dir>/skills/log.jsonl`, with the session when there is one.
+
+A skill added while Claude Code runs may not be seen until the session restarts. [Verify]
 
 ## Fleets
 
@@ -605,7 +639,8 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay handoff ["text"]` | Leave or read a handoff |
 | `belay note "…"` · `belay notes` · `belay fixes` | Project notes and learned fixes |
 | `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
-| `belay mcp` | MCP server over stdio: memory, the handoff, outputs, and why |
+| `belay skill [preview\|add\|list\|update\|approve\|reject\|remove]` | Skills from URLs: checked, pinned, approved by you |
+| `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, and why |
 | `belay fleet up\|status\|report\|merge\|down\|…` | Fleets |
 | `belay task add\|list\|show\|claim\|done\|blocked\|drop` | A fleet's task board |
 | `belay audit [range]` | (Experimental) what a diff did to tests and checks |

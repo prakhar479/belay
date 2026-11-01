@@ -29,6 +29,10 @@ pub struct Capabilities {
     pub start_inject: bool,
     /// Say whether a compaction was manual or automatic.
     pub compact_source: bool,
+    /// Load skills (instructions that persist across sessions) from a directory belay
+    /// can install into (`belay skill`).
+    #[serde(default)]
+    pub skills: bool,
 }
 
 impl Capabilities {
@@ -55,12 +59,14 @@ impl Capabilities {
         observe_reads: true,
         start_inject: true,
         compact_source: true,
+        skills: true,
     };
 
     /// Codex. Output replacement works only through PostToolUse `decision: "block"`.
     /// `ask` is parsed but not supported.
     /// [Verify] whether a failed call can be block-replaced (S10).
     /// [Verify] `start_inject`: SessionStart context (S10).
+    /// [Verify] `skills`: whether Codex loads skills from a directory (S10).
     pub const CODEX: Self = Self {
         replace_output: true,
         replace_failed_output: false,
@@ -77,6 +83,7 @@ impl Capabilities {
         observe_reads: false,
         start_inject: true,
         compact_source: false,
+        skills: false,
     };
 
     /// Observe only (retro analysis of transcripts).
@@ -96,5 +103,6 @@ impl Capabilities {
         observe_reads: false,
         start_inject: false,
         compact_source: false,
+        skills: false,
     };
 }

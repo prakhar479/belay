@@ -1548,6 +1548,9 @@ fn an_agent_may_not_review_project_notes_or_forget_fixes() {
         "belay findings drop f-1",
         "belay memory approve m-1",
         "belay memory drop m-2",
+        "belay skill approve pdf",
+        "belay skill reject pdf",
+        "belay skill remove pdf",
     ] {
         let mut c = ctl();
         let d = c.handle(

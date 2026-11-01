@@ -346,7 +346,8 @@ fn runs_belay_notes_review(command: &str) -> bool {
             && (w[1] == "notes" && matches!(w[2].as_str(), "approve" | "drop")
                 || w[1] == "fixes" && w[2] == "forget"
                 || w[1] == "findings" && w[2] == "drop"
-                || w[1] == "memory" && matches!(w[2].as_str(), "approve" | "drop"))
+                || w[1] == "memory" && matches!(w[2].as_str(), "approve" | "drop")
+                || w[1] == "skill" && matches!(w[2].as_str(), "approve" | "reject" | "remove"))
     })
 }
 
