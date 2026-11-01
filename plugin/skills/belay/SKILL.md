@@ -7,7 +7,7 @@ description: How to work with belay, the local supervisor that records this sess
 
 belay records what you do in this session. It may summarize long outputs, warn you about loops, and deny edits that weaken tests. Every action it takes has a reason you can look up. Run the commands below with your shell tool.
 
-belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `skill_preview`, and `skill_stage`. When they are present, use them instead of the matching commands.
+belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `skill_preview`, `skill_stage`, `sandbox_run`, and `sandbox_task`. When they are present, use them instead of the matching commands.
 
 ## When you start
 
@@ -44,6 +44,14 @@ belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_
 - Look at it first: `skill_preview`, or `belay skill preview <url>`. Read its warnings.
 - Stage it: `skill_stage`, or `belay skill add <url>`. This installs nothing.
 - Ask the user to run `belay skill approve <name>` in their own terminal. Only the user can approve, reject, or remove a skill.
+## Sandboxes
+
+A sandbox is a clone of this repo with a private home and limits. Nothing in it reaches the user's other files. Its work comes back as branch `belay/sandbox/<id>`, which the user reads and merges. Use one:
+
+- for a risky command or an experiment you would not run in the user's checkout: `sandbox_run`, or `belay sandbox run -- <cmd>`;
+- for a follow-up the user wants contained: `sandbox_task` with a prompt, or `belay sandbox task "<prompt>"`. It returns the result, the branch, and the files changed.
+
+Tasks are limited per hour and by tokens. Never merge a sandbox branch yourself; tell the user its name and `belay sandbox show <id>`.
 
 ## Before you stop
 

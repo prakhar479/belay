@@ -24,7 +24,9 @@
 //! sandbox_procs = 512        # most processes in a sandbox
 //! sandbox_disk = 10G         # most disk its worktree and private home use
 //! sandbox_wall = 4h          # longest a sandboxed command runs
-//! sandbox_agent = on         # agents may run `belay sandbox run` too
+//! sandbox_agent = on         # agents may run `belay sandbox run` and `task` too
+//! sandbox_tasks_per_hour = 4  # most `belay sandbox task` runs an agent starts per hour
+//! sandbox_task_tokens = 2M   # a sandbox task is stopped past this many tokens
 //! sandbox_ro = ~/.cargo, ~/.rustup   # toolchain dirs bound read-only (default: these,
 //!                            # ~/.nvm, ~/.pyenv, ~/.local/bin, when they exist)
 //! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
@@ -68,8 +70,12 @@ pub struct Config {
     pub sandbox_procs: u64,
     pub sandbox_disk: u64,
     pub sandbox_wall: u64,
-    /// Agents may run `belay sandbox run`, not only the user.
+    /// Agents may run `belay sandbox run` and `belay sandbox task`, not only the user.
     pub sandbox_agent: bool,
+    /// Most `belay sandbox task` runs one agent session starts in an hour.
+    pub sandbox_tasks_per_hour: u64,
+    /// A sandbox task is stopped once its agent used this many tokens.
+    pub sandbox_task_tokens: u64,
     /// Toolchain dirs bound read-only into a sandbox, `~/` for the home.
     pub sandbox_ro: Vec<String>,
     /// A resumed conversation (`claude --resume`, `-c`, `/resume`) continues the belay
@@ -89,6 +95,8 @@ impl Default for Config {
             sandbox_disk: 10 << 30,
             sandbox_wall: 4 * 3600,
             sandbox_agent: true,
+            sandbox_tasks_per_hour: 4,
+            sandbox_task_tokens: 2_000_000,
             sandbox_ro: [
                 "~/.cargo",
                 "~/.rustup",
@@ -121,6 +129,14 @@ impl Config {
             ("sandbox_disk", limits::fmt_size(self.sandbox_disk)),
             ("sandbox_wall", limits::fmt_duration(self.sandbox_wall)),
             ("sandbox_agent", on_off_word(self.sandbox_agent).to_string()),
+            (
+                "sandbox_tasks_per_hour",
+                self.sandbox_tasks_per_hour.to_string(),
+            ),
+            (
+                "sandbox_task_tokens",
+                limits::fmt_count(self.sandbox_task_tokens),
+            ),
             ("sandbox_ro", self.sandbox_ro.join(", ")),
             ("resume", self.resume.clone()),
         ]
@@ -204,7 +220,7 @@ pub fn load() -> Config {
     c
 }
 
-const KEYS: [&str; 27] = [
+const KEYS: [&str; 29] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -227,6 +243,8 @@ const KEYS: [&str; 27] = [
     "sandbox_disk",
     "sandbox_wall",
     "sandbox_agent",
+    "sandbox_tasks_per_hour",
+    "sandbox_task_tokens",
     "sandbox_ro",
     "resume",
     // 0.1 keys: read with a warning.
@@ -373,6 +391,14 @@ fn apply(
             }
         }
         "sandbox_agent" => c.sandbox_agent = on_off()?,
+        "sandbox_tasks_per_hour" => c.sandbox_tasks_per_hour = int(0, 1000)?,
+        "sandbox_task_tokens" => {
+            c.sandbox_task_tokens =
+                limits::parse_count(value).map_err(|e| anyhow!("{key}: {e}"))?;
+            if c.sandbox_task_tokens < 1000 {
+                bail!("{key} must be at least 1K, got {value}");
+            }
+        }
         "sandbox_ro" => {
             c.sandbox_ro = value
                 .split(',')
@@ -452,6 +478,14 @@ mod tests {
         assert!(!Config::default().overrides().contains_key("sandbox_wall"));
         let (_, w) = parse("sandbox_memory = 1K\nsandbox_wall = soon\n");
         assert_eq!(w.len(), 2, "{w:?}");
+        let (c, w) = parse("sandbox_tasks_per_hour = 2\nsandbox_task_tokens = 500K\n");
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(
+            (c.sandbox_tasks_per_hour, c.sandbox_task_tokens),
+            (2, 500_000)
+        );
+        assert_eq!(c.overrides()["sandbox_task_tokens"], "500K");
+        assert_eq!(Config::default().fields()["sandbox_task_tokens"], "2M");
     }
 
     #[test]

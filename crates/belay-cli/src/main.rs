@@ -383,8 +383,9 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
-    /// Sandboxes: run a command on a worktree of this repo with a private home and
-    /// limits; its changes land on branch `belay/sandbox/<id>` for you to merge.
+    /// Sandboxes: run a command, an agent session, or a headless task on a clone of this
+    /// repo with a private home and limits; its changes land on branch
+    /// `belay/sandbox/<id>` for you to merge.
     Sandbox {
         #[command(subcommand)]
         cmd: sandbox::SandboxCmd,

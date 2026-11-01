@@ -425,6 +425,10 @@ Where skills go (Claude Code): `--scope user` (the default) is `~/.claude/skills
 belay keeps a record of each stage, approval, install, rejection, and removal in `<data dir>/skills/log.jsonl`, with the session when there is one.
 
 A skill added while Claude Code runs may not be seen until the session restarts. [Verify]
+| `sandbox_run {argv, id?}` | Runs a command in a sandbox, as `belay sandbox run` (see [Sandboxes](#sandboxes)) |
+| `sandbox_task {prompt, id?, resume?, model?}` | A headless follow-up in a sandbox, as `belay sandbox task`; its result |
+
+The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. The sandbox tools run as the agent: the same limits and refusals apply. Everything else stays on this machine. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
 
 ## Fleets
 
@@ -553,26 +557,37 @@ Only you can undo. belay refuses `belay undo` from an agent's shell, and denies 
 
 ## Sandboxes
 
-`belay sandbox run` runs a command where it cannot reach your other files. It runs on a git worktree of the repo, on branch `belay/sandbox/<id>`, with a private home and limits. At the end, belay commits what changed on that branch. You review and merge it.
+A sandbox runs a command, a whole agent session, or a headless follow-up where it cannot reach your other files. It works on its own clone of the repo, on branch `belay/sandbox/<id>`, with a private home and limits. git works inside. At the end, belay commits what changed and brings the branch into your repo. You review and merge it.
 
 ```sh
-belay sandbox run -- make test       # a new sandbox; the worktree goes, the branch stays
+belay sandbox run -- make test       # a command; the clone goes, the branch stays
 belay sandbox run --id fix --keep -- cargo build   # name it, keep it for the next run
+belay sandbox claude                 # a whole Claude Code session in a sandbox
+belay sandbox claude --id fix --resume <conversation>   # go on with it, in the same sandbox
+belay sandbox task "add tests for parse_size"   # a headless follow-up; prints its result
+belay sandbox task "try the other fix" --resume <conversation> --model haiku
 belay sandbox list                   # every sandbox: running, kept, or removed
 belay sandbox show fix               # branch, commits, the audit of the branch, limit stops
 belay sandbox diff fix               # what the branch changed since it started
 belay sandbox stop fix               # stop a running one
-belay sandbox rm fix [--branch]      # remove its worktree and home (yours to run)
+belay sandbox rm fix [--branch]      # remove its clone and home (yours to run)
 belay sandbox doctor                 # try to escape a fresh sandbox; exit 1 if one gets out
+git merge belay/sandbox/fix          # take the work, once you have read it
 ```
 
-The command starts in the same subdirectory of the worktree as yours in the repo. Its output streams, and belay returns its exit code. The sandbox starts from your HEAD commit: uncommitted changes are not in it.
+The command starts in the same subdirectory of the clone as yours in the repo. Its output streams, and belay returns its exit code. The sandbox starts from your HEAD commit: uncommitted changes are not in it. A sandbox whose branch is already there (from an earlier run with the same id) starts from that branch.
 
-Inside, the command sees the system dirs read-only, your toolchains read-only (`sandbox_ro`), the worktree, and a private home. It does not see the rest of your home (`~/.ssh`, cloud credentials, other repos), `/mnt`, the Docker socket, your ssh agent, or your display. On WSL it cannot run Windows programs. The network is the host's. The environment is cleared, then a short list is passed: `PATH`, locale, `TERM`, `USER`, `SHELL`, `TZ`, `BELAY_*`, and the agent's API keys. `BELAY_SANDBOX` is set to the sandbox id, and `belay sandbox` refuses to nest. git does not work inside; belay commits from outside.
+**A whole session.** `belay sandbox claude [--id S] [claude args…]` runs Claude Code inside a sandbox. belay's daemon runs outside and supervises it: the agent's hooks reach it through the session socket, so the guard, loops, and the ledger work as in `belay claude`. The agent cannot see or signal belay. The card shows `sandbox: <id>`. At the end belay prints the session's summary and the branch. The sandbox is kept, so `--id S --resume <conversation>` goes on in it, with belay's state (see [Resuming](#resuming)). Only you start one. Claude Code's own files inside the sandbox (`~/.claude.json`, settings, credentials) are read-only copies.
 
-belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`sandbox_procs`), disk use of the worktree and home (`sandbox_disk`), and wall time (`sandbox_wall`). When one is passed, belay stops the sandbox and records why. `belay sandbox show` lists these stops. Run from a belay session, the start and stop are also in the session's ledger, and the card shows the sandbox.
+**A follow-up task.** `belay sandbox task "<prompt>" [--id S] [--resume <conversation>] [--model m] [--keep]` runs the agent headless (`claude -p`) in a sandbox, supervised by a belay session of its own, and prints a short result: the agent's final message, the branch and the files changed, the audit, the tokens used, and any limit that stopped it. The agent runs without permission prompts there: the sandbox is the boundary, and belay's guard still applies. `--resume` gives it a copy of that conversation, so it starts with its context; the original is not changed. You or an agent may start one. An agent may start at most `sandbox_tasks_per_hour` (4) per session. A task that uses more than `sandbox_task_tokens` (2M: input, output, and cache writes) is stopped.
 
-There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` (`sandbox_agent = off` stops that). Only you may run `belay sandbox rm`: belay refuses it outside your terminal and denies it to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
+Inside, the command sees the system dirs read-only, your toolchains read-only (`sandbox_ro`), the repo's object store read-only (so git finds the history), the clone, and a private home. It does not see the rest of your home (`~/.ssh`, cloud credentials, other repos), `/mnt`, the Docker socket, your ssh agent, or your display. On WSL it cannot run Windows programs. The network is the host's. The environment is cleared, then a short list is passed: `PATH`, locale, `TERM`, `USER`, `SHELL`, `TZ`, `BELAY_*`, and the agent's API keys. `BELAY_SANDBOX` is set to the sandbox id, and `belay sandbox` refuses to nest.
+
+The sandbox owns its clone's `.git`, hooks and config included, so belay runs nothing of it on your machine: it commits inside the sandbox, and fetches the branch with git's sending side also inside. belay's undo snapshots and audits skip a sandbox's clone. How, and why, is in [sandbox.md](sandbox.md#getting-the-work-out).
+
+belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`sandbox_procs`), disk use of the clone and home (`sandbox_disk`), and wall time (`sandbox_wall`). When one is passed, belay stops the sandbox and records why. `belay sandbox show` lists these stops. Run from a belay session, the start and stop are also in the session's ledger, and the card shows the sandbox.
+
+There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
 
 ## Audit (experimental)
 
@@ -624,9 +639,11 @@ resume = continue               # a resumed conversation keeps belay's state; fr
 experimental_audit = false      # audit each session's changes to tests and checks
 sandbox_memory = 4G             # sandbox: most memory its processes use together
 sandbox_procs = 512             # sandbox: most processes
-sandbox_disk = 10G              # sandbox: most disk its worktree and private home use
+sandbox_disk = 10G              # sandbox: most disk its clone and private home use
 sandbox_wall = 4h               # sandbox: longest a command runs (also 30m, 90s)
-sandbox_agent = on              # agents may run `belay sandbox run`
+sandbox_agent = on              # agents may run `belay sandbox run` and `task`
+sandbox_tasks_per_hour = 4      # most `belay sandbox task` runs an agent starts per hour
+sandbox_task_tokens = 2M        # a sandbox task is stopped past this many tokens
 sandbox_ro = ~/.cargo, ~/.rustup, ~/.nvm, ~/.pyenv, ~/.local/bin   # read-only in a sandbox, when they exist
 ```
 
@@ -674,7 +691,9 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay undo [t-N] [--yes]` | List snapshots, or roll the files back to one (yours to run) |
 | `belay sandbox run [--id S] [--keep] -- <cmd…>` | Run a command in a sandbox; its changes land on `belay/sandbox/<id>` |
 | `belay sandbox list \| show S \| diff S \| stop S` | The sandboxes, one in detail, its changes; stop a running one |
-| `belay sandbox rm S [--branch]` | Remove a sandbox's worktree and home (yours to run) |
+| `belay sandbox claude [--id S] [args…]` | A whole Claude Code session in a sandbox, supervised from outside |
+| `belay sandbox task "<prompt>" [--id S] [--resume C] [--model M]` | A headless follow-up in a sandbox; prints its result and branch |
+| `belay sandbox rm S [--branch]` | Remove a sandbox's clone and home (yours to run) |
 | `belay sandbox doctor` | Try to escape a fresh sandbox; exit 1 if a probe gets out |
 | `belay report [--session S] [--full]` | What happened in a session |
 | `belay why a-N` | The cause chain of an action |

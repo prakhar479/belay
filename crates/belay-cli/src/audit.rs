@@ -15,6 +15,15 @@ const MAX_TEXT_BYTES: u64 = 2 << 20;
 pub const LABEL: &str = "belay audit (experimental)";
 
 pub(crate) fn git(root: &Path, args: &[&str], index: Option<&Path>) -> Result<String> {
+    // A sandbox's clone has config, hooks, and attributes the sandbox wrote: git on the
+    // host must not read them (filters and fsmonitor run programs). Undo snapshots and
+    // audits of a sandboxed session stop here; `belay sandbox show` audits the branch.
+    if crate::sandbox::inside_clone(root) {
+        bail!(
+            "{} is a sandbox's clone: belay runs no git there from outside",
+            root.display()
+        );
+    }
     let mut cmd = Command::new("git");
     cmd.arg("-C").arg(root).args(args);
     if let Some(i) = index {

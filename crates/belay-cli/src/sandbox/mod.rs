@@ -1,13 +1,16 @@
-//! `belay sandbox`: run a command in a sandbox, on a git worktree of the repo, with a
-//! private home and limits. Threat model and layout: docs/sandbox.md.
+//! `belay sandbox`: run a command, a whole agent session, or a headless follow-up in a
+//! sandbox: its own clone of the repo, a private home, limits. Threat model and layout:
+//! docs/sandbox.md.
 //!
 //! A sandbox fails closed (CLAUDE.md rule 1): if it cannot be built as specified, belay
 //! refuses and runs nothing. Its work lands on branch `belay/sandbox/<id>`; the user
 //! merges it.
 
 pub mod bwrap;
+pub mod git;
 pub mod limits;
 pub mod probe;
+pub mod session;
 
 use std::ffi::OsString;
 use std::fs;
@@ -28,17 +31,42 @@ use limits::{Limits, Target, Watchdog};
 
 #[derive(Subcommand)]
 pub enum SandboxCmd {
-    /// Run a command in a sandbox of this repo: a worktree on branch
+    /// Run a command in a sandbox of this repo: its own clone on branch
     /// `belay/sandbox/<id>`, a private home, limits. Changes are committed there.
     Run {
         /// Reuse (or name) this sandbox.
         #[arg(long)]
         id: Option<String>,
-        /// Keep the worktree and private home after the run (the branch always stays).
+        /// Keep the clone and private home after the run (the branch always stays).
         #[arg(long)]
         keep: bool,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
         cmd: Vec<String>,
+    },
+    /// A whole agent session in a sandbox. belay supervises from outside; the agent's
+    /// arguments follow (`--resume <id>` with `--id S` continues one).
+    Claude {
+        /// Reuse (or name) this sandbox.
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// A headless follow-up in a sandbox: the agent works on `prompt` alone and stops.
+    Task {
+        prompt: String,
+        /// Reuse (or name) this sandbox.
+        #[arg(long)]
+        id: Option<String>,
+        /// Start from a copy of this conversation's context; the original is not changed.
+        #[arg(long)]
+        resume: Option<String>,
+        /// The model the agent uses.
+        #[arg(long)]
+        model: Option<String>,
+        /// Keep the clone and private home after the task (the branch always stays).
+        #[arg(long)]
+        keep: bool,
     },
     /// The sandboxes on this machine.
     List,
@@ -103,9 +131,10 @@ pub struct Meta {
     /// The commit it started from.
     pub base: String,
     pub branch: String,
-    /// The worktree's own git dir, in the repo's: host git uses it, never the
-    /// worktree's `.git` file, which the sandbox can rewrite.
-    pub gitdir: PathBuf,
+    /// The repo's object dir the clone borrows (`--shared`), bound read-only. None: a
+    /// sandbox made by belay before clones (a worktree), which this belay does not run.
+    #[serde(default)]
+    pub objects: Option<PathBuf>,
     pub created_ms: u64,
 }
 
@@ -119,10 +148,28 @@ impl Meta {
     pub fn home(&self) -> PathBuf {
         self.dir().join("home")
     }
+    pub fn objects(&self) -> Result<PathBuf> {
+        self.objects.clone().ok_or_else(|| {
+            anyhow!(
+                "belay: refused: sandbox {0} was made by an older belay (a worktree); `belay sandbox rm {0}` and start a new one",
+                self.id
+            )
+        })
+    }
 }
 
 pub fn root() -> PathBuf {
     paths::home().join("sandboxes")
+}
+
+/// Whether `p` is in a sandbox's clone (`<sandboxes>/<id>/work/...`), seen from the host.
+pub fn inside_clone(p: &Path) -> bool {
+    let canon = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    let (p, root) = (canon(p), canon(&root()));
+    p.strip_prefix(&root).is_ok_and(|rest| {
+        let mut c = rest.components();
+        c.next().is_some() && c.next().is_some_and(|w| w.as_os_str() == "work")
+    })
 }
 
 fn valid_id(id: &str) -> bool {
@@ -166,58 +213,44 @@ pub fn create(repo: &Path, id: &str) -> Result<Meta> {
     paths::ensure_private_dir(&dir)?;
     let made = (|| -> Result<Meta> {
         let branch = format!("belay/sandbox/{id}");
-        let work = dir.join("work");
         let head = audit::git(repo, &["rev-parse", "HEAD"], None)
             .context("the repo has no commit to start a sandbox from")?
             .trim()
             .to_string();
-        let exists = audit::git(repo, &["rev-parse", "--verify", "--quiet", &branch], None).is_ok();
-        let work_s = work.to_string_lossy();
-        let mut add = vec![
-            "-c",
-            "core.hooksPath=/dev/null",
-            "worktree",
-            "add",
-            "--quiet",
-        ];
-        if exists {
-            add.extend([&*work_s, branch.as_str()]);
-        } else {
-            add.extend(["-b", branch.as_str(), &*work_s, head.as_str()]);
-        }
-        audit::git(repo, &add, None)?;
-        let base = if exists {
-            audit::git(repo, &["merge-base", "HEAD", &branch], None)?
+        // A branch left by an earlier sandbox of this id: go on from it.
+        let earlier = audit::git(
+            repo,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{branch}^{{commit}}"),
+            ],
+            None,
+        )
+        .ok()
+        .map(|s| s.trim().to_string());
+        let start = earlier.as_deref().unwrap_or(&head);
+        let objects = git::clone(repo, &dir.join("work"), &branch, start)?;
+        let base = match &earlier {
+            Some(_) => audit::git(repo, &["merge-base", "HEAD", &branch], None)?
                 .trim()
-                .to_string()
-        } else {
-            head
+                .to_string(),
+            None => head.clone(),
         };
-        let gitdir =
-            PathBuf::from(audit::git(&work, &["rev-parse", "--absolute-git-dir"], None)?.trim());
         paths::ensure_private_dir(&dir.join("home"))?;
         let meta = Meta {
             id: id.to_string(),
             repo: repo.to_path_buf(),
             base,
             branch,
-            gitdir,
+            objects: Some(objects),
             created_ms: paths::now_ms(),
         };
         fs::write(dir.join("meta.json"), serde_json::to_string_pretty(&meta)?)?;
         Ok(meta)
     })();
     if made.is_err() {
-        let _ = audit::git(
-            repo,
-            &[
-                "worktree",
-                "remove",
-                "--force",
-                &dir.join("work").to_string_lossy(),
-            ],
-            None,
-        );
         let _ = remove_tree(&dir);
     }
     made
@@ -342,21 +375,28 @@ fn prepare_home(
     Ok(ro)
 }
 
-/// The spec for running `argv` in `meta`'s sandbox, `rel` below its top.
+/// The spec for running `argv` in `meta`'s sandbox, `rel` below its top. `socket`: the
+/// belay session the command reaches, bound in.
 pub fn layout(
     meta: &Meta,
     cfg: &config::Config,
     files: &SandboxFiles,
     rel: &Path,
+    socket: Option<&Path>,
     argv: Vec<String>,
 ) -> Result<Spec> {
     let home = real_home();
     let home = home.as_deref();
     let work = meta.work();
     if !work.is_dir() {
-        bail!("belay: refused: sandbox {}'s worktree is gone; `belay sandbox rm {}` and start a new one", meta.id, meta.id);
+        bail!(
+            "belay: refused: sandbox {}'s clone is gone; `belay sandbox rm {}` and start a new one",
+            meta.id,
+            meta.id
+        );
     }
-    let mut ro = Vec::new();
+    let objects = meta.objects()?;
+    let mut ro = vec![(objects.clone(), objects)];
     let mut tool_env = Vec::new();
     for p in &cfg.sandbox_ro {
         let Some(p) = expand(p, home) else { continue };
@@ -376,10 +416,12 @@ pub fn layout(
     // reach the daemon outside.
     let exe = std::env::current_exe().context("find the belay binary")?;
     ro.push((exe.clone(), exe.clone()));
-    if let Some(sock) = paths::env_path("BELAY_SOCKET").filter(|s| s.exists()) {
-        ro.push((sock.clone(), sock));
+    if let Some(sock) = socket.filter(|s| s.exists()) {
+        ro.push((sock.to_path_buf(), sock.to_path_buf()));
     }
-    let host: Vec<(String, String)> = std::env::vars().collect();
+    let host: Vec<(String, String)> = std::env::vars()
+        .filter(|(k, _)| socket.is_some() || k != "BELAY_SOCKET")
+        .collect();
     let mut env = environment(&host, &files.env, &meta.home(), &meta.id, exe.parent());
     env.extend(tool_env);
     env.sort();
@@ -396,57 +438,6 @@ pub fn layout(
     })
 }
 
-/// git on the sandbox's worktree from the host. Its git dir comes from the record, not
-/// from the worktree (which the sandbox controls); no hooks or fsmonitor run.
-fn host_git(meta: &Meta, args: &[&str]) -> Result<String> {
-    let mut cmd = Command::new("git");
-    cmd.arg(format!("--git-dir={}", meta.gitdir.display()))
-        .arg(format!("--work-tree={}", meta.work().display()))
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-        ]);
-    if audit::git(&meta.repo, &["config", "user.email"], None).is_err() {
-        cmd.args(["-c", "user.name=belay", "-c", "user.email=belay@localhost"]);
-    }
-    for (k, _) in std::env::vars_os() {
-        if k.to_string_lossy().starts_with("GIT_") {
-            cmd.env_remove(k);
-        }
-    }
-    let out = cmd.args(args).output().context("run git")?;
-    if !out.status.success() {
-        bail!(
-            "git {}: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-}
-
-/// Commit what the command changed on the sandbox branch. The number of files, 0 when
-/// nothing changed.
-pub fn commit(meta: &Meta, argv: &[String]) -> Result<usize> {
-    // Put the worktree's link back as belay made it: the user's own git reads it later.
-    let link = meta.work().join(".git");
-    if fs::symlink_metadata(&link).is_ok_and(|m| m.is_dir()) {
-        remove_tree(&link)?;
-    }
-    fs::write(&link, format!("gitdir: {}\n", meta.gitdir.display()))?;
-    host_git(meta, &["add", "-A"])?;
-    let names = host_git(meta, &["diff", "--cached", "--name-only", "-z"])?;
-    let n = names.split('\0').filter(|s| !s.is_empty()).count();
-    if n > 0 {
-        let cmd = belay_core::text::truncate_chars(&argv.join(" "), 200);
-        let msg = format!("sandbox {}: {cmd}", meta.id);
-        host_git(meta, &["commit", "--quiet", "--no-verify", "-m", &msg])?;
-    }
-    Ok(n)
-}
-
 /// One line of `<dir>/events.jsonl`.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Logged {
@@ -455,7 +446,7 @@ pub struct Logged {
     pub text: String,
 }
 
-fn log(meta: &Meta, kind: &str, text: &str) {
+pub(crate) fn log(meta: &Meta, kind: &str, text: &str) {
     let line = Logged {
         at_ms: paths::now_ms(),
         kind: kind.into(),
@@ -481,16 +472,20 @@ pub fn events(meta: &Meta) -> Vec<Logged> {
         .collect()
 }
 
-/// Record in the calling belay session, when there is one (best effort: the sandbox's
-/// own log has it too).
-fn tell_session(event: Event) {
-    if let Some(sock) = paths::env_path("BELAY_SOCKET") {
+/// Record in a belay session (best effort: the sandbox's own log has it too).
+pub(crate) fn tell_session(sock: Option<&Path>, event: Event) {
+    if let Some(sock) = sock {
         let _ = ipc::send(
-            &sock,
+            sock,
             &ipc::Request::Sandbox { event },
             Duration::from_secs(2),
         );
     }
+}
+
+/// The calling belay session's socket, when there is one.
+pub(crate) fn caller_socket() -> Option<PathBuf> {
+    paths::env_path("BELAY_SOCKET")
 }
 
 /// `pid starttime` of a running sandbox's outer process.
@@ -522,14 +517,23 @@ pub struct Outcome {
     pub stdout: Vec<u8>,
 }
 
-/// Run `spec` in the sandbox under the watchdog. `capture`: keep the output instead of
-/// streaming it, with no stdin.
+/// What the sandboxed process's stdin and stdout are.
+pub enum Io<'a> {
+    /// The terminal's.
+    Inherit,
+    /// No stdin; stdout kept (in `Outcome::stdout`).
+    Capture,
+    /// No stdin; each stdout line goes to the closure. A reason back stops the sandbox.
+    Lines(&'a mut dyn FnMut(&str) -> Option<String>),
+}
+
+/// Run `spec` in the sandbox under the watchdog.
 pub fn exec(
     meta: &Meta,
     backend: &dyn Backend,
     spec: &Spec,
     lim: Limits,
-    capture: bool,
+    mut io: Io,
 ) -> Result<Outcome> {
     let mut argv = backend.argv(spec);
     if limits::systemd_scope_works() {
@@ -548,10 +552,16 @@ pub fn exec(
             cmd.env(k, v);
         }
     }
-    if capture {
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+    match io {
+        Io::Inherit => {}
+        Io::Capture => {
+            cmd.stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null());
+        }
+        Io::Lines(_) => {
+            cmd.stdin(Stdio::null()).stdout(Stdio::piped());
+        }
     }
     limits::pre_exec(&mut cmd, lim.disk);
     let _ = fs::remove_file(meta.dir().join("stop"));
@@ -574,10 +584,26 @@ pub fn exec(
         let _ = fs::write(pid_file(meta), format!("{pid} {start}"));
     }
     let dog = Watchdog::start(pid, lim, vec![meta.work(), meta.home()]);
-    let waited = if capture {
-        child.wait_with_output().map(|o| (o.status, o.stdout))
-    } else {
-        child.wait().map(|s| (s, Vec::new()))
+    let waited = match &mut io {
+        Io::Inherit => child.wait().map(|s| (s, Vec::new())),
+        Io::Capture => child.wait_with_output().map(|o| (o.status, o.stdout)),
+        Io::Lines(each) => {
+            use std::io::BufRead;
+            let target = Target::new(pid);
+            let done = std::sync::atomic::AtomicBool::new(false);
+            if let Some(out) = child.stdout.take() {
+                for line in std::io::BufReader::new(out).lines() {
+                    let Ok(line) = line else { break };
+                    if let Some(why) = each(&line) {
+                        if !meta.dir().join("stop").exists() {
+                            let _ = fs::write(meta.dir().join("stop"), &why);
+                            limits::stop(&target, &done);
+                        }
+                    }
+                }
+            }
+            child.wait().map(|s| (s, Vec::new()))
+        }
     };
     let breach = dog.finish();
     // SAFETY: as above.
@@ -597,25 +623,14 @@ pub fn exec(
     })
 }
 
-/// Remove the worktree and the private home; the record and the branch stay.
+/// Remove the clone and the private home; the record and the branch stay.
 fn remove_work(meta: &Meta) -> Result<()> {
-    let work = meta.work();
-    if work.exists() {
-        let removed = audit::git(
-            &meta.repo,
-            &["worktree", "remove", "--force", &work.to_string_lossy()],
-            None,
-        );
-        if removed.is_err() {
-            remove_tree(&work)?;
-        }
-    }
-    let _ = audit::git(&meta.repo, &["worktree", "prune"], None);
+    remove_tree(&meta.work())?;
     remove_tree(&meta.home())
 }
 
 /// remove_dir_all, after making every dir writable (a sandbox may leave some not).
-fn remove_tree(p: &Path) -> Result<()> {
+pub(crate) fn remove_tree(p: &Path) -> Result<()> {
     if !p.exists() {
         return Ok(());
     }
@@ -645,6 +660,20 @@ pub fn cli(cmd: SandboxCmd) -> Result<i32> {
     refuse_nesting()?;
     match cmd {
         SandboxCmd::Run { id, keep, cmd } => run(id, keep, cmd),
+        SandboxCmd::Claude { id, args } => session::claude(id, args),
+        SandboxCmd::Task {
+            prompt,
+            id,
+            resume,
+            model,
+            keep,
+        } => session::task(session::TaskArgs {
+            prompt,
+            id,
+            resume,
+            model,
+            keep,
+        }),
         SandboxCmd::List => {
             print!("{}", list());
             Ok(0)
@@ -696,12 +725,8 @@ pub fn cli(cmd: SandboxCmd) -> Result<i32> {
     }
 }
 
-fn run(id: Option<String>, keep: bool, argv: Vec<String>) -> Result<i32> {
-    let cfg = config::load();
-    if !cfg.sandbox_agent && !paths::users_terminal() {
-        bail!("belay: refused: `sandbox_agent = off` in belay's config: only the user starts a sandbox");
-    }
-    let backend = backend()?;
+/// The repo of the current directory, and the path below its top.
+pub(crate) fn here() -> Result<(PathBuf, PathBuf)> {
     let cwd = std::env::current_dir()?;
     let repo = audit::repo_root(&cwd).map_err(|_| {
         anyhow!(
@@ -709,7 +734,17 @@ fn run(id: Option<String>, keep: bool, argv: Vec<String>) -> Result<i32> {
             cwd.display()
         )
     })?;
-    let (meta, created) = match id {
+    let rel = cwd
+        .strip_prefix(&repo)
+        .unwrap_or(Path::new(""))
+        .to_path_buf();
+    Ok((repo, rel))
+}
+
+/// Sandbox `id` of `repo` (made when it does not exist yet), and whether it was made
+/// now. A running one is refused: two runs never share a clone.
+pub(crate) fn open_or_create(repo: &Path, id: Option<String>) -> Result<(Meta, bool)> {
+    match id {
         Some(id) if root().join(&id).join("meta.json").exists() => {
             let meta = open(&id)?;
             if meta.repo != repo {
@@ -721,17 +756,36 @@ fn run(id: Option<String>, keep: bool, argv: Vec<String>) -> Result<i32> {
             if running(&meta).is_some() {
                 bail!("belay: refused: sandbox {id} is running");
             }
-            (meta, false)
+            meta.objects()?;
+            Ok((meta, false))
         }
-        Some(id) => (create(&repo, &id)?, true),
-        None => (create(&repo, &new_id(&repo))?, true),
-    };
-    let rel = cwd
-        .strip_prefix(&repo)
-        .unwrap_or(Path::new(""))
-        .to_path_buf();
-    let files = crate::connector::for_agent("claude-code")?.sandbox_files();
-    let spec = match layout(&meta, &cfg, &files, &rel, argv.clone()) {
+        Some(id) => Ok((create(repo, &id)?, true)),
+        None => Ok((create(repo, &new_id(repo))?, true)),
+    }
+}
+
+/// What a stopped sandbox says: its exit or the limit that stopped it.
+pub(crate) fn reason(out: &Result<Outcome>, what: &str) -> String {
+    match out {
+        Ok(o) => o
+            .stopped
+            .clone()
+            .unwrap_or_else(|| format!("{what} exited with {}", o.code)),
+        Err(e) => format!("it did not run: {e}"),
+    }
+}
+
+fn run(id: Option<String>, keep: bool, argv: Vec<String>) -> Result<i32> {
+    let cfg = config::load();
+    if !cfg.sandbox_agent && !paths::users_terminal() {
+        bail!("belay: refused: `sandbox_agent = off` in belay's config: only the user starts a sandbox");
+    }
+    let backend = backend()?;
+    let (repo, rel) = here()?;
+    let (meta, created) = open_or_create(&repo, id)?;
+    let files = crate::connector::for_agent(crate::connector::DEFAULT_AGENT)?.sandbox_files();
+    let caller = caller_socket();
+    let spec = match layout(&meta, &cfg, &files, &rel, caller.as_deref(), argv.clone()) {
         Ok(s) => s,
         Err(e) => {
             if created {
@@ -742,22 +796,25 @@ fn run(id: Option<String>, keep: bool, argv: Vec<String>) -> Result<i32> {
     };
     let id = meta.id.clone();
     log(&meta, "started", &argv.join(" "));
-    tell_session(Event::SandboxStarted {
-        id: id.clone(),
-        branch: meta.branch.clone(),
-    });
+    tell_session(
+        caller.as_deref(),
+        Event::SandboxStarted {
+            id: id.clone(),
+            branch: meta.branch.clone(),
+        },
+    );
     eprintln!("belay: sandbox {id}, branch {}", meta.branch);
-    let out = exec(&meta, &*backend, &spec, Limits::from_config(&cfg), false);
-    let committed = commit(&meta, &argv);
-    let (code, reason) = match &out {
-        Ok(o) => (
-            o.code,
-            o.stopped
-                .clone()
-                .unwrap_or_else(|| format!("the command exited with {}", o.code)),
-        ),
-        Err(e) => (1, format!("it did not run: {e}")),
-    };
+    let out = exec(
+        &meta,
+        &*backend,
+        &spec,
+        Limits::from_config(&cfg),
+        Io::Inherit,
+    );
+    let cmd = belay_core::text::truncate_chars(&argv.join(" "), 200);
+    let landed = git::land(&meta, &*backend, &format!("sandbox {id}: {cmd}"));
+    let code = out.as_ref().map_or(1, |o| o.code);
+    let reason = reason(&out, "the command");
     if let Ok(Outcome {
         stopped: Some(why), ..
     }) = &out
@@ -766,21 +823,34 @@ fn run(id: Option<String>, keep: bool, argv: Vec<String>) -> Result<i32> {
         eprintln!("belay: stopped sandbox {id}: {why}");
     }
     log(&meta, "stopped", &reason);
-    tell_session(Event::SandboxStopped {
-        id: id.clone(),
-        reason,
-    });
-    match &committed {
-        Ok(0) => eprintln!("belay: sandbox {id}: nothing changed"),
-        Ok(n) => eprintln!("belay: sandbox {id}: {n} file(s) committed on {}; `belay sandbox diff {id}` shows them", meta.branch),
-        Err(e) => eprintln!("belay: sandbox {id}: could not commit: {e}"),
-    }
+    tell_session(
+        caller.as_deref(),
+        Event::SandboxStopped {
+            id: id.clone(),
+            reason,
+        },
+    );
+    eprintln!("belay: {}", landed_line(&meta, &landed));
     if created && !keep {
         remove_work(&meta)?;
     }
     out?;
-    committed?;
+    landed?;
     Ok(code)
+}
+
+/// One line on what reached the branch.
+pub(crate) fn landed_line(meta: &Meta, landed: &Result<Vec<String>>) -> String {
+    let id = &meta.id;
+    match landed {
+        Ok(f) if f.is_empty() => format!("sandbox {id}: nothing changed"),
+        Ok(f) => format!(
+            "sandbox {id}: {} file(s) on {}; `belay sandbox show {id}` and `belay sandbox diff {id}` show them",
+            f.len(),
+            meta.branch
+        ),
+        Err(e) => format!("sandbox {id}: could not bring its work out: {e:#}"),
+    }
 }
 
 fn state(meta: &Meta) -> &'static str {

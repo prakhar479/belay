@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use super::{backend, create, exec, layout, remove_tree, remove_work, Backend, Limits, Meta};
+use super::{backend, create, exec, layout, remove_tree, remove_work, Backend, Io, Limits, Meta};
 use crate::{audit, config, paths};
 
 /// What one probe found.
@@ -31,8 +31,8 @@ impl Ctx<'_> {
     fn run(&self, script: &str, args: &[&str], lim: Limits) -> Result<super::Outcome> {
         let mut argv = vec!["sh".to_string(), "-c".into(), script.into(), "sh".into()];
         argv.extend(args.iter().map(|s| s.to_string()));
-        let spec = layout(self.meta, &self.cfg, &self.files, Path::new(""), argv)?;
-        exec(self.meta, self.backend, &spec, lim, true)
+        let spec = layout(self.meta, &self.cfg, &self.files, Path::new(""), None, argv)?;
+        exec(self.meta, self.backend, &spec, lim, Io::Capture)
     }
 }
 
@@ -149,7 +149,7 @@ fn probes(ctx: &Ctx, scratch: &Path) -> Result<Vec<(&'static str, Found)>> {
         let _ = fs::remove_file(t);
     }
     out.push((
-        "write a file outside the worktree",
+        "write a file outside the sandbox",
         if written.is_empty() {
             Found::Contained("no file appeared on the host".into())
         } else {
@@ -231,6 +231,11 @@ fn probes(ctx: &Ctx, scratch: &Path) -> Result<Vec<(&'static str, Found)>> {
         },
     ));
 
+    out.push((
+        "run code on the host through the sandbox's .git",
+        planted_git(ctx, &outside)?,
+    ));
+
     // A fork bomb, bounded so a failed limit cannot take the machine down.
     let o = ctx.run(
         r#"i=0; while [ $i -lt 2000 ]; do sleep 30 & i=$((i+1)); done; wait"#,
@@ -257,6 +262,54 @@ fn probes(ctx: &Ctx, scratch: &Path) -> Result<Vec<(&'static str, Found)>> {
         ),
     ));
     Ok(out)
+}
+
+/// Hooks, and config that names programs, planted in the clone's `.git` from inside.
+/// Each writes a marker on the host if it runs there. belay then brings the work out
+/// (commit inside, fetch from outside): no marker may appear, and the work must arrive.
+fn planted_git(ctx: &Ctx, outside: &Path) -> Result<Found> {
+    let marker = outside.join("git-ran");
+    let script = r#"M=$1
+printf '#!/bin/sh\necho "$0" >> %s\ncat\n' "$M" > .git/evil; chmod +x .git/evil
+mkdir -p .git/hooks
+for h in pre-commit post-commit commit-msg prepare-commit-msg reference-transaction \
+         post-checkout post-index-change pre-auto-gc fsmonitor-watchman post-update \
+         pre-receive update push-to-checkout; do cp .git/evil .git/hooks/$h; done
+E=$PWD/.git/evil
+for kv in core.fsmonitor core.hooksPath core.pager core.sshCommand core.alternateRefsCommand \
+          uploadpack.packObjectsHook gpg.program filter.p.clean filter.p.smudge; do
+  git config "$kv" "$E"
+done
+git config core.hooksPath "$PWD/.git/hooks"
+git config commit.gpgSign true
+echo '* filter=p' > .gitattributes
+echo planted > planted.txt"#;
+    let o = ctx.run(script, &[&marker.to_string_lossy()], ctx.limits)?;
+    if o.code != 0 {
+        return Ok(Found::Skipped(format!(
+            "could not plant them (exit {})",
+            o.code
+        )));
+    }
+    let landed = super::git::land(ctx.meta, ctx.backend, "doctor");
+    if marker.exists() {
+        let ran = fs::read_to_string(&marker).unwrap_or_default();
+        return Ok(Found::Escaped(format!(
+            "ran on the host: {}",
+            ran.trim().replace('\n', ", ")
+        )));
+    }
+    Ok(match landed {
+        Ok(files) if files.iter().any(|f| f == "planted.txt") => {
+            Found::Contained("none ran on the host, and the work still reached the branch".into())
+        }
+        Ok(files) => Found::Contained(format!(
+            "none ran on the host; but the work did not arrive (got {files:?})"
+        )),
+        Err(e) => Found::Contained(format!(
+            "none ran on the host; but bringing the work out failed: {e:#}"
+        )),
+    })
 }
 
 fn windows(o: &super::Outcome) -> Found {

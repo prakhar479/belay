@@ -186,7 +186,43 @@ pub trait Connector: Send {
     fn conversation(&self) -> Option<String> {
         None
     }
+    /// The agent's arguments (after its program) for one headless run of `prompt`
+    /// (`belay sandbox task`). `resume`: start from a copy of this conversation's
+    /// context, leaving the original as it is. Err: the agent has no headless mode.
+    fn headless_argv(
+        &self,
+        _prompt: &str,
+        _resume: Option<&str>,
+        _model: Option<&str>,
+    ) -> Result<Vec<String>> {
+        bail!("belay cannot run `{}` headless", self.agent())
+    }
+    /// What one line of the agent's headless output says, if anything.
+    fn headless_line(&self, _line: &str) -> Option<HeadlessLine> {
+        None
+    }
+    /// Files to copy into a sandbox's private home so that a headless run with
+    /// `resume = conversation` finds it from `cwd` (inside the sandbox): host path →
+    /// path relative to the home. Empty: there is nothing to copy, or it is not found.
+    fn conversation_files(&self, _conversation: &str, _cwd: &Path) -> Vec<(PathBuf, PathBuf)> {
+        Vec::new()
+    }
 }
+
+/// One line of an agent's headless output (`Connector::headless_line`).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HeadlessLine {
+    /// The model call this line reports on; its tokens count once however many lines
+    /// repeat it.
+    pub call: Option<String>,
+    /// Tokens that call used: input, output, and cache writes (cache reads are left out).
+    pub tokens: u64,
+    /// The agent's final message, on the line that ends the run.
+    pub result: Option<String>,
+}
+
+/// The agent belay supervises when a command does not name one.
+pub const DEFAULT_AGENT: &str = "claude-code";
 
 /// An agent's config inside a sandbox. Paths are relative to the user's home.
 #[derive(Debug, Default, Clone)]

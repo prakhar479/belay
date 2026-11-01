@@ -424,6 +424,94 @@ impl Connector for ClaudeCode {
         Some(Box::new(transcript::ClaudeTranscripts))
     }
 
+    /// `claude -p` with stream-json output, so belay counts tokens as they go. The
+    /// permission mode is `bypassPermissions`: the sandbox is the boundary, and
+    /// belay's hooks still run. [Verify] conformance: a PreToolUse deny holds under
+    /// `bypassPermissions`. `--resume <id> --fork-session`: a new conversation that
+    /// starts from the old one's context. [Verify] `claude --help` (2.1.316) says
+    /// `--fork-session` makes a new session id instead of reusing the original; belay
+    /// also gives the sandbox only a copy of the transcript (`conversation_files`), so
+    /// the original is never written either way.
+    fn headless_argv(
+        &self,
+        prompt: &str,
+        resume: Option<&str>,
+        model: Option<&str>,
+    ) -> anyhow::Result<Vec<String>> {
+        let mut a: Vec<String> = [
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--permission-mode",
+            "bypassPermissions",
+        ]
+        .map(String::from)
+        .to_vec();
+        if let Some(m) = model {
+            a.extend(["--model".into(), m.into()]);
+        }
+        if let Some(c) = resume {
+            a.extend(["--resume".into(), c.into(), "--fork-session".into()]);
+        }
+        // After `--`, a prompt that starts with `-` is not read as a flag.
+        a.extend(["--".into(), prompt.into()]);
+        Ok(a)
+    }
+
+    /// stream-json: each `assistant` line carries its API message's usage (repeated on
+    /// every line of that message: the id dedupes it); the `result` line ends the run.
+    fn headless_line(&self, line: &str) -> Option<super::HeadlessLine> {
+        let v: Value = serde_json::from_str(line).ok()?;
+        match v.get("type")?.as_str()? {
+            "assistant" => {
+                let m = v.get("message")?;
+                let u = m.get("usage")?;
+                let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
+                Some(super::HeadlessLine {
+                    call: m.get("id").and_then(Value::as_str).map(String::from),
+                    tokens: n("input_tokens")
+                        + n("output_tokens")
+                        + n("cache_creation_input_tokens"),
+                    result: None,
+                })
+            }
+            "result" => Some(super::HeadlessLine {
+                result: Some(s(&v, "result").to_string()),
+                ..Default::default()
+            }),
+            _ => None,
+        }
+    }
+
+    /// The transcript `<id>.jsonl` from whichever project dir holds it, copied to the
+    /// project dir of `cwd` in the sandbox's home: `--resume` looks there.
+    fn conversation_files(&self, conversation: &str, cwd: &Path) -> Vec<(PathBuf, PathBuf)> {
+        let name = format!("{conversation}.jsonl");
+        if conversation.contains(['/', '.']) {
+            return Vec::new();
+        }
+        let Ok(rd) = fs::read_dir(crate::paths::claude_projects_dir()) else {
+            return Vec::new();
+        };
+        let mut found: Vec<PathBuf> = rd
+            .flatten()
+            .map(|e| e.path().join(&name))
+            .filter(|p| p.is_file())
+            .collect();
+        found.sort();
+        found
+            .into_iter()
+            .next()
+            .map(|src| {
+                let dst = Path::new(".claude/projects")
+                    .join(project_dir_name(cwd))
+                    .join(&name);
+                vec![(src, dst)]
+            })
+            .unwrap_or_default()
+    }
+
     /// `--resume <id>`, `-r <id>`, `--resume=<id>`: that conversation. `--continue`, `-c`:
     /// the latest. A bare `--resume` or `-r` opens Claude Code's picker. Arguments after
     /// `--` are the prompt's, not flags.
@@ -804,6 +892,42 @@ connector_contract_tests!(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn headless_stream_counts_each_call_once_and_finds_the_result() {
+        let c = ClaudeCode::default();
+        let text = include_str!("../../../../fixtures/claude_code/headless_stream.jsonl");
+        let lines: Vec<_> = text.lines().filter_map(|l| c.headless_line(l)).collect();
+        let mut seen = std::collections::BTreeSet::new();
+        let total: u64 = lines
+            .iter()
+            .filter(|l| l.call.as_ref().is_none_or(|id| seen.insert(id.clone())))
+            .map(|l| l.tokens)
+            .sum();
+        // msg_01A twice (8606), msg_01B once (152); cache reads are left out.
+        assert_eq!(total, 8606 + 152);
+        assert_eq!(
+            lines.last().and_then(|l| l.result.as_deref()),
+            Some("Done: a.txt says b.")
+        );
+        let a = c
+            .headless_argv("-x fix it", Some("abc"), Some("haiku"))
+            .unwrap();
+        let tail = &a[a.len() - 7..];
+        assert_eq!(
+            tail,
+            [
+                "--model",
+                "haiku",
+                "--resume",
+                "abc",
+                "--fork-session",
+                "--",
+                "-x fix it"
+            ]
+        );
+        assert_eq!(a[0], "-p");
+    }
     use std::os::unix::fs::PermissionsExt;
 
     fn fixture(name: &str) -> Value {

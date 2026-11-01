@@ -102,7 +102,9 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
             "output_show",
             "skill_preview",
             "skill_stage",
-            "why"
+            "why",
+            "sandbox_run",
+            "sandbox_task"
         ]
     );
 

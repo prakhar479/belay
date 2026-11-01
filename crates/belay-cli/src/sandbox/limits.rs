@@ -93,6 +93,31 @@ pub fn fmt_duration(secs: u64) -> String {
     }
 }
 
+/// A count like tokens: `2M`, `500K`, or a number. Decimal units.
+pub fn parse_count(s: &str) -> Result<u64> {
+    let s = s.trim();
+    let (num, mul) = match s.chars().last().map(|c| c.to_ascii_uppercase()) {
+        Some('K') => (&s[..s.len() - 1], 1_000),
+        Some('M') => (&s[..s.len() - 1], 1_000_000),
+        Some('G') => (&s[..s.len() - 1], 1_000_000_000),
+        _ => (s, 1),
+    };
+    let n: u64 = num
+        .trim()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("`{s}` is not a count like 2M or 500K"))?;
+    n.checked_mul(mul)
+        .ok_or_else(|| anyhow::anyhow!("`{s}` is too large"))
+}
+
+pub fn fmt_count(n: u64) -> String {
+    match n {
+        n if n >= 1_000_000 && n.is_multiple_of(1_000_000) => format!("{}M", n / 1_000_000),
+        n if n >= 1_000 && n.is_multiple_of(1_000) => format!("{}K", n / 1_000),
+        n => n.to_string(),
+    }
+}
+
 /// `root` and every process below it, from /proc.
 pub fn tree(root: i32) -> Vec<i32> {
     let mut children: BTreeMap<i32, Vec<i32>> = BTreeMap::new();

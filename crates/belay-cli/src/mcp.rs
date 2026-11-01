@@ -3,7 +3,8 @@
 //! JSON-RPC 2.0, one message per line each way. Only what a tools-only server needs:
 //! `initialize`, `ping`, `tools/list`, `tools/call`. Written by hand on serde_json: the
 //! protocol surface is small, and an SDK would add an async runtime to the binary.
-//! Everything is read from and written to this machine; nothing calls out.
+//! Everything is read from and written to this machine; nothing calls out. The two
+//! sandbox tools run `belay sandbox run|task` as the agent, under the same rules.
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -145,6 +146,24 @@ fn tools() -> Value {
             "description": "Why belay did something in this session: the cause chain of an action (a-N), output (o-N), or entry number.",
             "inputSchema": schema(json!({ "id": { "type": "string", "description": "a-N, o-N, or an entry number" } }), &["id"]),
         },
+        {
+            "name": "sandbox_run",
+            "description": "Run a command in a sandbox: a clone of this repo with a private home, limits, and no access to the rest of the machine (the network is the host's). Its changes land on branch belay/sandbox/<id> for the user to merge. For risky commands and experiments.",
+            "inputSchema": schema(json!({
+                "argv": { "type": "array", "items": { "type": "string" }, "description": "The command and its arguments." },
+                "id": { "type": "string", "description": "Reuse (or name) this sandbox." },
+            }), &["argv"]),
+        },
+        {
+            "name": "sandbox_task",
+            "description": "A headless follow-up: an agent works on the prompt alone in a sandbox and stops. Returns its final message, the branch, the files changed, and the audit. Limited per hour and by a token budget.",
+            "inputSchema": schema(json!({
+                "prompt": { "type": "string" },
+                "id": { "type": "string", "description": "Reuse (or name) this sandbox." },
+                "resume": { "type": "string", "description": "Start from a copy of this conversation's context." },
+                "model": { "type": "string" },
+            }), &["prompt"]),
+        },
     ])
 }
 
@@ -168,6 +187,8 @@ fn call(params: &Value) -> Result<Value, (i64, String)> {
             let opt = |k: &str| args.get(k).and_then(Value::as_str);
             skillstore::stage(url, opt("scope"), opt("name"))
         }),
+        "sandbox_run" => sandbox_run(&args),
+        "sandbox_task" => sandbox_task(&args),
         _ => return Err((INVALID_PARAMS, format!("no tool {name}"))),
     };
     let (text, is_error) = match said {
@@ -283,6 +304,62 @@ fn session() -> Result<PathBuf> {
         .ok_or_else(|| anyhow!("no belay session in this project"))
 }
 
+/// Most characters of a sandbox's output given back to the model.
+const MAX_SANDBOX_OUTPUT: usize = 20_000;
+
+/// `belay sandbox …` as a child with no terminal: the agent's rules apply (agents may
+/// be refused, task limits count), as when it runs the command itself.
+fn belay_sandbox(args: &[String]) -> Result<String> {
+    let exe = std::env::current_exe()?;
+    let out = std::process::Command::new(exe)
+        .arg("sandbox")
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = belay_core::text::truncate_chars(text.trim(), MAX_SANDBOX_OUTPUT);
+    if !out.status.success() {
+        bail!("{text}\n(exit {})", out.status.code().unwrap_or(1));
+    }
+    Ok(text)
+}
+
+fn opt_flag(args: &Value, key: &str, out: &mut Vec<String>) {
+    if let Some(v) = args
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|v| !v.is_empty())
+    {
+        out.extend([format!("--{key}"), v.to_string()]);
+    }
+}
+
+fn sandbox_run(args: &Value) -> Result<String> {
+    let argv = strings_arg(args, "argv");
+    if argv.is_empty() {
+        bail!("`argv` is required");
+    }
+    let mut a = vec!["run".to_string()];
+    opt_flag(args, "id", &mut a);
+    a.push("--".into());
+    a.extend(argv);
+    belay_sandbox(&a)
+}
+
+fn sandbox_task(args: &Value) -> Result<String> {
+    let prompt = str_arg(args, "prompt")?;
+    let mut a = vec!["task".to_string()];
+    for k in ["id", "resume", "model"] {
+        opt_flag(args, k, &mut a);
+    }
+    a.extend(["--".into(), prompt.into()]);
+    belay_sandbox(&a)
+}
+
 fn output_show(dir: &Path, id: &str) -> Result<String> {
     let entries = store::read_entries(dir)?;
     let Some(hash) = report::find_output_blob(&entries, id) else {
@@ -347,7 +424,9 @@ mod tests {
                 "output_show",
                 "skill_preview",
                 "skill_stage",
-                "why"
+                "why",
+                "sandbox_run",
+                "sandbox_task"
             ]
         );
         assert_eq!(

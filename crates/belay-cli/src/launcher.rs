@@ -121,6 +121,79 @@ pub fn run_claude(args: Vec<String>) -> Result<i32> {
     Ok(exit_code(status.with_context(|| format!("start `{bin}`"))?))
 }
 
+/// An agent session whose agent runs in a sandbox (`belay sandbox claude|task`). The
+/// daemon runs here, outside, where the agent cannot signal it; the agent's hooks reach
+/// it through the socket, bound into the sandbox.
+pub struct Sandboxed {
+    session: Session,
+    /// The agent's command line: its program (a real path, so it can be bound in),
+    /// belay's arguments, then the caller's.
+    pub argv: Vec<String>,
+    /// Set inside, over the sandbox's own environment.
+    pub env: Vec<(String, String)>,
+    /// Bound read-only at the same paths: the session dir (settings) and the socket.
+    pub ro: Vec<PathBuf>,
+    pub sock: PathBuf,
+}
+
+/// Start the supervision of a sandboxed `agent` run with `args`. Unlike `belay claude`,
+/// this fails closed: with no supervisor, the sandbox does not start.
+pub fn sandboxed(agent: &str, args: Vec<String>) -> Result<Sandboxed> {
+    let connector = crate::connector::for_agent(agent)?;
+    if connector.agent() != "claude-code" {
+        bail!("belay cannot launch `{}` yet", connector.agent());
+    }
+    let (fresh, args) = take_fresh(args);
+    let (user_settings, args) = take_settings(args);
+    let bin = env::var("BELAY_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+    let program = find_program(&bin)
+        .and_then(|p| fs::canonicalize(p).ok())
+        .with_context(|| {
+            format!("`{bin}` not found on PATH (set BELAY_CLAUDE_BIN to use another binary)")
+        })?;
+    let exe = env::current_exe().context("find belay executable")?;
+    let resume = if fresh || !crate::config::load().resume_continues() {
+        crate::daemon::Resume::No
+    } else {
+        resume_of(&args)
+    };
+    let session = setup(&exe, user_settings.as_deref(), &resume)
+        .context("belay: refused: the session's supervisor did not start, so nothing runs")?;
+    let mut argv = vec![
+        program.to_string_lossy().into_owned(),
+        "--settings".into(),
+        session.settings.to_string_lossy().into_owned(),
+    ];
+    argv.extend(args);
+    Ok(Sandboxed {
+        argv,
+        env: vec![
+            (
+                "BELAY_SOCKET".into(),
+                session.sock.to_string_lossy().into_owned(),
+            ),
+            (
+                "BELAY_SESSION_DIR".into(),
+                session.dir.to_string_lossy().into_owned(),
+            ),
+        ],
+        ro: vec![program, session.dir.clone()],
+        sock: session.sock.clone(),
+        session,
+    })
+}
+
+impl Sandboxed {
+    /// The belay session's id.
+    pub fn id(&self) -> &str {
+        &self.session.id
+    }
+    /// Stop the daemon and print the session's summary.
+    pub fn finish(mut self) {
+        finish(&mut self.session);
+    }
+}
+
 /// Session dir, token, settings, daemon. Any error here means: run without belay.
 fn setup(
     exe: &Path,
