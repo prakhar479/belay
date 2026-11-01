@@ -170,6 +170,16 @@ pub enum Event {
         agent: String,
         activity: PeerActivity,
     },
+    /// This session started a sandbox (`belay sandbox`): its work lands on `branch`.
+    SandboxStarted {
+        id: String,
+        branch: String,
+    },
+    /// The sandbox's command ended, or belay stopped it (a limit, the user): why.
+    SandboxStopped {
+        id: String,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

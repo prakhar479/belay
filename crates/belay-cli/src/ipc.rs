@@ -118,6 +118,11 @@ pub enum Request {
         #[serde(default)]
         json: bool,
     },
+    /// `belay sandbox` started or stopped a sandbox from this session's shell: record it.
+    /// Only the two sandbox events are accepted.
+    Sandbox {
+        event: belay_core::Event,
+    },
     Ping,
     Shutdown {
         #[serde(default)]

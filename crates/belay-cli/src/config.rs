@@ -20,6 +20,13 @@
 //! awareness = on             # tell the agent what other belay sessions here did
 //! commons = off              # pass other sessions' messages to the agent
 //! report = quiet             # how much belay tells the user: quiet, normal, verbose
+//! sandbox_memory = 4G        # `belay sandbox`: most memory its processes use together
+//! sandbox_procs = 512        # most processes in a sandbox
+//! sandbox_disk = 10G         # most disk its worktree and private home use
+//! sandbox_wall = 4h          # longest a sandboxed command runs
+//! sandbox_agent = on         # agents may run `belay sandbox run` too
+//! sandbox_ro = ~/.cargo, ~/.rustup   # toolchain dirs bound read-only (default: these,
+//!                            # ~/.nvm, ~/.pyenv, ~/.local/bin, when they exist)
 //! ```
 //!
 //! 0.1 keys still load, with a warning: `look` reads as `on`; `fleet` is `awareness`,
@@ -34,6 +41,16 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, bail, Result};
 use belay_core::{GuardSetting, ReportLevel};
 
+use crate::sandbox::limits;
+
+fn on_off_word(b: bool) -> &'static str {
+    if b {
+        "on"
+    } else {
+        "off"
+    }
+}
+
 /// The whole config file: the core's knobs, and those only the launcher, the plugin
 /// and the daemon read. Derefs to the core's, so `cfg.loop_threshold` works.
 #[derive(Debug, Clone)]
@@ -45,6 +62,15 @@ pub struct Config {
     pub experimental_audit: bool,
     /// A desktop notification when belay steers a loop or blocks an edit (unattended runs).
     pub notify: bool,
+    /// Sandbox limits (`belay sandbox`): memory and disk in bytes, wall time in seconds.
+    pub sandbox_memory: u64,
+    pub sandbox_procs: u64,
+    pub sandbox_disk: u64,
+    pub sandbox_wall: u64,
+    /// Agents may run `belay sandbox run`, not only the user.
+    pub sandbox_agent: bool,
+    /// Toolchain dirs bound read-only into a sandbox, `~/` for the home.
+    pub sandbox_ro: Vec<String>,
 }
 
 impl Default for Config {
@@ -54,6 +80,20 @@ impl Default for Config {
             keep_days: 30,
             experimental_audit: false,
             notify: false,
+            sandbox_memory: 4 << 30,
+            sandbox_procs: 512,
+            sandbox_disk: 10 << 30,
+            sandbox_wall: 4 * 3600,
+            sandbox_agent: true,
+            sandbox_ro: [
+                "~/.cargo",
+                "~/.rustup",
+                "~/.nvm",
+                "~/.pyenv",
+                "~/.local/bin",
+            ]
+            .map(String::from)
+            .to_vec(),
         }
     }
 }
@@ -71,6 +111,12 @@ impl Config {
             ("experimental_audit", self.experimental_audit.to_string()),
             ("keep_days", self.keep_days.to_string()),
             ("notify", self.notify.to_string()),
+            ("sandbox_memory", limits::fmt_size(self.sandbox_memory)),
+            ("sandbox_procs", self.sandbox_procs.to_string()),
+            ("sandbox_disk", limits::fmt_size(self.sandbox_disk)),
+            ("sandbox_wall", limits::fmt_duration(self.sandbox_wall)),
+            ("sandbox_agent", on_off_word(self.sandbox_agent).to_string()),
+            ("sandbox_ro", self.sandbox_ro.join(", ")),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -147,7 +193,7 @@ pub fn load() -> Config {
     c
 }
 
-const KEYS: [&str; 20] = [
+const KEYS: [&str; 26] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -165,6 +211,12 @@ const KEYS: [&str; 20] = [
     "awareness",
     "commons",
     "report",
+    "sandbox_memory",
+    "sandbox_procs",
+    "sandbox_disk",
+    "sandbox_wall",
+    "sandbox_agent",
+    "sandbox_ro",
     // 0.1 keys: read with a warning.
     "plugin_mode",
     "fleet",
@@ -252,6 +304,16 @@ fn apply(
             v => bail!("{key} must be on or off, got {v}"),
         }
     };
+    let size = |min: u64| -> Result<u64> {
+        let v = limits::parse_size(value).map_err(|e| anyhow!("{key}: {e}"))?;
+        if v < min {
+            bail!(
+                "{key} must be at least {}, got {value}",
+                limits::fmt_size(min)
+            );
+        }
+        Ok(v)
+    };
     let boolean = || -> Result<bool> {
         match value {
             "true" => Ok(true),
@@ -289,6 +351,23 @@ fn apply(
         "wrap_tests" => c.core.wrap_tests = boolean()?,
         "notify" => c.notify = boolean()?,
         "experimental_audit" => c.experimental_audit = boolean()?,
+        "sandbox_memory" => c.sandbox_memory = size(16 << 20)?,
+        "sandbox_disk" => c.sandbox_disk = size(16 << 20)?,
+        "sandbox_procs" => c.sandbox_procs = int(8, 1_000_000)?,
+        "sandbox_wall" => {
+            c.sandbox_wall = limits::parse_duration(value).map_err(|e| anyhow!("{key}: {e}"))?;
+            if c.sandbox_wall == 0 {
+                bail!("{key} must be more than 0");
+            }
+        }
+        "sandbox_agent" => c.sandbox_agent = on_off()?,
+        "sandbox_ro" => {
+            c.sandbox_ro = value
+                .split(',')
+                .map(|p| p.trim().trim_matches('"').to_string())
+                .filter(|p| !p.is_empty())
+                .collect()
+        }
         _ => unreachable!("checked against KEYS"),
     }
     seen.insert(key.to_string());
@@ -336,6 +415,26 @@ pub fn load_policy(dir: &Path) -> (belay_core::policy::Policy, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sandbox_keys_parse_sizes_durations_and_lists() {
+        let (c, w) = parse(
+            "sandbox_memory = 512M\nsandbox_disk = 2G\nsandbox_procs = 64\nsandbox_wall = 90m\nsandbox_agent = off\nsandbox_ro = ~/.cargo, /opt/go\n",
+        );
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(c.sandbox_memory, 512 << 20);
+        assert_eq!(c.sandbox_disk, 2 << 30);
+        assert_eq!(c.sandbox_procs, 64);
+        assert_eq!(c.sandbox_wall, 90 * 60);
+        assert!(!c.sandbox_agent);
+        assert_eq!(c.sandbox_ro, ["~/.cargo", "/opt/go"]);
+        let o = c.overrides();
+        assert_eq!(o["sandbox_memory"], "512M");
+        assert_eq!(o["sandbox_wall"], "90m");
+        assert!(!Config::default().overrides().contains_key("sandbox_wall"));
+        let (_, w) = parse("sandbox_memory = 1K\nsandbox_wall = soon\n");
+        assert_eq!(w.len(), 2, "{w:?}");
+    }
 
     #[test]
     fn file_overrides_defaults() {

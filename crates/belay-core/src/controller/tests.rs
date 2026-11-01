@@ -2355,3 +2355,45 @@ fn notice_entries_round_trip() {
         assert_eq!(&back, e, "{json}");
     }
 }
+
+#[test]
+fn the_agent_may_run_a_sandbox_but_not_remove_one() {
+    let mut c = ctl();
+    let d = c.handle(requested("s", "belay sandbox rm sb-1", false), 1);
+    assert!(
+        matches!(&d.response.permission, Some(Permission::Deny(m)) if m.contains("belay sandbox rm")),
+        "{:?}",
+        d.response
+    );
+    let d = c.handle(requested("r", "belay sandbox run -- make", false), 2);
+    assert!(d.response.permission.is_none());
+}
+
+#[test]
+fn sandbox_events_are_recorded_and_shown_on_the_card() {
+    let mut c = ctl();
+    let d = c.handle(
+        Event::SandboxStarted {
+            id: "sb-1".into(),
+            branch: "belay/sandbox/sb-1".into(),
+        },
+        1,
+    );
+    assert!(matches!(
+        &d.entries.last().unwrap().body,
+        Body::Event { event: Event::SandboxStarted { id, .. } } if id == "sb-1"
+    ));
+    assert_eq!(c.card(1).sandbox.as_deref(), Some("sb-1"));
+    let d = c.handle(
+        Event::SandboxStopped {
+            id: "sb-1".into(),
+            reason: "memory over 4G".into(),
+        },
+        2,
+    );
+    assert!(matches!(
+        &d.entries.last().unwrap().body,
+        Body::Event { event: Event::SandboxStopped { reason, .. } } if reason.contains("memory")
+    ));
+    assert_eq!(c.card(2).sandbox, None);
+}

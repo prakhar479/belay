@@ -1304,6 +1304,21 @@ fn serve(
                     message: Some("recorded".into()),
                 }
             }
+            Request::Sandbox { event } => {
+                let message = match event {
+                    belay_core::Event::SandboxStarted { .. }
+                    | belay_core::Event::SandboxStopped { .. } => {
+                        let d = st.controller.handle(event, now_ms());
+                        st.store.persist(&d)?;
+                        "recorded"
+                    }
+                    _ => "belay: refused: only sandbox events",
+                };
+                Reply {
+                    output: None,
+                    message: Some(message.into()),
+                }
+            }
             Request::Ping
             | Request::Filter { .. }
             | Request::Send { .. }
