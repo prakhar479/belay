@@ -312,7 +312,7 @@ mod tests {
             fs::create_dir_all(socket_path(d).parent().unwrap()).unwrap();
         }
         // A socket file nobody listens on.
-        drop(UnixListener::bind(socket_path(&dead)).unwrap());
+        crate::ipc::dead_socket(&socket_path(&dead));
         // A listener that answers pings, like a daemon.
         let l = UnixListener::bind(socket_path(&live)).unwrap();
         std::thread::spawn(move || {

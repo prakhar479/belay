@@ -182,6 +182,23 @@ pub fn connect_now(path: &Path) -> std::io::Result<UnixStream> {
     }
 }
 
+/// A socket file nobody listens on, as a crashed daemon or hub leaves it. Tests only.
+///
+/// Dropping a listener does not close it at once: a child that another test thread is
+/// forking holds a copy of every descriptor until it execs, and the socket still
+/// accepts (then resets) a connection meanwhile. Wait until it refuses.
+#[cfg(test)]
+pub fn dead_socket(path: &Path) {
+    drop(std::os::unix::net::UnixListener::bind(path).expect("bind a test socket"));
+    for _ in 0..200 {
+        match connect_now(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => return,
+            _ => std::thread::sleep(std::time::Duration::from_millis(10)),
+        }
+    }
+    panic!("{} still accepts connections after 2 s", path.display());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
