@@ -1,0 +1,23 @@
+{
+  "cwd": "/home/dev/shop",
+  "duration_ms": 3,
+  "hook_event_name": "PostToolUse",
+  "permission_mode": "default",
+  "session_id": "9b1d6f2e-0000-4000-8000-000000000001",
+  "tool_input": {
+    "output_mode": "files_with_matches",
+    "path": "/home/dev/shop",
+    "pattern": "def total"
+  },
+  "tool_name": "Grep",
+  "tool_response": {
+    "filenames": [
+      "shop/__init__.py",
+      "tests/test_api.py"
+    ],
+    "mode": "files_with_matches",
+    "numFiles": 2
+  },
+  "tool_use_id": "toolu_05",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-shop/9b1d6f2e-0000-4000-8000-000000000001.jsonl"
+}

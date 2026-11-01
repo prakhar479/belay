@@ -36,7 +36,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|Edit|MultiEdit|Write",
+        "matcher": "Bash|Edit|MultiEdit|Write|Read|Grep|Glob",
         "hooks": [
           {
             "type": "command",
@@ -126,6 +126,22 @@
             "args": [
               "hook",
               "PreCompact",
+              "--plugin"
+            ],
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "belay",
+            "args": [
+              "hook",
+              "SubagentStop",
               "--plugin"
             ],
             "timeout": 5

@@ -91,7 +91,8 @@ Loops (13 s in loops): 1
   - [would have steered] after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run):
     tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total' …
 Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages
-Tool calls: 7 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
+Tool calls: 8 (Bash 4) · Bash output: 892 tokens (est.) · noise 0% (est.)
+Reads: 1 (0 repeated) · 0 searches · 20 tokens (est.)
 Test runs: 4 · wrapped (or would be, in auto mode): 0 (0%)
 Edits: 3 through Edit/Write (guarded before they run)
 ```
@@ -241,6 +242,10 @@ belay sessions --history         # every recorded session
 ```
 
 `--session` takes an id, a unique prefix, `-1` for the newest, `-2`, and so on, or a path.
+
+belay also sees what the agent reads: each Read, Grep, and Glob is recorded after it runs, as an output `o-N`, and is never changed. The report counts them on a line like `Reads: 12 (3 repeated) · 4 searches · 8.1k tokens (est.)`. A read is repeated when the agent reads the same content of the same file again with no compaction in between: it already had that text. When a subagent finishes, the ledger records a `subagent_ended` event.
+
+"Tokens kept out" (in the report, `belay status`, and the exit summary) adds up, for each summary that reached the agent, the original's tokens minus the summary's. A summary the agent could not take, or whose reply came too late, counts nothing. Tokens are estimated at 4 characters each.
 
 If belay got something wrong, note it where it happened. The notes collect in one list:
 

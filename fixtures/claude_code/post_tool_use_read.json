@@ -1,0 +1,23 @@
+{
+  "cwd": "/home/dev/shop",
+  "duration_ms": 3,
+  "hook_event_name": "PostToolUse",
+  "permission_mode": "default",
+  "session_id": "9b1d6f2e-0000-4000-8000-000000000001",
+  "tool_input": {
+    "file_path": "/home/dev/shop/tests/test_api.py"
+  },
+  "tool_name": "Read",
+  "tool_response": {
+    "file": {
+      "content": "from shop import total\n\n\ndef test_total():\n    assert total([1, 2, 3]) == 6\n",
+      "filePath": "/home/dev/shop/tests/test_api.py",
+      "numLines": 6,
+      "startLine": 1,
+      "totalLines": 6
+    },
+    "type": "text"
+  },
+  "tool_use_id": "toolu_04",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-shop/9b1d6f2e-0000-4000-8000-000000000001.jsonl"
+}

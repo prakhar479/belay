@@ -43,9 +43,12 @@ pub fn project_dir_name(cwd: &Path) -> String {
         .collect()
 }
 
-/// Tools belay hooks (see `settings`). Retro looks at the same tools, so its numbers
-/// match a live session's.
+/// Tools belay hooks before and after they run (see `settings`). Retro looks at the
+/// same tools, so its numbers match a live session's.
 pub const HOOKED_TOOLS: [&str; 4] = ["Bash", "Edit", "MultiEdit", "Write"];
+
+/// Tools belay sees only after they run (U5.1): reads are recorded, never changed.
+pub const READ_TOOLS: [&str; 3] = ["Read", "Grep", "Glob"];
 
 #[derive(Default)]
 pub struct ClaudeCode {
@@ -262,6 +265,23 @@ pub fn extract_output(v: &Value) -> String {
             }
         }
         Value::Object(o) if o.contains_key("content") => extract_output(&o["content"]),
+        // Read: `{type, file: {filePath, content, numLines, startLine, totalLines}}`, seen
+        // in transcripts' `toolUseResult` (2.1.316). An image or notebook has no `content`.
+        // [Verify] conformance: PostToolUse Read `tool_response` has the same shape.
+        Value::Object(o) if o.get("file").is_some_and(Value::is_object) => o["file"]
+            .get("content")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        // Glob, and Grep's `files_with_matches` mode: `{filenames: [...], numFiles, …}`.
+        // [Verify] from the hook docs; no capture yet (Grep's other modes carry `content`).
+        Value::Object(o) if o.get("filenames").is_some_and(Value::is_array) => o["filenames"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join("\n"),
         Value::Array(items) => items
             .iter()
             .filter_map(|i| i.get("text").and_then(Value::as_str))
@@ -728,6 +748,14 @@ impl Connector for ClaudeCode {
             "PreCompact" => evs.push(Event::Compacted {
                 trigger: s(p, "trigger").to_string(),
             }),
+            // [Verify] hook docs: SubagentStop carries `agent_type` (no capture yet).
+            "SubagentStop" => evs.push(Event::SubagentEnded {
+                agent_type: p
+                    .get("agent_type")
+                    .and_then(Value::as_str)
+                    .filter(|t| !t.is_empty())
+                    .map(String::from),
+            }),
             _ => {}
         }
         evs
@@ -857,18 +885,21 @@ pub fn settings(exe: &Path) -> Value {
     };
     let tools = HOOKED_TOOLS.join("|");
     let tools = tools.as_str();
+    let seen = [&HOOKED_TOOLS[..], &READ_TOOLS[..]].concat().join("|");
     json!({
         "hooks": {
             "SessionStart": entry("SessionStart", None),
             // Bash too: the agent may not run `belay allow` (see Controller::on_tool_requested).
             "PreToolUse": entry("PreToolUse", Some(tools)),
-            "PostToolUse": entry("PostToolUse", Some(tools)),
+            // Reads too (U5.1), after they run only: belay records them, never changes them.
+            "PostToolUse": entry("PostToolUse", Some(seen.as_str())),
             "PostToolUseFailure": entry("PostToolUseFailure", Some(tools)),
             // R3.7: only belay's own rewrites (Bash) can make auto mode deny a call.
             "PermissionDenied": entry("PermissionDenied", Some("Bash")),
             "UserPromptSubmit": entry("UserPromptSubmit", None),
             "Stop": entry("Stop", None),
             "PreCompact": entry("PreCompact", None),
+            "SubagentStop": entry("SubagentStop", None),
         }
     })
 }
@@ -943,6 +974,81 @@ mod tests {
             Some(Event::ToolCompleted { output, failed, .. }) => (output, *failed),
             e => panic!("unexpected {e:?}"),
         }
+    }
+
+    #[test]
+    fn maps_reads_and_searches_to_their_text() {
+        let cases = [
+            (
+                "post_tool_use_read.json",
+                ToolKind::Read,
+                "from shop import total\n\n\ndef test_total():\n    assert total([1, 2, 3]) == 6\n",
+            ),
+            (
+                "post_tool_use_grep.json",
+                ToolKind::Search,
+                "shop/__init__.py\ntests/test_api.py",
+            ),
+            (
+                "post_tool_use_grep_content.json",
+                ToolKind::Search,
+                "shop/__init__.py:1:def total(xs):",
+            ),
+            (
+                "post_tool_use_glob.json",
+                ToolKind::Search,
+                "/home/dev/shop/tests/test_api.py\n/home/dev/shop/tests/test_cart.py",
+            ),
+        ];
+        for (name, want_kind, want) in cases {
+            let mut c = ClaudeCode {
+                started: true,
+                ..Default::default()
+            };
+            let evs = c.map("PostToolUse", &fixture(name));
+            assert_eq!(evs.len(), 1, "{name}: {evs:?}");
+            match &evs[0] {
+                Event::ToolCompleted {
+                    kind,
+                    output,
+                    failed,
+                    ..
+                } => {
+                    assert_eq!((*kind, output.as_str(), *failed), (want_kind, want, false));
+                }
+                e => panic!("{name}: {e:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn maps_subagent_stop() {
+        let mut c = ClaudeCode {
+            started: true,
+            session_id: "9b1d6f2e-0000-4000-8000-000000000001".into(),
+            ..Default::default()
+        };
+        let evs = c.map("SubagentStop", &fixture("subagent_stop.json"));
+        assert_eq!(
+            evs,
+            vec![Event::SubagentEnded {
+                agent_type: Some("Explore".into())
+            }]
+        );
+    }
+
+    #[test]
+    fn settings_hook_reads_after_they_run_only() {
+        let hooks = &settings(Path::new("/x/belay"))["hooks"];
+        let post = hooks["PostToolUse"][0]["matcher"].as_str().unwrap();
+        for t in ["Bash", "Edit", "Read", "Grep", "Glob"] {
+            assert!(post.split('|').any(|m| m == t), "{post}");
+        }
+        assert_eq!(
+            hooks["PreToolUse"][0]["matcher"],
+            "Bash|Edit|MultiEdit|Write"
+        );
+        assert!(hooks["SubagentStop"].is_array());
     }
 
     #[test]

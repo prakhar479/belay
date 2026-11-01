@@ -14,9 +14,13 @@
 | `claude_code/post_tool_use_failure_wrapped.json` | PostToolUseFailure of a test run belay wrapped: the error text is belay's summary | Captured 2026-10-20, Claude Code 2.1.304, when the tool was named tend; the binary path replaced with `/usr/local/bin/belay`, and `tend` in the summary marker changed to `belay` |
 | `claude_code/permission_denied_bash.json` | PermissionDenied for a wrapped Bash call | **Synthetic**, from the 2.1.303 hook schema; replace with a capture when a denial happens (R3.7) |
 | `claude_code/session_start_compact.json` | SessionStart after a compaction (`source: "compact"`, the same session id) | **Synthetic**, from the hook docs; [Verify] with a capture (U4b) |
+| `claude_code/post_tool_use_read.json` | PostToolUse Read: `tool_response` `{type, file: {filePath, content, …}}` | **Synthetic**: the shape of a 2.1.316 transcript's `toolUseResult` for Read; [Verify] with a capture (U5.1, conformance) |
+| `claude_code/post_tool_use_grep.json`, `post_tool_use_grep_content.json`, `post_tool_use_glob.json` | PostToolUse Grep (`files_with_matches`, `content`) and Glob | **Synthetic**, from the hook docs; [Verify] with a capture (U5.1) |
+| `claude_code/subagent_stop.json` | SubagentStop with `agent_type` | **Synthetic**, from the hook docs; [Verify] with a capture (U5.1) |
 | `outputs/pytest_grep_e_lines.txt`, `outputs/pytest_summary_only.txt`, `outputs/go_test_grep_n.txt` | Output as an agent trims it (`grep -E`, `tail -1`, `grep -n`) | **Hand-made** from the captured runs above |
 | `ledgers/v1_look_session.jsonl` | A 0.1 ledger (format 1): a look-mode session with a shape, a guard flag, and a mode change | **Hand-made** in the 0.1 format (U2a), to keep old ledgers readable |
 | `transcripts/loop_session.jsonl` | Claude Code transcript: 4 failing runs, 3 edits | Captured 2026-10-19 (docs/dev/TASKS.md S5). Only user/assistant lines and the fields belay reads |
+| `transcripts/reads_session.jsonl` | Claude Code transcript: the same file read twice, a Grep, a Glob, a WebFetch, with `toolUseResult` | **Hand-made** (U5.1) in the shape of 2.1.316 transcripts |
 | `sessions/mcp/` | A session dir: ledger with one test output `o-1` (and its blob) and the shape action `a-1` | **Hand-made** in ledger format 1, for `belay mcp` |
 
 Rules:

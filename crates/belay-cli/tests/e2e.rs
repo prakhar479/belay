@@ -4216,6 +4216,33 @@ fn e1_daemon_runs_with_spaces_in_the_session_path() {
     assert_eq!(hook(&sock, "PostToolUse", &post), "");
 }
 
+/// U5.1: a Read reaches belay after it runs. belay records the file's text as an
+/// output (`belay show` gives it back), changes nothing the agent sees, and the report
+/// counts a second read of the same content as repeated.
+#[test]
+fn reads_are_recorded_and_repeats_counted() {
+    let dir = tmp("reads");
+    let session = dir.join("session");
+    let (daemon, sock) = start_daemon(&session, "");
+    let read: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture("post_tool_use_read.json")).unwrap())
+            .unwrap();
+    assert_eq!(hook(&sock, "PostToolUse", &read), "");
+    assert_eq!(hook(&sock, "PostToolUse", &read), "");
+    let stop: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture("subagent_stop.json")).unwrap()).unwrap();
+    assert_eq!(hook(&sock, "SubagentStop", &stop), "");
+    drop(daemon);
+    let report = belay(&["report"], &session);
+    assert!(report.contains("Reads: 2 (1 repeated)"), "{report}");
+    assert_eq!(
+        belay(&["show", "o-1"], &session),
+        read["tool_response"]["file"]["content"].as_str().unwrap()
+    );
+    let ledger = fs::read_to_string(session.join("ledger.jsonl")).unwrap();
+    assert!(ledger.contains(r#""type":"subagent_ended","agent_type":"Explore""#));
+}
+
 /// U1b: retro output stays byte for byte what it was before transcripts moved behind
 /// the connector. Regenerate the golden files only for an intended report change.
 #[test]

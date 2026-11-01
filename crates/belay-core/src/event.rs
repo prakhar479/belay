@@ -175,6 +175,11 @@ pub enum Event {
         id: String,
         branch: String,
     },
+    /// A subagent the agent started has finished (U5.1). Recorded; no action yet.
+    SubagentEnded {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        agent_type: Option<String>,
+    },
     /// The sandbox's command ended, or belay stopped it (a limit, the user): why.
     SandboxStopped {
         id: String,

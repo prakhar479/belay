@@ -389,8 +389,10 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("Edits: 3 through Edit/Write"), "{out}");
-        // The live session of this transcript reported "Tool calls: 7 (Bash 4)".
-        assert!(out.contains("Tool calls: 7 (Bash 4)"), "{out}");
+        // The live session of this transcript reported "Tool calls: 7 (Bash 4)", before
+        // belay hooked reads (U5.1); its one Read now counts too.
+        assert!(out.contains("Tool calls: 8 (Bash 4)"), "{out}");
+        assert!(out.contains("Reads: 1 (0 repeated)"), "{out}");
         assert!(
             out.contains("180.5k prompt (169.3k cache read, 93%)"),
             "{out}"
