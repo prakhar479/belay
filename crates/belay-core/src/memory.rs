@@ -633,13 +633,19 @@ pub struct Carry<'a> {
     pub guard: &'a [String],
     /// Memories this session was given, oldest first.
     pub used: &'a [Memory],
+    /// The conversation was resumed in a new run (U8), not compacted.
+    pub resumed: bool,
 }
 
 /// The carry pack: what the session is on, its open failure, guard blocks and
 /// decisions, and the memories it used, in that order until `max_tokens`. None when
 /// there is nothing to carry.
 pub fn carry_text(c: &Carry, max_tokens: usize) -> Option<String> {
-    let head = "belay: carried over from before the compaction (this session's own state):";
+    let head = if c.resumed {
+        "belay: carried over from this conversation's earlier run (belay's own record):"
+    } else {
+        "belay: carried over from before the compaction (this session's own state):"
+    };
     let mut lines = Vec::new();
     if let Some(t) = c.task {
         lines.push(format!("- Task: {t}"));
@@ -853,6 +859,7 @@ mod tests {
             failure: None,
             guard: &guard,
             used: &used,
+            resumed: false,
         };
         let text = carry_text(&c, 40).unwrap();
         assert!(text.contains("- Task: the task") && text.contains("- Guard: a-1"));

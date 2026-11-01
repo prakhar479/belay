@@ -8,7 +8,7 @@
 //!
 //! Failures at the start of a session are normal: they count only after edits.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::perception::Failure;
 
@@ -52,9 +52,9 @@ struct SigState {
 pub struct LoopDetector {
     threshold: u64,
     edits: u64,
-    sigs: HashMap<String, SigState>,
-    files: HashMap<String, Vec<String>>,
-    cycled: HashSet<String>,
+    sigs: BTreeMap<String, SigState>,
+    files: BTreeMap<String, Vec<String>>,
+    cycled: BTreeSet<String>,
 }
 
 impl LoopDetector {
@@ -62,9 +62,9 @@ impl LoopDetector {
         Self {
             threshold,
             edits: 0,
-            sigs: HashMap::new(),
-            files: HashMap::new(),
-            cycled: HashSet::new(),
+            sigs: BTreeMap::new(),
+            files: BTreeMap::new(),
+            cycled: BTreeSet::new(),
         }
     }
 

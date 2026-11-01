@@ -58,6 +58,13 @@ impl Tail {
 
 /// The line to print for an entry: notices only, Info ones with `verbose`.
 pub fn line(e: &Entry, verbose: bool) -> Option<String> {
+    if let Body::Resumed { from_session, .. } = &e.body {
+        // Ids go on from that session's: `belay why` and `belay show` find them there.
+        return Some(format!(
+            "{} info continues session {from_session}",
+            clock(e.ts_ms)
+        ));
+    }
     let Body::Notice { notice, .. } = &e.body else {
         return None;
     };

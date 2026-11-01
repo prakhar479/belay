@@ -516,6 +516,23 @@ audit_ignore = ["vendor/**"]                      # left out of `belay audit`
 
 An edit of a protected path is denied (with `guard = deny`) until you run `! belay allow`. Globs are relative to the repo root. `*` stays within a directory, `**` crosses them, and a pattern without `/` matches a file name anywhere. When `belay claude` starts, it skips a bad line with a warning; the other lines still apply.
 
+## Resuming
+
+When you resume a conversation, belay goes on where it left off. Loop counts, the open failure, blocked edits, paused features, shape levels, and the card's task carry over. So the third failure of the same test is a loop, even when the first two were in the run before.
+
+```sh
+belay claude --resume <id>    # or -r <id>: that conversation
+belay claude --continue       # or -c: the newest conversation in this directory
+belay claude --resume         # Claude Code's picker: belay follows the one you pick
+belay claude --belay-fresh -c # resume the conversation, but start belay clean
+```
+
+`/resume` inside Claude Code works the same way. The plugin needs nothing: a plugin daemon that stops and starts again picks up its own record.
+
+A resumed run is a new belay session that names the one it continues. Ids go on from it, so `a-N`, `o-N`, and `t-N` each name one thing across the runs. `belay report` shows every run, with a header each. `belay why`, `belay show`, and `belay undo` find ids in earlier runs. The resumed agent does not get a fresh start's recall: it gets the carry pack (its task, open failure, guard history, memories), as after a compaction.
+
+belay finds the earlier run through `<home>/by-session/<conversation id>`, which every session writes. If that run was pruned, the resumed one starts clean. `resume = fresh` in the config makes every resume start clean.
+
 ## Undo
 
 In a git repo, belay keeps the working tree as it is when the session starts (`t-0`) and at the end of each agent turn (`t-1`, `t-2`, …). A snapshot holds tracked and untracked files. Ignored files are left out. Each one is a private ref, `refs/belay/<session>/t-N`, so it is not on any branch and `git log` does not show it. belay takes it after the agent has its reply, so the agent does not wait.
@@ -603,6 +620,7 @@ recall_tokens = 600             # most tokens the start recall and the carry pac
 awareness = on                  # what other belay sessions here did
 commons = off                   # other sessions' messages and handoffs reach the agent
 report = quiet                  # how much belay tells you: quiet, normal, verbose
+resume = continue               # a resumed conversation keeps belay's state; fresh starts clean
 experimental_audit = false      # audit each session's changes to tests and checks
 sandbox_memory = 4G             # sandbox: most memory its processes use together
 sandbox_procs = 512             # sandbox: most processes
@@ -649,7 +667,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 
 | Command | What it does |
 |---|---|
-| `belay claude [args…]` | Start Claude Code under belay |
+| `belay claude [args…]` | Start Claude Code under belay. A resumed conversation (`--resume`, `-c`) continues its belay state; `--belay-fresh` starts clean |
 | `belay launch <agent> [args…]` | Start an agent under belay. `belay launch claude-code` is `belay claude` |
 | `belay pause [feature]` · `belay resume [feature]` | Pause belay in the live session, or resume it (yours to run) |
 | `belay allow [a-N]` | Lift one guard block (yours to run) |

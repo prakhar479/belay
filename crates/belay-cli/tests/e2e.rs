@@ -4569,3 +4569,283 @@ fn skills_are_staged_by_agents_and_approved_by_the_user() {
     assert!(!claude.join("skills/pdf").exists());
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// A fake agent that sends the hooks in `$FAKE_HOOKS` (`Event=payload.json` words) in
+/// order, each reply to `$FAKE_OUT/<n>.json`, then exits.
+fn fake_hooks_agent(dir: &Path) -> PathBuf {
+    let script = dir.join("fake-claude-hooks.sh");
+    let body = "#!/bin/sh\n[ \"$1\" = --version ] && echo '2.1.304 (Claude Code)' && exit 0\n\
+         n=0\nfor h in $FAKE_HOOKS; do\n  n=$((n+1))\n  \
+         belay hook \"${h%%=*}\" < \"${h#*=}\" > \"$FAKE_OUT/$n.json\"\ndone\n";
+    fs::write(&script, body).unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    script
+}
+
+/// One `belay claude` run of the hooks agent with `args`; returns the new session dir.
+fn resume_run(dir: &Path, name: &str, args: &[&str], hooks: &[(&str, &str)]) -> PathBuf {
+    let home = dir.join("home");
+    let out = dir.join(name);
+    fs::create_dir_all(&out).unwrap();
+    let before: Vec<PathBuf> = fs::read_dir(home.join("sessions"))
+        .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).collect())
+        .unwrap_or_default();
+    let hooks: Vec<String> = hooks
+        .iter()
+        .map(|(e, f)| match f.starts_with('/') {
+            true => format!("{e}={f}"),
+            false => format!("{e}={}", fixture(f).display()),
+        })
+        .collect();
+    let status = Command::new(bin())
+        .arg("claude")
+        .args(args)
+        .env("BELAY_HOME", &home)
+        .env("BELAY_CLAUDE_BIN", fake_hooks_agent(dir))
+        .env("BELAY_HOOK_TIMEOUT_MS", "5000")
+        .env("BELAY_CONFIG", dir.join("config.toml"))
+        // Claude Code's transcripts for `--continue`: none here.
+        .env("CLAUDE_CONFIG_DIR", dir.join("claude"))
+        .env("FAKE_HOOKS", hooks.join(" "))
+        .env("FAKE_OUT", &out)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        status.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status.stderr)
+    );
+    fs::read_dir(home.join("sessions"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .find(|p| !before.contains(p))
+        .expect("a new session")
+}
+
+const CONVERSATION: &str = "9b1d6f2e-0000-4000-8000-000000000001";
+
+/// U8: `belay claude --resume <id>` continues the earlier run's belay state: the loop
+/// count goes on, the report shows both runs, and the earlier run's outputs open from the
+/// new one. `--belay-fresh` starts clean.
+#[test]
+fn a_resumed_conversation_continues_tracking() {
+    let dir = tmp("resume");
+    fs::write(dir.join("config.toml"), "loop_threshold = 2\n").unwrap();
+    let fail = ("PostToolUseFailure", "post_tool_use_failure_bash.json");
+    // An edit of a file that exists: its content hash makes it a fix attempt.
+    let app = dir.join("app.py");
+    let mut payload: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture("post_tool_use_edit.json")).unwrap())
+            .unwrap();
+    payload["tool_input"]["file_path"] = app.to_string_lossy().into();
+    let edit_json = dir.join("edit.json");
+    fs::write(&edit_json, payload.to_string()).unwrap();
+    let edit_path = edit_json.to_string_lossy().to_string();
+    let edit = ("PostToolUse", edit_path.as_str());
+    let steered = |out: &Path| fs::read_to_string(out).unwrap().contains("fix attempts");
+
+    // Run 1: the test fails, an edit, it fails again (one attempt), and the agent exits.
+    let start = ("SessionStart", "session_start.json");
+    fs::write(&app, "v1").unwrap();
+    let one = resume_run(&dir, "one", &[], &[start, fail, edit, fail]);
+    assert!(!steered(&dir.join("one/4.json")));
+    let map = dir.join("home/by-session").join(CONVERSATION);
+    assert_eq!(
+        fs::read_to_string(&map).unwrap().trim(),
+        one.file_name().unwrap().to_string_lossy()
+    );
+
+    // Run 2 resumes it: one more edit and failure is the second attempt, a loop.
+    let resumed = ("SessionStart", "session_start_resume.json");
+    fs::write(&app, "v2").unwrap();
+    let two = resume_run(
+        &dir,
+        "two",
+        &["--resume", CONVERSATION],
+        &[resumed, edit, fail],
+    );
+    assert!(
+        steered(&dir.join("two/3.json")),
+        "{}",
+        fs::read_to_string(dir.join("two/3.json")).unwrap()
+    );
+    let ledger = fs::read_to_string(two.join("ledger.jsonl")).unwrap();
+    assert!(
+        ledger
+            .lines()
+            .next()
+            .unwrap()
+            .contains(r#""kind":"format""#),
+        "{ledger}"
+    );
+    assert!(ledger.contains(r#""kind":"resumed""#), "{ledger}");
+    assert!(!ledger.contains(r#""id":"a-1""#), "ids go on: {ledger}");
+    assert_eq!(
+        fs::read_to_string(&map).unwrap().trim(),
+        two.file_name().unwrap().to_string_lossy(),
+        "the newest run is the one a resume continues"
+    );
+
+    let report = belay(&["report"], &two);
+    assert!(
+        report.contains("Run 1 of 2") && report.contains("Run 2 of 2"),
+        "{report}"
+    );
+    let shown = belay(&["show", "o-1"], &two);
+    assert!(shown.contains("test_get_order"), "{shown}");
+    let first_action = ledger_action(&one);
+    let why = belay(&["why", &first_action], &two);
+    assert!(why.contains(&first_action), "{why}");
+
+    // Run 3 through the agent's picker (a bare `--resume`): resolved at its start, and
+    // a chain of three runs.
+    let picked = resume_run(&dir, "picked", &["--resume"], &[resumed]);
+    let ledger = fs::read_to_string(picked.join("ledger.jsonl")).unwrap();
+    let from = two.file_name().unwrap().to_string_lossy().to_string();
+    assert!(
+        ledger.contains(&format!(r#""from_session":"{from}""#)),
+        "{ledger}"
+    );
+    let report = belay(&["report"], &picked);
+    assert!(report.contains("Run 3 of 3"), "{report}");
+    assert!(belay(&["show", "o-1"], &picked).contains("test_get_order"));
+
+    // A fresh start: no link, and the next failure is not a loop.
+    fs::write(&app, "v3").unwrap();
+    let three = resume_run(
+        &dir,
+        "three",
+        &["--belay-fresh", "--resume", CONVERSATION],
+        &[resumed, edit, fail],
+    );
+    assert!(!steered(&dir.join("three/3.json")));
+    let ledger = fs::read_to_string(three.join("ledger.jsonl")).unwrap();
+    assert!(!ledger.contains(r#""kind":"resumed""#), "{ledger}");
+}
+
+/// The first action id in a session's ledger.
+fn ledger_action(session: &Path) -> String {
+    let ledger = fs::read_to_string(session.join("ledger.jsonl")).unwrap();
+    ledger
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .find_map(|v| {
+            (v["body"]["kind"] == "action").then(|| v["body"]["id"].as_str().unwrap().to_string())
+        })
+        .expect("an action")
+}
+
+/// U8: a daemon killed and started again on its session keeps a guard block: the edit
+/// is still denied until the user allows it.
+#[test]
+fn a_restarted_daemon_keeps_a_guard_block() {
+    let dir = tmp("restart-guard");
+    let session = dir.join("s1");
+    let edit = serde_json::from_str::<serde_json::Value>(
+        &fs::read_to_string(fixture("pre_tool_use_edit_test.json")).unwrap(),
+    )
+    .unwrap();
+    {
+        let (_daemon, sock) = start_daemon(&session, "");
+        let out = hook(&sock, "PreToolUse", &edit);
+        assert!(out.contains("deny"), "{out}");
+    } // killed
+    let _ = fs::remove_file(socket_of(&session));
+    let (_daemon, sock) = start_daemon(&session, "");
+    let out = hook(&sock, "PreToolUse", &edit);
+    assert!(out.contains("deny"), "still blocked: {out}");
+    let allowed = Command::new(bin())
+        .args(["allow", "--session"])
+        .arg(&session)
+        .env("BELAY_HOME", dir.join("home"))
+        .env("BELAY_TEST_TERMINAL", "1")
+        .output()
+        .unwrap();
+    let said = String::from_utf8_lossy(&allowed.stdout);
+    assert!(
+        said.contains("Allowed once"),
+        "{said}{}",
+        String::from_utf8_lossy(&allowed.stderr)
+    );
+    let out = hook(&sock, "PreToolUse", &edit);
+    assert!(!out.contains("deny"), "allowed once: {out}");
+}
+
+/// U8: `/resume` inside a running agent switches to a conversation an earlier session
+/// ran: its failures and loop count come along.
+#[test]
+fn resume_in_process_takes_up_the_earlier_conversation() {
+    let dir = tmp("resume-in-process");
+    let home = dir.join("home");
+    let config = dir.join("config.toml");
+    fs::write(&config, "loop_threshold = 2\n").unwrap();
+    let daemon_for = |session: &Path| {
+        fs::create_dir_all(session).unwrap();
+        let child = Command::new(bin())
+            .args(["daemon", "--session-dir"])
+            .arg(session)
+            .env("BELAY_CONFIG", &config)
+            .env("BELAY_HOME", &home)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let d = Daemon(child);
+        wait_for_daemon(&socket_of(session));
+        d
+    };
+    let app = dir.join("app.py");
+    let payload = |name: &str, conv: &str| {
+        let mut v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap();
+        v["session_id"] = conv.into();
+        if v["tool_name"] == "Edit" {
+            v["tool_input"]["file_path"] = app.to_string_lossy().into();
+        }
+        v
+    };
+    let fail = |conv: &str| payload("post_tool_use_failure_bash.json", conv);
+    let edit = |conv: &str| payload("post_tool_use_edit.json", conv);
+
+    let s1 = home.join("sessions/s1");
+    {
+        let _d = daemon_for(&s1);
+        let sock = socket_of(&s1);
+        hook(
+            &sock,
+            "SessionStart",
+            &payload("session_start.json", "conv-x"),
+        );
+        hook(&sock, "PostToolUseFailure", &fail("conv-x"));
+        fs::write(&app, "v1").unwrap();
+        hook(&sock, "PostToolUse", &edit("conv-x"));
+        hook(&sock, "PostToolUseFailure", &fail("conv-x"));
+    }
+    let s2 = home.join("sessions/s2");
+    let _d = daemon_for(&s2);
+    let sock = socket_of(&s2);
+    hook(
+        &sock,
+        "SessionStart",
+        &payload("session_start.json", "conv-y"),
+    );
+    hook(
+        &sock,
+        "SessionStart",
+        &payload("session_start_resume.json", "conv-x"),
+    );
+    fs::write(&app, "v2").unwrap();
+    hook(&sock, "PostToolUse", &edit("conv-x"));
+    let out = hook(&sock, "PostToolUseFailure", &fail("conv-x"));
+    assert!(out.contains("fix attempts"), "{out}");
+    let ledger = fs::read_to_string(s2.join("ledger.jsonl")).unwrap();
+    assert!(ledger.contains(r#""from_session":"s1""#), "{ledger}");
+    assert_eq!(
+        fs::read_to_string(home.join("by-session/conv-x"))
+            .unwrap()
+            .trim(),
+        "s2"
+    );
+}

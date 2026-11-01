@@ -93,18 +93,19 @@ pub enum At {
 }
 
 /// Take a snapshot of the session's working tree in `cwd`. None outside git, or for a
-/// start that already has one (a resumed session). Returns the id, the commit, and the
+/// start that already has one (a restarted daemon). Returns the id, the commit, and the
 /// files changed since the previous snapshot. Runs after the hook's reply: git may take
-/// a while in a large tree, and the shim must not wait (rule 7).
-pub fn take(dir: &Path, cwd: &Path, at: At) -> Option<(String, String, Vec<String>)> {
+/// a while in a large tree, and the shim must not wait (rule 7). `floor`: the first turn
+/// number this session may use, after the runs it resumed (U8; 0 for a new one).
+pub fn take(dir: &Path, cwd: &Path, at: At, floor: u64) -> Option<(String, String, Vec<String>)> {
     let root = repo_root(cwd).ok()?;
     let sid = session_id(dir);
     let snaps = list(&root, &sid).ok()?;
     let turns: Vec<&Snap> = snaps.iter().filter(|s| s.key().0 == "t").collect();
     let n = match at {
         At::Start if !turns.is_empty() => return None,
-        At::Start => 0,
-        At::TurnEnd => turns.last().map_or(1, |s| s.key().1 + 1),
+        At::Start => floor,
+        At::TurnEnd => turns.last().map_or(1, |s| s.key().1 + 1).max(floor),
     };
     let id = format!("t-{n}");
     let parent = turns.last().map(|s| s.commit.as_str());
@@ -156,7 +157,19 @@ pub fn run(dir: &Path, id: Option<&str>, yes: bool) -> Result<i32> {
         format!("{cwd} is not in a git repository: belay keeps no snapshots there")
     })?;
     let sid = session_id(&dir);
-    let snaps = list(&root, &sid)?;
+    // A resumed session's snapshots go on from the runs it continues (U8): list them all.
+    let runs: Vec<PathBuf> = crate::store::read_chain(&dir)
+        .map(|r| r.into_iter().map(|r| r.dir).collect())
+        .unwrap_or_else(|_| vec![dir.clone()]);
+    let mut snaps = Vec::new();
+    for run in &runs {
+        snaps.extend(list(&root, &session_id(run))?);
+    }
+    snaps.sort_by_key(|s| {
+        let (kind, n) = s.key();
+        (kind != "t", kind, n)
+    });
+    snaps.dedup_by(|a, b| a.id == b.id);
     if snaps.is_empty() {
         println!("Session {sid} has no snapshots.");
         return Ok(0);

@@ -451,6 +451,15 @@ enum Cmd {
         agent: String,
         #[arg(long)]
         idle_exit_minutes: Option<u64>,
+        /// Continue the conversation an earlier session ran (U8): its directory.
+        #[arg(long)]
+        resume_from: Option<PathBuf>,
+        /// The resumed conversation's id, with `--resume-from`.
+        #[arg(long)]
+        resume_conversation: Option<String>,
+        /// The agent's picker chooses the conversation: resolve it at its start.
+        #[arg(long)]
+        resume_picker: bool,
     },
 }
 
@@ -883,12 +892,22 @@ fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Report { session, full } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
-            let entries = store::read_entries(&dir)?;
-            let label = dir
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            print!("{}", report::render(&label, &entries, true, full));
+            // A resumed session: each earlier run first, one header each (U8).
+            let runs = store::read_chain(&dir)?;
+            for (n, run) in runs.iter().enumerate() {
+                let label = run
+                    .dir
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if runs.len() > 1 {
+                    if n > 0 {
+                        println!();
+                    }
+                    println!("Run {} of {} of this conversation:", n + 1, runs.len());
+                }
+                print!("{}", report::render(&label, &run.entries, true, full));
+            }
             if let Some(a) = std::fs::read_to_string(dir.join("audit.json"))
                 .ok()
                 .and_then(|t| serde_json::from_str::<belay_core::audit::Report>(&t).ok())
@@ -910,10 +929,14 @@ fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Show { id, session } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
-            let entries = store::read_entries(&dir)?;
-            let hash = report::find_output_blob(&entries, &id)
+            // Output ids go on across resumed runs (U8): the newest run that has it.
+            let runs = store::read_chain(&dir)?;
+            let (run, hash) = runs
+                .iter()
+                .rev()
+                .find_map(|r| Some((r, report::find_output_blob(&r.entries, &id)?)))
                 .ok_or_else(|| anyhow::anyhow!("no output {id} in {}", dir.display()))?;
-            print!("{}", store::read_blob(&dir, &hash)?);
+            print!("{}", store::read_blob(&run.dir, &hash)?);
             Ok(0)
         }
         Cmd::Flag {
@@ -955,7 +978,7 @@ fn run(cli: Cli) -> Result<i32> {
                     let mut input = String::new();
                     std::io::stdin().read_to_string(&mut input).ok()?;
                     let v: serde_json::Value = serde_json::from_str(&input).ok()?;
-                    plugin::existing_session_dir(v.get("session_id")?.as_str()?)
+                    paths::conversation_dir(v.get("session_id")?.as_str()?)
                 });
             if let Some(dir) = dir {
                 if let Ok(entries) = store::read_entries(&dir) {
@@ -1095,7 +1118,7 @@ fn run(cli: Cli) -> Result<i32> {
         }
         Cmd::Why { id, session } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
-            let entries = store::read_entries(&dir)?;
+            let entries = store::chain_entries(&store::read_chain(&dir)?);
             print!("{}", report::why_across(&entries, &id, &fleet::peer_entry)?);
             Ok(0)
         }
@@ -1418,8 +1441,19 @@ fn run(cli: Cli) -> Result<i32> {
             parent_pid,
             agent,
             idle_exit_minutes,
+            resume_from,
+            resume_conversation,
+            resume_picker,
         } => {
-            daemon::run(session_dir, parent_pid, &agent, idle_exit_minutes)?;
+            let resume = match resume_from {
+                Some(dir) => daemon::Resume::From {
+                    dir,
+                    conversation: resume_conversation,
+                },
+                None if resume_picker => daemon::Resume::Picker,
+                None => daemon::Resume::No,
+            };
+            daemon::run(session_dir, parent_pid, &agent, idle_exit_minutes, resume)?;
             Ok(0)
         }
         Cmd::Hook { .. } | Cmd::Run { .. } => unreachable!("handled in main"),

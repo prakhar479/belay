@@ -174,6 +174,18 @@ pub trait Connector: Send {
     fn sandbox_files(&self) -> SandboxFiles {
         SandboxFiles::default()
     }
+    /// The conversation the agent's arguments resume, if they resume one (U8).
+    fn resume_target(&self, _args: &[String], _cwd: &Path) -> Option<ResumeTarget> {
+        None
+    }
+    /// The id of the newest conversation in `cwd`, for "continue the latest".
+    fn latest_conversation(&self, _cwd: &Path) -> Option<String> {
+        None
+    }
+    /// The agent's id for the conversation its hooks are about, once a hook said it.
+    fn conversation(&self) -> Option<String> {
+        None
+    }
 }
 
 /// An agent's config inside a sandbox. Paths are relative to the user's home.
@@ -185,6 +197,17 @@ pub struct SandboxFiles {
     pub ro_dirs: Vec<PathBuf>,
     /// The agent's API and auth environment variables, passed through when set.
     pub env: Vec<&'static str>,
+}
+
+/// What a resuming launch continues (U8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResumeTarget {
+    /// This conversation id.
+    Conversation(String),
+    /// The newest conversation in the working directory.
+    Latest,
+    /// One the user picks in the agent: known at its first hook.
+    Picker,
 }
 
 /// An agent's transcripts, read as the core events its hooks would have produced.

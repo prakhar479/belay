@@ -27,6 +27,7 @@
 //! sandbox_agent = on         # agents may run `belay sandbox run` too
 //! sandbox_ro = ~/.cargo, ~/.rustup   # toolchain dirs bound read-only (default: these,
 //!                            # ~/.nvm, ~/.pyenv, ~/.local/bin, when they exist)
+//! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
 //! ```
 //!
 //! 0.1 keys still load, with a warning: `look` reads as `on`; `fleet` is `awareness`,
@@ -71,6 +72,9 @@ pub struct Config {
     pub sandbox_agent: bool,
     /// Toolchain dirs bound read-only into a sandbox, `~/` for the home.
     pub sandbox_ro: Vec<String>,
+    /// A resumed conversation (`claude --resume`, `-c`, `/resume`) continues the belay
+    /// state its earlier runs left (`continue`), or starts clean (`fresh`) (U8).
+    pub resume: String,
 }
 
 impl Default for Config {
@@ -94,6 +98,7 @@ impl Default for Config {
             ]
             .map(String::from)
             .to_vec(),
+            resume: "continue".into(),
         }
     }
 }
@@ -117,6 +122,7 @@ impl Config {
             ("sandbox_wall", limits::fmt_duration(self.sandbox_wall)),
             ("sandbox_agent", on_off_word(self.sandbox_agent).to_string()),
             ("sandbox_ro", self.sandbox_ro.join(", ")),
+            ("resume", self.resume.clone()),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -141,6 +147,11 @@ impl Config {
 
     /// The controller's config: the core's knobs, and this side's overrides so the
     /// session-start record still names every key the user set.
+    /// Whether a resumed conversation continues its belay state (`resume = continue`).
+    pub fn resume_continues(&self) -> bool {
+        self.resume == "continue"
+    }
+
     pub fn session(&self) -> belay_core::Config {
         let defaults = Config::default().own_fields();
         let mut core = self.core.clone();
@@ -193,7 +204,7 @@ pub fn load() -> Config {
     c
 }
 
-const KEYS: [&str; 26] = [
+const KEYS: [&str; 27] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -217,6 +228,7 @@ const KEYS: [&str; 26] = [
     "sandbox_wall",
     "sandbox_agent",
     "sandbox_ro",
+    "resume",
     // 0.1 keys: read with a warning.
     "plugin_mode",
     "fleet",
@@ -367,6 +379,12 @@ fn apply(
                 .map(|p| p.trim().trim_matches('"').to_string())
                 .filter(|p| !p.is_empty())
                 .collect()
+        }
+        "resume" => {
+            if !matches!(value, "continue" | "fresh") {
+                bail!("{key} must be continue or fresh, got {value}");
+            }
+            c.resume = value.to_string();
         }
         _ => unreachable!("checked against KEYS"),
     }

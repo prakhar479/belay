@@ -274,6 +274,9 @@ pub struct Controller {
     questions_from: std::collections::BTreeSet<String>,
     /// The Bash run being observed exited non-zero; None: not known (a wrapped run).
     run_failed: Option<bool>,
+    /// This session continues earlier runs (U8): its start gets the carry pack, not the
+    /// recall a new session gets.
+    restored: bool,
 }
 
 /// The costly, pure part of handling an output: hash, failures, and summary.
@@ -458,6 +461,7 @@ impl Controller {
             asked_by: None,
             questions_from: std::collections::BTreeSet::new(),
             run_failed: None,
+            restored: false,
         }
     }
 
@@ -774,14 +778,7 @@ impl Controller {
         if ids.is_empty() {
             return out;
         }
-        for id in &ids {
-            self.blocked.remove(id);
-            if self.last_blocked.as_ref() == Some(id) {
-                self.last_blocked = None;
-            }
-        }
-        // The agent runs the command as it wrote it.
-        self.wrapped.retain(|_, w| !causes.contains(&w.action_seq));
+        self.forget_undelivered(&ids, &causes);
         let reason =
             "The hook reply came after the shim's timeout, so the agent did not get these actions.";
         self.push(
@@ -794,6 +791,18 @@ impl Controller {
             },
         );
         out
+    }
+
+    /// Drop state that assumed the agent got these actions (`seqs`: their entries).
+    fn forget_undelivered(&mut self, ids: &[String], seqs: &[u64]) {
+        for id in ids {
+            self.blocked.remove(id);
+            if self.last_blocked.as_ref() == Some(id) {
+                self.last_blocked = None;
+            }
+        }
+        // The agent runs the command as it wrote it.
+        self.wrapped.retain(|_, w| !seqs.contains(&w.action_seq));
     }
 
     /// The user allows one blocked edit (the latest one if `action` is None).
@@ -980,7 +989,9 @@ impl Controller {
                     self.push(&mut d, now_ms, vec![ev], Body::Config { overrides });
                 }
                 // The project's notes, kept by the user (F2, L5).
-                if !self.notes.is_empty() && self.on(Feature::Memory) {
+                // A resumed conversation has had its start: it gets the carry pack (U8).
+                let fresh = !self.restored;
+                if fresh && !self.notes.is_empty() && self.on(Feature::Memory) {
                     let lines: Vec<String> = self.notes.iter().map(|n| format!("- {n}")).collect();
                     let text = format!(
                         "belay: notes for this project, kept by the user:\n{}",
@@ -1006,11 +1017,17 @@ impl Controller {
                     }
                 }
                 // Memory (U4b): the last handoff here and the best memories.
-                let recalled_handoff = self.recall_at_start(&mut d, ev, now_ms);
+                let recalled_handoff = if fresh {
+                    self.recall_at_start(&mut d, ev, now_ms)
+                } else {
+                    let reason = "The conversation was resumed: this session's task, failure, and memories go with it.";
+                    self.carry_pack(&mut d, ev, now_ms, reason.into());
+                    false
+                };
                 // The commons (C1): who else is here, and how to say what this does.
                 let (others, here) = self.peers;
                 let findings = self.findings_here;
-                if (others > 0 || findings > 0) && self.on(Feature::Commons) {
+                if fresh && (others > 0 || findings > 0) && self.on(Feature::Commons) {
                     let mut parts = Vec::new();
                     if others > 0 {
                         parts.push(format!(
@@ -1050,7 +1067,7 @@ impl Controller {
                 }
                 // C4: what the last session in this repo left.
                 if let Some(h) = self.handoff.take() {
-                    if self.on(Feature::Commons) && !h.is_empty() && !recalled_handoff {
+                    if fresh && self.on(Feature::Commons) && !h.is_empty() && !recalled_handoff {
                         let text = crate::commons::handoff_text(&h, now_ms);
                         let applied = self.says();
                         let reason = format!("{} ended last in this repo and left a card.", h.from);
@@ -2426,6 +2443,7 @@ impl Controller {
 mod features;
 mod memory;
 mod notice;
+mod restore;
 mod snapshot;
 
 pub use features::{Feature, GuardSetting, ReportLevel, ALL_FEATURES};
