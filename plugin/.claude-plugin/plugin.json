@@ -1,6 +1,6 @@
 {
   "name": "belay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local supervisor for Claude Code: records what the agent does, guards test edits, finds fix loops. Needs the belay binary on PATH.",
   "homepage": "https://github.com/prakhar479/belay",
   "author": {

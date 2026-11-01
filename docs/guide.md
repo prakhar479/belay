@@ -51,14 +51,23 @@ belay doctor     # which belay runs, your Claude Code version, the data dir, the
 
 `belay doctor` also says whether your Claude Code version is one belay was checked against.
 
-### As a Claude Code plugin
+### Into Claude Code
 
-If you would rather keep typing `claude`, load belay's hooks as a plugin. The `belay` binary must be on PATH.
+`belay install` sets up the rest in one step. It shows each change and asks before it makes it (`--yes` skips the question).
 
 ```sh
-claude plugin marketplace add prakhar479/belay
-claude plugin install belay@belay
+belay install                  # the Claude Code plugin: belay's hooks, its skill, and slash commands
+belay install --statusline     # `belay status` as the status line, in ~/.claude/settings.json
+belay install --launcher       # prints an alias so `claude` starts under belay
 ```
+
+- `--plugin` (the default) runs `claude plugin marketplace add prakhar479/belay` and `claude plugin install belay@belay`. `--from <path>` uses a local clone instead. `BELAY_CLAUDE_BIN` picks the `claude` binary.
+- `--statusline` keeps every other key in `settings.json` and saves the old file as `settings.json.belay-backup`. It refuses to replace a status line that is not belay's unless you add `--force`.
+- `--launcher` prints the line to add to your shell config. belay does not edit it for you.
+
+`belay uninstall` removes the plugin and belay's status line. A status line that is not belay's stays. `belay doctor` says whether the plugin is installed and whether the status line is belay's.
+
+The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and four slash commands: `/belay:report`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
 
@@ -108,7 +117,7 @@ belay claude --belay-mode optimize
 belay mode optimize          # or switch the live session from another terminal
 ```
 
-**5. Put belay in your status line (optional).** Add this to `~/.claude/settings.json`. It replaces any status line you have. Outside a belay session it prints nothing.
+**5. Put belay in your status line (optional).** Run `belay install --statusline`, or add this to `~/.claude/settings.json` yourself. It replaces any status line you have. Outside a belay session it prints nothing.
 
 ```json
 "statusLine": { "type": "command", "command": "belay status" }
@@ -522,6 +531,7 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay fleet up\|status\|report\|merge\|down\|…` | Fleets |
 | `belay task add\|list\|show\|claim\|done\|blocked\|drop` | A fleet's task board |
 | `belay audit [range]` | (Experimental) what a diff did to tests and checks |
+| `belay install [--plugin] [--statusline] [--launcher]` · `belay uninstall` | Set belay up in Claude Code, or remove it |
 | `belay doctor` · `belay export` · `belay purge` | Install check, bug bundle, cleanup |
 
 Every command has `--help`.

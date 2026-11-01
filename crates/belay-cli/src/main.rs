@@ -15,6 +15,7 @@ mod export;
 mod findings;
 mod fleet;
 mod hub;
+mod install;
 mod ipc;
 mod launcher;
 mod learnstore;
@@ -130,6 +131,31 @@ enum Cmd {
     },
     /// List flags across all sessions, with what each one points at.
     Review,
+    /// Install belay into Claude Code: the plugin (default), the status line, or the
+    /// launcher alias. Shows each change and asks first.
+    Install {
+        #[command(flatten)]
+        parts: install::Parts,
+        /// Marketplace source for the plugin: a GitHub repo or a local clone
+        /// (default: prakhar479/belay).
+        #[arg(long)]
+        from: Option<String>,
+        /// Replace a status line that is not belay's.
+        #[arg(long)]
+        force: bool,
+        /// Do not ask before changing anything.
+        #[arg(long, short)]
+        yes: bool,
+    },
+    /// Undo `belay install`: the plugin and belay's status line by default. A status line
+    /// that is not belay's is left alone.
+    Uninstall {
+        #[command(flatten)]
+        parts: install::Parts,
+        /// Do not ask before changing anything.
+        #[arg(long, short)]
+        yes: bool,
+    },
     /// Check the install: which belay runs, the Claude Code version, the data dir, config.
     Doctor,
     /// One session as a sanitized JSON bundle (paths, home, user name, and secrets
@@ -934,6 +960,30 @@ fn run(cli: Cli) -> Result<i32> {
             println!("{} sessions removed", removed.len());
             Ok(0)
         }
+        Cmd::Install {
+            parts,
+            from,
+            force,
+            yes,
+        } => install::install(&install::Opts {
+            parts: parts.or(install::Parts {
+                plugin: true,
+                ..Default::default()
+            }),
+            from,
+            force,
+            yes,
+        }),
+        Cmd::Uninstall { parts, yes } => install::uninstall(&install::Opts {
+            parts: parts.or(install::Parts {
+                plugin: true,
+                statusline: true,
+                launcher: false,
+            }),
+            from: None,
+            force: false,
+            yes,
+        }),
         Cmd::Doctor => {
             let (report, healthy) = doctor::run();
             print!("{report}");

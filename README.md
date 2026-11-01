@@ -35,6 +35,7 @@ failing run's actual value (19.99 → 19.98). If the user wants it anyway, they 
 
 ```sh
 cargo install --git https://github.com/prakhar479/belay belay-cli   # or grab a binary from Releases
+belay install            # the Claude Code plugin: hooks, a skill, slash commands (asks first)
 
 belay retro --all        # what belay would have caught in sessions you already ran
 belay claude             # your next session, recorded (look mode: nothing changes for the agent)
@@ -71,7 +72,7 @@ belay is a working prototype. It supports Claude Code only, and its hook conform
 
 - **[Usage guide](docs/guide.md)**: install, the first session, every feature, config, and fleets.
 - **Design:** [reference](docs/belay-reference.md), [fleets](docs/fleet-topologies-2026-10-21.md), [commons](docs/commons-2026-10-22.md).
-- **Plugin:** `claude plugin marketplace add prakhar479/belay && claude plugin install belay@belay`, if you would rather keep typing `claude`.
+- **Plugin:** `belay install`, if you would rather keep typing `claude`. It runs `claude plugin marketplace add prakhar479/belay` and `claude plugin install belay@belay` for you.
 
 ## Contributing
 
