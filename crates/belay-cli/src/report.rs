@@ -7,10 +7,11 @@ use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use anyhow::{anyhow, Result};
+use belay_core::guard::GuardDecision;
 use belay_core::perception::{classify, test_write_targets, writes_files, OutputKind};
 use belay_core::record::SteerTrigger;
 use belay_core::text::truncate_chars;
-use belay_core::{ActionKind, Body, Entry, Event, PeerActivity};
+use belay_core::{ActionKind, Body, Entry, Event, NoticeLevel, PeerActivity};
 use serde_json::Value;
 
 /// Token usage from a Claude Code transcript. Field names confirmed in S5: totals match
@@ -133,8 +134,14 @@ pub fn minutes(ms: u64) -> String {
     }
 }
 
-fn status(applied: bool, done: &str, would: &str) -> String {
-    format!("[{}]", if applied { done } else { would })
+/// `[did]` for an applied action; `[would have did]` for one the agent lacked the
+/// capability for, or a retro.
+fn status(applied: bool, did: &str) -> String {
+    if applied {
+        format!("[{did}]")
+    } else {
+        format!("[would have {did}]")
+    }
 }
 
 /// Session numbers that retro over many sessions compares.
@@ -284,63 +291,106 @@ pub fn coverage(
     out
 }
 
-/// What belay did in a session, in one line: the launcher prints it at the end (R3.2).
-pub fn one_line(entries: &[Entry]) -> String {
-    let t = totals(entries);
-    let (mut tools, mut shaped, mut saved, mut applied) = (0u64, 0u64, 0u64, false);
+/// What belay did in a session, from the ledger: the status line and the exit summary.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Did {
+    /// Edits and commands belay stopped.
+    pub blocked: u64,
+    /// Tool output tokens summaries kept from the agent.
+    pub kept_out: u64,
+    /// Fixes this session learned, and ones it was told about.
+    pub memories: u64,
+    /// Applied actions by kind (plural nouns), in a stable order.
+    pub by_kind: BTreeMap<&'static str, u64>,
+    /// The latest handoff the session left.
+    pub handoff: Option<String>,
+    /// Claude Code ran a command as written although belay rewrote it.
+    pub rewrite_ignored: bool,
+}
+
+pub fn did(entries: &[Entry]) -> Did {
+    let mut d = Did::default();
     for e in entries {
         match &e.body {
-            Body::Event {
-                event: Event::ToolCompleted { .. },
-            } => tools += 1,
             Body::Action {
-                action:
+                id,
+                action,
+                reason,
+                applied: true,
+                ..
+            } => {
+                let (_, noun) = belay_core::notice_for(id, action, reason, false);
+                *d.by_kind.entry(noun).or_default() += 1;
+                match action {
+                    ActionKind::Guard {
+                        decision: GuardDecision::Deny | GuardDecision::Ask,
+                        ..
+                    }
+                    | ActionKind::BlockCommand { .. } => d.blocked += 1,
                     ActionKind::Shape {
                         from_tokens,
                         to_tokens,
                         ..
-                    },
-                applied: a,
-                unsupported: false,
-                ..
-            } => {
-                shaped += 1;
-                saved += from_tokens.saturating_sub(*to_tokens) as u64;
-                applied |= *a;
+                    } => d.kept_out += from_tokens.saturating_sub(*to_tokens) as u64,
+                    ActionKind::Recall { .. } => d.memories += 1,
+                    _ => {}
+                }
+            }
+            Body::Learned { .. } => d.memories += 1,
+            Body::Event {
+                event: Event::CardSet {
+                    handoff: Some(h), ..
+                },
+            } => d.handoff = Some(h.clone()),
+            Body::Undelivered { reason, .. } if reason.contains("ignored belay's rewrite") => {
+                d.rewrite_ignored = true
             }
             _ => {}
         }
     }
-    let plural = |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-    let mut parts = vec![plural(tools, "tool call", "tool calls")];
-    if shaped > 0 {
-        let (verb, saving) = if applied {
-            ("shaped", "saved")
-        } else {
-            ("would shape", "saving")
-        };
-        parts.push(format!(
-            "{verb} {}, {saving} {} tokens",
-            plural(shaped, "output", "outputs"),
-            k(saved)
-        ));
-    }
-    if t.guard_flags > 0 {
-        parts.push(plural(t.guard_flags, "guard flag", "guard flags"));
-    }
-    if t.loops > 0 {
-        parts.push(plural(t.loops, "loop", "loops"));
-    }
-    let ignored = entries.iter().any(|e| {
-        matches!(&e.body, Body::Undelivered { reason, .. } if reason.contains("ignored belay's rewrite"))
-    });
-    if ignored {
-        parts.push("Claude Code ignored belay's rewrite (run scripts/conformance.py)".into());
-    }
-    parts.join(" · ")
+    d
 }
 
-/// `belay status`: "belay · 12 tool calls · …", or "belay paused (guard) · …" (R3.5).
+/// "3 summaries", "1 summary": `noun` is plural.
+fn count(n: u64, noun: &str) -> String {
+    if n != 1 {
+        return format!("{n} {noun}");
+    }
+    let one = match noun.strip_suffix("ies") {
+        Some(stem) => format!("{stem}y"),
+        None => noun.strip_suffix('s').unwrap_or(noun).to_string(),
+    };
+    format!("1 {one}")
+}
+
+/// What the launcher prints when the agent exits: 3 to 5 lines (U2b).
+pub fn exit_summary(id: &str, entries: &[Entry]) -> String {
+    let d = did(entries);
+    let mut out = format!("belay: session {id} ended.\n");
+    let mut kinds: Vec<(&str, u64)> = d.by_kind.iter().map(|(k, n)| (*k, *n)).collect();
+    // The most frequent first; ties by name, so the line is stable.
+    kinds.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+    if kinds.is_empty() {
+        out.push_str("  did: nothing; no action was needed.\n");
+    } else {
+        let parts: Vec<String> = kinds.iter().map(|(k, n)| count(*n, k)).collect();
+        let _ = writeln!(out, "  did: {}", parts.join(" · "));
+    }
+    if d.kept_out > 0 {
+        let _ = writeln!(out, "  kept out: {} tokens of tool output", k(d.kept_out));
+    }
+    if let Some(h) = &d.handoff {
+        let _ = writeln!(out, "  handoff: {}", truncate_chars(h, 120));
+    }
+    if d.rewrite_ignored {
+        out.push_str("  Claude Code ignored belay's rewrite (run scripts/conformance.py)\n");
+    }
+    out.push_str("  `belay report` for more");
+    out
+}
+
+/// `belay status`: "belay · 2 blocked · 12k tokens kept out · 1 memory", or
+/// "belay paused (guard) · …" (R3.5). Short: a status line has little room.
 pub fn status_line(entries: &[Entry]) -> String {
     let state = match (recorded_in_look(entries), paused(entries)) {
         (true, _) => " (look mode, 0.1)".to_string(),
@@ -348,7 +398,16 @@ pub fn status_line(entries: &[Entry]) -> String {
         (_, p) if p.iter().any(|f| f == belay_core::ALL_FEATURES) => " paused".to_string(),
         (_, p) => format!(" paused ({})", p.join(", ")),
     };
-    format!("belay{state} · {}", one_line(entries))
+    let d = did(entries);
+    let mut line = format!(
+        "belay{state} · {} blocked · {} tokens kept out",
+        d.blocked,
+        k(d.kept_out)
+    );
+    if d.memories > 0 {
+        let _ = write!(line, " · {}", count(d.memories, "memories"));
+    }
+    line
 }
 
 /// A 0.1 session that ran in look mode, for all or part of it: belay acted on nothing
@@ -563,7 +622,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                 "[user undid] {} file(s) rolled back to {id}",
                 files.len()
             )),
-            Body::Snapshot { .. } => {}
+            Body::Snapshot { .. } | Body::Notice { .. } => {}
             Body::Judgment { .. } => judgments += 1,
             Body::Action {
                 action,
@@ -584,7 +643,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                     shaped_applied += u64::from(*applied);
                 }
                 ActionKind::Steer { trigger, text } => {
-                    let st = status(*applied, "steered", "would steer");
+                    let st = status(*applied, "steered");
                     match trigger {
                         SteerTrigger::Loop { duration_ms, .. } => {
                             let line = match duration_ms {
@@ -601,30 +660,31 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                 | ActionKind::Commons { text, .. }
                 | ActionKind::Handoff { text, .. } => recalled.push(format!(
                     "{} {}",
-                    status(*applied, "told", "would tell"),
+                    status(*applied, "told"),
                     text.trim_start_matches("belay: ")
                 )),
                 ActionKind::Fleet { text, .. } => fleet.push(format!(
                     "{} {}",
-                    status(*applied, "told", "would tell"),
+                    status(*applied, "told"),
                     text.trim_start_matches("belay: ")
                 )),
                 ActionKind::Wrap { .. } => wrapped += u64::from(*applied),
                 ActionKind::Retry { .. } => denied += 1,
                 ActionKind::BlockCommand { command } => guards.push(format!(
                     "{} the agent's `{}`: {reason}",
-                    status(*applied, "blocked", "would block"),
+                    status(*applied, "blocked"),
                     truncate_chars(command, 60)
                 )),
                 ActionKind::Guard { .. } if e.causes.iter().any(|c| overrides.contains(c)) => {
                     guards.push(format!("[allowed] {reason}"));
                 }
                 ActionKind::Guard { decision, .. } => {
-                    let d = format!("{decision:?}").to_lowercase();
-                    guards.push(format!(
-                        "{} {reason}",
-                        status(*applied, &d, &format!("would {d}"))
-                    ));
+                    let did = match decision {
+                        GuardDecision::Deny => "denied",
+                        GuardDecision::Ask => "asked",
+                        GuardDecision::Warn => "warned",
+                    };
+                    guards.push(format!("{} {reason}", status(*applied, did)));
                 }
             },
             Body::Adaptation { reason, .. } => adaptations.push(reason.clone()),
@@ -779,7 +839,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
     let verb = if shaped_applied > 0 {
         "applied"
     } else {
-        "would apply"
+        "would have applied"
     };
     if full || shaped > 0 {
         let _ = writeln!(
@@ -936,6 +996,12 @@ fn describe(e: &Entry) -> String {
         Body::Config { overrides } => format!("config {overrides:?}"),
         Body::Format { version } => format!("ledger format {version}"),
         Body::Override { action } => format!("user allowed {action} once"),
+        Body::Notice { notice, shown } => format!(
+            "notice ({}, {}): {}",
+            level_name(notice.level),
+            if *shown { "shown" } else { "not shown" },
+            notice.text
+        ),
         Body::Snapshot {
             id,
             commit,
@@ -987,6 +1053,14 @@ fn describe(e: &Entry) -> String {
         }
     };
     format!("#{} {body}", e.seq)
+}
+
+pub fn level_name(l: NoticeLevel) -> &'static str {
+    match l {
+        NoticeLevel::Warn => "warn",
+        NoticeLevel::Act => "act",
+        NoticeLevel::Info => "info",
+    }
 }
 
 /// Cause chain for an action (a-N), output (o-N), or ledger entry number.
@@ -1103,7 +1177,7 @@ mod tests {
                 .ends_with("· recorded in look mode (0.1)"),
             "{r}"
         );
-        assert!(r.contains("[would deny]"), "{r}");
+        assert!(r.contains("[would have denied]"), "{r}");
         assert!(r.contains("Pauses: 1"), "{r}");
         assert!(r.contains("mode optimize (0.1)"), "{r}");
         assert!(
@@ -1206,7 +1280,7 @@ mod tests {
             r.contains("Bash output: 10.0k tokens (est.) · noise 70% (est.)"),
             "{r}"
         );
-        assert!(r.contains("Shaping: 1 outputs · 4.0k → 1.0k tokens · saves 3.0k (30% of Bash output) [would apply]"), "{r}");
+        assert!(r.contains("Shaping: 1 outputs · 4.0k → 1.0k tokens · saves 3.0k (30% of Bash output) [would have applied]"), "{r}");
         assert!(r.contains("Not shapeable: 1 outputs"), "{r}");
     }
 
@@ -1239,7 +1313,7 @@ mod tests {
             true,
             false,
         );
-        assert!(r.contains("[deny] reason a-1"), "{r}");
+        assert!(r.contains("[denied] reason a-1"), "{r}");
         assert!(r.contains("[user allowed] a-1 once"), "{r}");
         assert!(r.contains("[allowed] reason a-2"), "{r}");
     }
@@ -1342,22 +1416,51 @@ mod tests {
     }
 
     #[test]
-    fn one_line_says_what_belay_did() {
+    fn status_and_exit_summary_say_what_belay_did() {
         let saved = |applied| shape("a-1", 5_000, 400, applied, false);
         let entries = [entry(0, saved(true)), entry(1, saved(true))];
         assert_eq!(
-            one_line(&entries),
-            "0 tool calls · shaped 2 outputs, saved 9.2k tokens"
+            status_line(&entries),
+            "belay · 0 blocked · 9.2k tokens kept out"
         );
         assert_eq!(
-            one_line(&[entry(0, saved(false))]),
-            "0 tool calls · would shape 1 output, saving 4.6k tokens"
+            exit_summary("s1", &entries),
+            "belay: session s1 ended.\n  did: 2 summaries\n  kept out: 9.2k tokens of tool output\n  `belay report` for more"
         );
-        // Output the agent cannot replace is not counted as shaped.
-        assert_eq!(
-            one_line(&[entry(0, shape("a-1", 5_000, 400, false, true))]),
-            "0 tool calls"
-        );
+        // What the agent could not take is not what belay did.
+        let none = [
+            entry(0, saved(false)),
+            entry(1, shape("a-1", 5_000, 400, false, true)),
+        ];
+        assert_eq!(status_line(&none), "belay · 0 blocked · 0 tokens kept out");
+        assert!(exit_summary("s1", &none).contains("did: nothing"));
+        let guard = Body::Action {
+            id: "a-2".into(),
+            action: ActionKind::Guard {
+                path: "t.py".into(),
+                decision: GuardDecision::Deny,
+            },
+            reason: "r".into(),
+            applied: true,
+            unsupported: false,
+        };
+        let handoff = Body::Event {
+            event: Event::CardSet {
+                name: None,
+                task: None,
+                note: None,
+                offers: None,
+                topics: None,
+                handoff: Some("done: x; next: y".into()),
+            },
+        };
+        let entries = [entry(0, saved(true)), entry(1, guard), entry(2, handoff)];
+        assert!(status_line(&entries).starts_with("belay · 1 blocked · 4.6k"));
+        let s = exit_summary("s1", &entries);
+        assert!(s.contains("did: 1 blocked edit · 1 summary\n"), "{s}");
+        assert!(s.contains("handoff: done: x; next: y\n"), "{s}");
+        assert_eq!(count(2, "retries"), "2 retries");
+        assert_eq!(count(1, "retries"), "1 retry");
     }
 
     #[test]
@@ -1390,10 +1493,10 @@ mod tests {
         );
         assert!(r.contains("Loops (22 min in loops): 2"), "{r}");
         assert!(
-            r.contains("[would steer] after 22 min: belay: stuck"),
+            r.contains("[would have steered] after 22 min: belay: stuck"),
             "{r}"
         );
-        assert!(r.contains("  - [would steer] belay: stuck"), "{r}");
+        assert!(r.contains("  - [would have steered] belay: stuck"), "{r}");
     }
 
     #[test]

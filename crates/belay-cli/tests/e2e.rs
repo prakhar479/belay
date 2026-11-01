@@ -82,9 +82,12 @@ fn run_session(name: &str, config: &str, flags: &[&str]) -> (PathBuf, PathBuf) {
         .env("BELAY_CLAUDE_BIN", fake_agent(&dir))
         .env("BELAY_HOOK_TIMEOUT_MS", "2000")
         .env("BELAY_CONFIG", &file)
-        .status()
+        .stdin(std::process::Stdio::null())
+        .output()
         .unwrap();
-    assert!(status.success());
+    assert!(status.status.success());
+    // What the launcher told the user (the exit summary).
+    fs::write(dir.join("launcher-err.txt"), &status.stderr).unwrap();
     let session = fs::read_dir(home.join("sessions"))
         .unwrap()
         .next()
@@ -229,6 +232,103 @@ fn a_default_session_shapes_and_guards() {
     let why = belay(&["why", "a-1"], &session);
     assert!(why.contains("action a-1 (shape, applied)"), "{why}");
     assert!(why.contains("caused by"), "{why}");
+}
+
+/// U2b: the exit summary says what belay did, in a few lines.
+#[test]
+fn launcher_prints_an_exit_summary() {
+    let (dir, _session) = run_session("exitsum", "", &[]);
+    let err = fs::read_to_string(dir.join("launcher-err.txt")).unwrap();
+    let start = err.find("belay: session ").expect(&err);
+    let summary: Vec<&str> = err[start..].lines().take_while(|l| !l.is_empty()).collect();
+    assert!(summary[0].ends_with(" ended."), "{err}");
+    assert!(
+        summary[1].starts_with("  did: ") && summary[1].contains("1 blocked edit"),
+        "{err}"
+    );
+    assert!(
+        summary.iter().any(|l| l.starts_with("  kept out: ")),
+        "{err}"
+    );
+    assert!(summary.contains(&"  `belay report` for more"), "{err}");
+}
+
+/// U2b (rule 5): what belay did reaches the user as `systemMessage`, never the model's
+/// context; `report` decides which notices the user sees; `belay watch` prints them.
+#[test]
+fn notices_reach_the_user_not_the_model() {
+    let dir = tmp("notices");
+    let read = |f: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(f)).unwrap()).unwrap()
+    };
+    let parse = |out: &str| -> serde_json::Value { serde_json::from_str(out).unwrap() };
+    let mut plain = read("post_tool_use_bash.json");
+    plain["tool_input"]["command"] = "ls".into();
+    plain["tool_response"]["stdout"] = "a\nb\n".into();
+
+    // The default, `report = quiet`: warnings only.
+    let session = dir.join("quiet");
+    let (daemon, sock) = start_daemon(&session, "");
+    assert_eq!(
+        hook(&sock, "PostToolUse", &plain),
+        "",
+        "a plain call: no output"
+    );
+    let shaped = parse(&hook(
+        &sock,
+        "PostToolUse",
+        &read("post_tool_use_bash.json"),
+    ));
+    assert!(shaped["hookSpecificOutput"]["updatedToolOutput"].is_object());
+    assert!(
+        shaped.get("systemMessage").is_none(),
+        "quiet: no Act notice"
+    );
+    let denied = parse(&hook(
+        &sock,
+        "PreToolUse",
+        &read("pre_tool_use_edit_test.json"),
+    ));
+    assert_eq!(denied["hookSpecificOutput"]["permissionDecision"], "deny");
+    let msg = denied["systemMessage"].as_str().unwrap();
+    assert!(msg.starts_with("belay: blocked an edit"), "{msg}");
+    assert!(!denied["hookSpecificOutput"]["permissionDecisionReason"]
+        .as_str()
+        .unwrap()
+        .contains(msg));
+    assert!(denied["hookSpecificOutput"]
+        .get("additionalContext")
+        .is_none());
+
+    // `belay watch` prints every recorded notice, also those `quiet` kept back.
+    drop(daemon);
+    let out = Command::new(bin())
+        .args(["watch", "--session"])
+        .arg(&session)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let watched = String::from_utf8(out.stdout).unwrap();
+    assert!(watched.contains(" act  summarized output: "), "{watched}");
+    assert!(watched.contains(" warn blocked an edit"), "{watched}");
+    assert!(
+        watched
+            .trim_end()
+            .ends_with("ended. `belay report` for more."),
+        "{watched}"
+    );
+
+    // `report = normal`: a summary is told too.
+    let (_daemon, sock) = start_daemon(&dir.join("normal"), "report = \"normal\"\n");
+    let shaped = parse(&hook(
+        &sock,
+        "PostToolUse",
+        &read("post_tool_use_bash.json"),
+    ));
+    assert!(shaped["systemMessage"]
+        .as_str()
+        .unwrap()
+        .starts_with("belay: summarized output"));
 }
 
 #[test]
@@ -829,7 +929,9 @@ fn status_line_shows_mode_and_counts() {
     };
     let line = status(Some(&session));
     assert!(
-        line.starts_with("belay · 1 tool call · shaped 1 output, saved "),
+        line.starts_with("belay · 0 blocked · ")
+            && line.ends_with(" tokens kept out\n")
+            && !line.contains(" 0 tokens"),
         "{line}"
     );
     assert_eq!(status(None), "", "nothing outside a belay session");
@@ -865,7 +967,7 @@ fn late_hook_is_not_recorded_as_applied() {
         "too late: no response"
     );
     let report = belay(&["report"], &session);
-    assert!(report.contains("[would deny]"), "{report}");
+    assert!(report.contains("[would have denied]"), "{report}");
     assert!(
         !send(now + 60_000)["output"].is_null(),
         "in time: the guard denies"

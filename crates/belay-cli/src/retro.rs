@@ -373,8 +373,8 @@ mod tests {
         );
         let out = run(Path::new(&path), false).unwrap();
         assert!(out.contains("Loops (13 s in loops): 1"), "{out}");
-        assert!(out.contains("[would steer] after 13 s:"), "{out}");
-        assert!(out.contains("would steer"), "{out}");
+        assert!(out.contains("[would have steered] after 13 s:"), "{out}");
+        assert!(out.contains("would have steered"), "{out}");
         // R2.2: coverage lines.
         assert!(out.contains("Bash output by kind: test 100%"), "{out}");
         let wrapped = if crate::config::load().wrap_tests {

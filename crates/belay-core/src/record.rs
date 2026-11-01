@@ -113,6 +113,15 @@ pub enum Body {
         #[serde(default, skip_serializing_if = "is_false")]
         undo: bool,
     },
+    /// What the user was told about this hook's actions (at most one per hook; rule 5:
+    /// never the model). `shown`: the report setting and the agent let it reach the
+    /// user; `belay watch` shows every notice. Causes: the action it is about.
+    Notice {
+        #[serde(flatten)]
+        notice: Notice,
+        #[serde(default, skip_serializing_if = "is_false")]
+        shown: bool,
+    },
 }
 
 /// Read actions that an `undelivered` entry names as not applied, with a note in the

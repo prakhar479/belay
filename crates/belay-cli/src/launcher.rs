@@ -200,12 +200,8 @@ fn finish(s: &mut Session) {
         let _ = fs::remove_dir_all(&s.dir);
         return;
     }
-    let summary = crate::report::one_line(&entries);
     let audit = finish_audit(&s.dir);
-    eprintln!(
-        "belay: session {} ended · {summary} · `belay report` for details",
-        s.id
-    );
+    eprintln!("{}", crate::report::exit_summary(&s.id, &entries));
     if let Some(line) = audit {
         eprintln!("belay: {line}");
     }

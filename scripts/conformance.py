@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Conformance check: do the Claude Code behaviors belay depends on still hold? (R3.1)
 
-Runs one short, scripted Claude Code session under `belay claude --belay-mode optimize`
-in a throwaway project, in auto mode, then checks the ledger, the raw hook payloads,
+Runs one short, scripted Claude Code session under `belay claude` in a throwaway project, in auto mode, then checks the ledger, the raw hook payloads,
 and the transcript. Run it after each Claude Code update.
 
     scripts/conformance.py                      # uses target/debug/belay
@@ -128,8 +127,7 @@ def main() -> int:
         env.pop("BELAY_SOCKET", None)
         env.pop("BELAY_SESSION_DIR", None)
         run = subprocess.run(
-            [args.belay, "claude", "--belay-mode", "optimize",
-             "-p", PROMPT, "--permission-mode", "auto"],
+            [args.belay, "claude", "-p", PROMPT, "--permission-mode", "auto"],
             cwd=proj, env=env, capture_output=True, text=True, timeout=args.timeout,
         )
         stderr = run.stderr
@@ -185,6 +183,23 @@ def main() -> int:
           "assert total([1, 2, 3]) == 6" in (proj / "tests/test_api.py").read_text())
     check("A Bash write that weakens a test is warned in context (additionalContext)",
           "the last command changed" in all_text)
+    # U2b (rule 5): a notice is a top-level `systemMessage`, for the user only.
+    # [Verify] R3.6: Claude Code shows it to the user on each hook event, and it never
+    # reaches the model. The transcript is the only record a scripted run has of it.
+    shown = [e for e in ledger if e.get("kind") == "notice" and e.get("shown")]
+    check("belay sent the guard deny as a notice (systemMessage)",
+          any(n["text"].startswith("blocked an edit") for n in shown),
+          "; ".join(n["text"] for n in shown) or "no shown notice")
+    notice_text = "belay: blocked an edit"
+    to_model = [d for d in transcript
+                if (d.get("message") or {}).get("role") in ("user", "assistant")
+                and notice_text in json.dumps(d.get("message"))]
+    for_user = [d for d in transcript
+                if notice_text in json.dumps(d) and d not in to_model]
+    check("The notice reached the user's transcript, outside the model's messages",
+          for_user, ", ".join(sorted({str(d.get("type")) for d in for_user})) or "not in transcript")
+    check("The model never saw the notice", not to_model and
+          not any(notice_text in t for t in seen.values()))
     denied = payloads("PermissionDenied")
     check("Settings with a PermissionDenied hook load (the session ran)", ledger)
 

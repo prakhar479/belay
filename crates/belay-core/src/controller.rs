@@ -1187,6 +1187,7 @@ impl Controller {
             self.deliver_fleet(&mut d, now_ms);
         }
         self.note_for_card(&for_card, &d, now_ms);
+        self.add_notice(&mut d, now_ms, true);
         d
     }
 
@@ -1736,6 +1737,8 @@ impl Controller {
         );
         self.run_failed = None;
         self.note_actions(&d, now_ms);
+        // `belay run` prints no notice: the user hears of it in the ledger and watch.
+        self.add_notice(&mut d, now_ms, false);
         if let Some(w) = self.wrapped.get_mut(tool_use_id) {
             w.pending = self.deferred.take();
             w.context = std::mem::take(&mut d.response.add_context);
@@ -2374,9 +2377,11 @@ impl Controller {
 }
 
 mod features;
+mod notice;
 mod snapshot;
 
 pub use features::{Feature, GuardSetting, ReportLevel, ALL_FEATURES};
+pub use notice::notice_for;
 
 #[cfg(test)]
 mod tests;
