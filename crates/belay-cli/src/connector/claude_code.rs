@@ -35,7 +35,7 @@ pub fn tool_kind(tool: &str) -> ToolKind {
 
 /// Claude Code's directory name for a project: the working directory with every
 /// character that is not a letter or digit replaced by `-`.
-/// [Verify] conformance `project_dir_name`: checked against real `~/.claude/projects`.
+/// Checked live by conformance (`project_dir_name`, Claude Code 2.1.316).
 pub fn project_dir_name(cwd: &Path) -> String {
     cwd.to_string_lossy()
         .chars()
@@ -267,7 +267,7 @@ pub fn extract_output(v: &Value) -> String {
         Value::Object(o) if o.contains_key("content") => extract_output(&o["content"]),
         // Read: `{type, file: {filePath, content, numLines, startLine, totalLines}}`, seen
         // in transcripts' `toolUseResult` (2.1.316). An image or notebook has no `content`.
-        // [Verify] conformance: PostToolUse Read `tool_response` has the same shape.
+        // PostToolUse Read's `tool_response` has the same shape (conformance, 2.1.316).
         Value::Object(o) if o.get("file").is_some_and(Value::is_object) => o["file"]
             .get("content")
             .and_then(Value::as_str)
@@ -792,8 +792,8 @@ impl ClaudeCode {
     /// The part of the reply the agent acts on. Notices never go here (rule 5).
     fn encode_for_agent(&self, hook_event: &str, payload: &Value, r: &Response) -> Option<Value> {
         // Verify before done (U6.1): a Stop block keeps the agent working, with the
-        // reason as its next instruction. [Verify] live: scripts/conformance.py
-        // `stop_block` checks that the agent continues and runs the command.
+        // reason as its next instruction. Checked live (conformance, 2.1.316): the agent
+        // went on and ran the command, and the next Stop came with `stop_hook_active`.
         if hook_event == "Stop" {
             return r
                 .continue_turn
