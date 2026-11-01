@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>belay · a local supervisor for Claude Code</title>
-<meta name="description" content="belay is an open-source, local supervisor for Claude Code. It sits on the hooks and sees every tool call before the agent reads it. It guards your tests, catches loops, trims long test output, and records every action with a reason.">
+<title>belay · one install that upgrades Claude Code</title>
+<meta name="description" content="belay is an open-source, local supervisor for Claude Code. One install, and each session starts where the last one stopped. It guards your tests, catches loops, runs risky work in a sandbox, and tells you what it did, and why.">
 <link rel="canonical" href="https://prakhar479.github.io/belay/">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -14,17 +14,17 @@
 <meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://prakhar479.github.io/belay/">
 <meta property="og:title" content="belay: your agent climbs, belay holds the rope">
-<meta property="og:description" content="An open-source, local supervisor for Claude Code. It guards your tests, catches loops, trims long test output, and records every action with a reason.">
+<meta property="og:description" content="One install upgrades Claude Code. Sessions start where the last one stopped. Tests stay honest. Risky work runs in a sandbox.">
 <meta property="og:image" content="https://prakhar479.github.io/belay/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Beside it, a terminal shows belay denying an edit that weakens a test.">
+<meta property="og:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="belay: your agent climbs, belay holds the rope">
-<meta name="twitter:description" content="An open-source, local supervisor for Claude Code. It guards your tests, catches loops, trims long test output, and records every action with a reason.">
+<meta name="twitter:description" content="One install upgrades Claude Code. Sessions start where the last one stopped. Tests stay honest. Risky work runs in a sandbox.">
 <meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
-<meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Beside it, a terminal shows belay denying an edit that weakens a test.">
+<meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b4f8dc'/%3E%3Cstop offset='.5' stop-color='%233ee6b4'/%3E%3Cstop offset='1' stop-color='%231fb8d6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='%23071012'/%3E%3Cg transform='rotate(30 16 16)'%3E%3Cpath d='M22 11.8A6 6 0 0 0 10 11.8V20.2A6 6 0 0 0 22 20.2' fill='none' stroke='url(%23g)' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M22 19.4V14' stroke='%23eef5f3' stroke-width='2.4' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
 <script>
   (function () {
@@ -713,14 +713,11 @@ h2.h2 .mute { color: var(--ink-3); }
   font-size: 14.5px; color: var(--ink-3); transition: border-color .4s ease, color .4s ease, background .4s ease; position: relative; overflow: hidden;
 }
 .ret .arrow { font-family: var(--mono); color: var(--ink-3); flex: none; }
-.ret .rtx-on { display: none; }
 .ret .lane { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
 .ret .lane i { position: absolute; top: 0; height: 2px; width: 120px; right: -120px; background: linear-gradient(270deg, transparent, var(--accent-strong)); opacity: 0; }
-.how[data-mode="optimize"] .ret { border-style: solid; border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
-.how[data-mode="optimize"] .ret .arrow { color: var(--accent); }
-.how[data-mode="optimize"] .ret .rtx-on { display: inline; }
-.how[data-mode="optimize"] .ret .rtx-off { display: none; }
-.how[data-mode="optimize"] .ret .lane i { opacity: 1; animation: lane 2.2s linear infinite; }
+.ret { border-style: solid; border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
+.ret .arrow { color: var(--accent); }
+.ret .lane i { opacity: 1; animation: lane 2.2s linear infinite; }
 @keyframes lane { from { right: -120px; } to { right: 100%; } }
 @media (min-width: 1000px) { .ret { margin-left: 0; width: calc(80% - 8px); } }
 
@@ -728,29 +725,13 @@ h2.h2 .mute { color: var(--ink-3); }
 @media (min-width: 1000px) { .modes-text { grid-column: 1 / span 4; } .modes-panel { grid-column: 6 / span 7; } }
 .modes-text h3 { font-size: clamp(26px, 3vw, 36px); letter-spacing: -.03em; line-height: 1.1; }
 .modes-text p { margin-top: 12px; color: var(--ink-2); }
-.seg-ctl { display: inline-flex; padding: 4px; border-radius: 12px; background: var(--panel-2); border: 1px solid var(--line); gap: 2px; margin-bottom: 14px; }
-.seg-ctl button { font: 600 14px/1 var(--mono); padding: 10px 16px; border-radius: 9px; border: 1px solid transparent; background: transparent; color: var(--ink-3); cursor: pointer; }
-.seg-ctl button[aria-pressed="true"] { background: var(--panel); color: var(--ink); border-color: var(--line-2); box-shadow: var(--card-shadow); }
-.mtable { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--card-shadow); overflow: hidden; font-size: 15px; }
-.mtable th, .mtable td { text-align: left; vertical-align: top; padding: 13px 16px; border-top: 1px solid var(--line); transition: background .3s ease, color .3s ease; }
-.mtable thead th, .mtable thead td { border-top: none; font: 650 17px/1.3 var(--display); letter-spacing: -.01em; padding-top: 16px; }
-.mtable thead .tag { display: inline-block; vertical-align: 2px; margin-left: 6px; font: 600 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; padding: 4px 7px; border-radius: 999px; border: 1px solid var(--line-2); color: var(--ink-3); }
-.mtable tbody th { font: 500 11.5px/1.5 var(--mono); text-transform: uppercase; letter-spacing: .08em; color: var(--ink-3); width: 22%; padding-top: 15px; }
-.mtable td { color: var(--ink); }
-.mtable td.none { color: var(--ink-3); }
-.mtable td.hot { color: var(--accent); font-weight: 650; }
-.mtable code { font-size: 12.5px; color: var(--ink); overflow-wrap: anywhere; }
-.how[data-mode="look"] .mtable .c-look, .how[data-mode="optimize"] .mtable .c-opt { background: var(--accent-soft); }
-@media (max-width: 599px) {
-  .mtable, .mtable tbody, .mtable tr, .mtable th, .mtable td { display: block; width: auto; }
-  .mtable thead { display: none; }
-  .mtable tbody tr { padding: 12px 14px 14px; border-top: 1px solid var(--line); }
-  .mtable tbody tr:first-child { border-top: none; }
-  .mtable tbody th, .mtable td { border: none; padding: 0; }
-  .mtable tbody th { margin-bottom: 6px; width: auto; }
-  .mtable td { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; padding: 5px 8px; border-radius: 8px; }
-  .mtable td::before { content: attr(data-m); font: 600 12px/1.6 var(--mono); color: var(--ink-3); }
-}
+.modes-text p.was { font-size: 14.5px; color: var(--ink-3); }
+.modes-panel .see-win { margin-top: 14px; }
+.see-win pre, .compare .win pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.compare { display: grid; gap: 14px; }
+.cmp-k { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+.cmp-cap { font-size: 14px; color: var(--ink-3); }
+.steps-then { border-top: 1px solid var(--t-line); }
 
 /* ---------- Sessions + fleets ---------- */
 .split { gap: 16px; align-items: start; }
@@ -924,7 +905,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
   .wire .pkt { display: none; }
 }
 @media print {
-  .nav, .chapters, .copy, .mini-copy, .seg-ctl, .rope-drop { display: none; }
+  .nav, .chapters, .copy, .mini-copy, .rope-drop { display: none; }
   .js .reveal { opacity: 1 !important; transform: none !important; }
   .js .pending { opacity: 1 !important; transform: none !important; }
 }
@@ -933,7 +914,6 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 .no-js .ibox[hidden] { display: flex; margin-top: 10px; }
 .no-js .qs-panel[hidden] { display: block; border-top: 1px dashed var(--t-line); }
 .no-js .qs-panel::before { content: attr(data-label); display: block; padding: 12px 16px 0; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--t-teal); }
-.no-js .seg-ctl { display: none; }
 .no-js .theme-btn, .no-js .copy, .no-js .mini-copy { display: none; }
 </style>
 </head>
@@ -974,9 +954,10 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       belay
     </a>
     <nav class="nav-links" aria-label="Sections">
-      <a href="#demo">Demo</a>
-      <a href="#features">Features</a>
-      <a href="#how">How it works</a>
+      <a href="#memory">Memory</a>
+      <a href="#features">Honesty</a>
+      <a href="#sandbox">Sandboxes</a>
+      <a href="#how">What you see</a>
       <a href="#sessions">Sessions</a>
       <a href="#status">Status</a>
     </nav>
@@ -1001,28 +982,30 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="cols"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
   </div>
   <div class="wrap hero-inner">
-    <a class="pill" href="#status"><span class="tag">Prototype</span> Open source, for Claude Code <span class="go" aria-hidden="true">→</span></a>
+    <a class="pill" href="#status"><span class="tag">0.2</span> An open-source prototype, for Claude Code <span class="go" aria-hidden="true">→</span></a>
     <h1 class="hero-title" id="hero-title">
       <span class="line">Your agent climbs.</span>
       <span class="line grad-text">belay holds the rope.</span>
     </h1>
-    <p class="hero-lede"><strong>A local supervisor for Claude Code.</strong> It sees every tool call, and its output, before the agent reads it. It guards your tests, catches loops, trims long test output, and writes down why.</p>
+    <p class="hero-lede"><strong>One install upgrades Claude Code.</strong> Each session starts where the last one stopped. Tests stay honest. Risky work runs in a sandbox. belay tells you what it did, and why.</p>
 
     <div class="install" data-tabs>
       <div class="install-tabs" role="tablist" aria-label="Install method">
         <button class="itab" role="tab" id="it-cargo" aria-controls="ip-cargo" aria-selected="true" tabindex="0" type="button">cargo</button>
-        <button class="itab" role="tab" id="it-plugin" aria-controls="ip-plugin" aria-selected="false" tabindex="-1" type="button">claude plugin</button>
+        <button class="itab" role="tab" id="it-bin" aria-controls="ip-bin" aria-selected="false" tabindex="-1" type="button">binary</button>
       </div>
       <div class="ibox" role="tabpanel" id="ip-cargo" aria-labelledby="it-cargo">
-        <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</pre>
-        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy the install command"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+        <pre tabindex="0" role="region" aria-label="Install commands, with cargo"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli
+<span class="ps">$ </span>belay install</pre>
+        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli&#10;belay install" aria-label="Copy the install commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
       </div>
-      <div class="ibox" role="tabpanel" id="ip-plugin" aria-labelledby="it-plugin" hidden>
-        <pre tabindex="0" role="region" aria-label="Plugin install commands"><span class="ps">$ </span>claude plugin marketplace add prakhar479/belay
-<span class="ps">$ </span>claude plugin install belay@belay</pre>
-        <button class="copy" type="button" data-copy="claude plugin marketplace add prakhar479/belay&#10;claude plugin install belay@belay" aria-label="Copy the plugin commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+      <div class="ibox" role="tabpanel" id="ip-bin" aria-labelledby="it-bin" hidden>
+        <pre tabindex="0" role="region" aria-label="Install commands, from a release"><span class="ps">$ </span>curl -L https://github.com/prakhar479/belay/releases/latest/download/belay-&lt;version&gt;-&lt;target&gt;.tar.gz | tar xz
+<span class="ps">$ </span>mv belay-*/belay ~/.local/bin/
+<span class="ps">$ </span>belay install</pre>
+        <button class="copy" type="button" data-copy="mv belay-*/belay ~/.local/bin/&#10;belay install" aria-label="Copy the last two commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
       </div>
-      <p class="install-note">Rust 1.87+. Or get a binary from <a href="https://github.com/prakhar479/belay/releases">Releases</a>. Then run <code>belay claude</code> instead of <code>claude</code>.</p>
+      <p class="install-note">Rust 1.87+, or a binary from <a href="https://github.com/prakhar479/belay/releases">Releases</a>. <code>belay install</code> adds the Claude Code plugin. It shows each change and asks first. Then keep typing <code>claude</code>.</p>
     </div>
 
     <div class="cta-row">
@@ -1057,15 +1040,27 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <div class="term-bar">
           <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
           <div class="term-title" id="term-title">~/shop · claude</div>
-          <span class="mode-chip">optimize</span>
+          <span class="mode-chip">belay on</span>
         </div>
-        <p class="term-cap"><b>What the agent reads.</b> An illustrative session in optimize mode. belay's messages are real, word for word. In look mode they are only recorded.</p>
+        <p class="term-cap"><b>What the agent reads.</b> An illustrative session. belay's messages are real, word for word.</p>
         <div class="screen" id="screen">
 
-          <div class="scene" id="scene-guard" role="tabpanel" aria-labelledby="tab-guard" tabindex="0" data-title="~/shop · claude">
+          <div class="scene" id="scene-memory" role="tabpanel" aria-labelledby="tab-memory" tabindex="0" data-title="~/shop · claude">
+            <p class="scene-title">Memory</p>
+            <div class="ln cmd" data-step data-d="150"><span class="ps">$</span> claude</div>
+            <div class="msg" data-step data-d="700">
+              <div class="msg-head"><span class="stamp g">Recall</span> at the start of the session</div>
+              <p>belay: memory for this project (`belay memory list` shows it all; check that each still fits):<br>- The last session's handoff (m-12, 2 h ago): From shop-1. Task: fix date parsing. Changed: shop/dates.py, tests/test_dates.py. Last test: `pytest` failed (1 failing). Open failure: tests/test_dates.py::test_leap_year: assert None == date(2024, 2, 29). The agent's handoff: next: fix parse_date<br>- m-4 (gotcha, by user): integration tests need DB_URL; use make test-int</p>
+            </div>
+            <div class="ln user" data-step data-d="900" data-type><span class="ps">›</span> <span class="tx">carry on</span></div>
+            <div class="ln agent" data-step data-d="700"><span class="b">●</span> The leap-year test still fails. I'll start in parse_date.</div>
+            <div class="ln tool" data-step data-d="700"><span class="b">●</span> <span class="tn">Read</span><span class="ar">(</span>shop/dates.py<span class="ar">)</span></div>
+            <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
+          </div>
+
+          <div class="scene" id="scene-guard" role="tabpanel" aria-labelledby="tab-guard" tabindex="0" hidden data-title="~/shop · claude">
             <p class="scene-title">Guard</p>
-            <div class="ln cmd" data-step data-d="150"><span class="ps">$</span> belay claude --belay-mode optimize</div>
-            <div class="ln user" data-step data-d="450" data-type><span class="ps">›</span> <span class="tx">make the discount test pass</span></div>
+            <div class="ln user" data-step data-d="200" data-type><span class="ps">›</span> <span class="tx">make the discount test pass</span></div>
             <div class="ln tool" data-step data-d="650"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_discount.py<span class="ar">)</span></div>
             <div class="ln out" data-step data-d="500"><span class="br">└</span> <span class="red">FAILED</span> tests/test_discount.py::test_total</div>
             <div class="ln out" data-step data-d="90"><span class="br"> </span> <span class="red">E</span>   assert 19.98 == 19.99</div>
@@ -1127,39 +1122,24 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
             <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
           </div>
 
-          <div class="scene" id="scene-peers" role="tabpanel" aria-labelledby="tab-peers" tabindex="0" hidden data-title="~/shop · claude · session shop-2">
-            <p class="scene-title">Peers</p>
-            <div class="ln user" data-step data-d="200" data-type><span class="ps">›</span> <span class="tx">add tests for refunds</span></div>
-            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/payments.py<span class="ar">)</span></div>
-            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Write</span><span class="ar">(</span>tests/test_refunds.py<span class="ar">)</span></div>
-            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_refunds.py<span class="ar">)</span><span class="chip r">2 failed</span></div>
-            <div class="msg" data-step data-d="900">
-              <div class="msg-head"><span class="stamp t">Peer</span> from another live session</div>
-              <p>belay: shop-1 edited shop/payments.py after you did. Read it again before you change it.</p>
-            </div>
-            <div class="ln agent" data-step data-d="1300"><span class="b">●</span> Another session changed payments.py. I'll read it again first.</div>
-            <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Read</span><span class="ar">(</span>shop/payments.py<span class="ar">)</span></div>
-            <div class="ln" data-step data-d="500"><span class="ps">›</span> <span class="caret" aria-hidden="true"></span></div>
-          </div>
-
         </div>
       </div>
     </div>
 
     <div class="chapters" role="tablist" aria-label="Demo scenes" id="chapters">
-      <button class="chap" role="tab" type="button" id="tab-guard" aria-controls="scene-guard" aria-selected="true" tabindex="0"><b><span class="k">01</span> Test guard</b><span class="d">Stops edits that weaken tests.</span><i class="prog" aria-hidden="true"></i></button>
-      <button class="chap" role="tab" type="button" id="tab-loop" aria-controls="scene-loop" aria-selected="false" tabindex="-1"><b><span class="k">02</span> Loops</b><span class="d">Speaks up when fixes go in circles.</span><i class="prog" aria-hidden="true"></i></button>
-      <button class="chap" role="tab" type="button" id="tab-summary" aria-controls="scene-summary" aria-selected="false" tabindex="-1"><b><span class="k">03</span> Summaries</b><span class="d">334 lines in, 93 lines out.</span><i class="prog" aria-hidden="true"></i></button>
-      <button class="chap" role="tab" type="button" id="tab-peers" aria-controls="scene-peers" aria-selected="false" tabindex="-1"><b><span class="k">04</span> Other sessions</b><span class="d">Hears what the others changed.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-memory" aria-controls="scene-memory" aria-selected="true" tabindex="0"><b><span class="k">01</span> Memory</b><span class="d">Starts where the last session stopped.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-guard" aria-controls="scene-guard" aria-selected="false" tabindex="-1"><b><span class="k">02</span> Test guard</b><span class="d">Stops edits that weaken tests.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-loop" aria-controls="scene-loop" aria-selected="false" tabindex="-1"><b><span class="k">03</span> Loops</b><span class="d">Speaks up when fixes go in circles.</span><i class="prog" aria-hidden="true"></i></button>
+      <button class="chap" role="tab" type="button" id="tab-summary" aria-controls="scene-summary" aria-selected="false" tabindex="-1"><b><span class="k">04</span> Summaries</b><span class="d">334 lines in, 93 lines out.</span><i class="prog" aria-hidden="true"></i></button>
     </div>
     <p class="demo-note">The demo plays once. Pick a scene to see it again. <button class="btn-sm demo-pause" id="demo-pause" type="button" aria-pressed="false">Pause animations</button></p>
   </div>
   <div class="wrap">
     <ul class="factbar" aria-label="belay at a glance">
       <li><b>~2 ms</b><span>per hook, p95</span></li>
-      <li><b>Fails open</b><span>on any error, it prints nothing</span></li>
-      <li><b>0</b><span>network or model calls</span></li>
-      <li><b>474</b><span>tests, plus fuzz targets</span></li>
+      <li><b>Fails open</b><span>on any error, the hook prints nothing</span></li>
+      <li><b>Fails closed</b><span>no sandbox, nothing runs</span></li>
+      <li><b>0</b><span>model calls</span></li>
       <li><b>MIT / Apache-2.0</b><span>open source</span></li>
     </ul>
   </div>
@@ -1171,41 +1151,92 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head center reveal">
       <p class="eyebrow"><span class="n">01</span> The problem</p>
       <h2 class="h2" id="moments-title">You have watched this happen.</h2>
-      <p class="sec-lede">Coding agents are fast. They also take shortcuts you only notice later.</p>
+      <p class="sec-lede">Coding agents are fast. They also forget, take shortcuts, and run what you did not read.</p>
     </div>
     <div class="g12 moments">
       <article class="moment reveal" style="--rd:.0s">
+        <div class="vis" aria-hidden="true"><span>› carry on</span><span class="amb">what were we doing?</span><span>the last session's work, gone</span></div>
+        <h3>Every session starts from zero.</h3>
+        <p>Yesterday's session found the bug and ran out of context. Today's session reads the code again from the top.</p>
+      </article>
+      <article class="moment reveal" style="--rd:.08s">
         <div class="vis" aria-hidden="true"><span class="del">-  assert total == 19.99</span><span class="add">+  assert total == 19.98</span></div>
         <h3>The test was right. The agent changed it.</h3>
         <p>The code returned 19.98. The test expected 19.99. The quickest way to green was to edit the test.</p>
       </article>
-      <article class="moment reveal" style="--rd:.08s">
+      <article class="moment reveal" style="--rd:.16s">
         <div class="vis" aria-hidden="true"><span>edit → run → <span class="red">assert 500 == 200</span></span><span>edit → run → <span class="red">assert 500 == 200</span></span><span>edit → run → <span class="red">assert 500 == 200</span></span></div>
         <h3>Third fix. Same failure.</h3>
         <p>Edit, run, fail. The error never changes. The agent keeps going anyway.</p>
       </article>
-      <article class="moment reveal" style="--rd:.16s">
-        <div class="vis" aria-hidden="true"><span>300 passed · <span class="red">2 failed</span></span><span class="amb">334 lines · 6,407 tokens</span><span>all of it in context</span></div>
-        <h3>Two failures in 334 lines.</h3>
-        <p>Every passing line lands in the context. The two that matter are buried in the rest.</p>
-      </article>
       <article class="moment reveal" style="--rd:.24s">
-        <div class="vis" aria-hidden="true"><span><span class="grn">shop-1</span> edits shop/payments.py</span><span><span class="amb">shop-2</span> edits shop/payments.py</span><span>neither one knows</span></div>
-        <h3>Two sessions, one file.</h3>
-        <p>Another session changed the file. Yours is still working from an old read.</p>
+        <div class="vis" aria-hidden="true"><span>$ ./setup.sh</span><span class="amb">~/.ssh · ~/.aws · ~/other-repo</span><span>all of it in reach</span></div>
+        <h3>A script you did not read.</h3>
+        <p>The agent runs commands as you. Everything in your home is one command away.</p>
       </article>
     </div>
-    <p class="moments-close reveal"><strong>belay catches each of these moments.</strong> In optimize mode, it tells the agent in time.</p>
+    <p class="moments-close reveal"><strong>belay catches each of these moments.</strong> It tells the agent in time, and it tells you.</p>
   </div>
 </section>
 
-<!-- ===================== FEATURES ===================== -->
+<!-- ===================== MEMORY ===================== -->
+<section class="sec rule" id="memory" aria-labelledby="memory-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">02</span> Memory and handoffs</p>
+      <h2 class="h2" id="memory-title">Pick up the rope <span class="mute">where it was dropped.</span></h2>
+      <p class="sec-lede">The next session starts where the last one left off. So does the same session after a compaction, or a <code class="inline-code">--resume</code>.</p>
+    </div>
+
+    <div class="g12 split">
+      <div class="l5 reveal">
+        <h3>A handoff, without asking.</h3>
+        <p class="t">When a session ends, and before each compaction, belay keeps a handoff. It says what belay saw: the task, the files changed, the last test, and the failure still open. The agent's own note comes last, labelled as its own.</p>
+        <ul class="facts">
+          <li><b>Recall</b><span>A new session gets the last handoff and the memories that rank best for the project, within 600 tokens by default.</span></li>
+          <li><b>Carry pack</b><span>After a compaction or a resume, the agent gets back its task, the open failure, the guard's blocks, and the memories it was given.</span></li>
+          <li><b>Resume</b><span><code>belay claude --resume</code>, <code>-c</code>, and <code>/resume</code> go on with belay's state: loop counts, blocked edits, pauses.</span></li>
+          <li><code>belay memory</code><span>List, search, and add. Each memory says who wrote it: belay, the agent, or you.</span></li>
+          <li><b>Yours to approve</b><span>An agent's memory waits for you. Only you run <code>belay memory approve</code> or <code>drop</code>.</span></li>
+          <li><code>belay mcp</code><span>The plugin gives the agent memory search, the handoff, and more as MCP tools.</span></li>
+        </ul>
+      </div>
+      <div class="r7 reveal" style="--rd:.08s">
+        <div class="compare">
+          <div class="cmp-col">
+            <p class="cmp-k">A new session in the project</p>
+            <div class="win">
+              <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">what the agent reads first</div></div>
+<pre tabindex="0" role="region" aria-label="The recall a new session reads"><span class="gn">belay:</span> memory for this project (`belay memory list` shows it all; check that each still fits):
+- The last session's handoff (m-12, 2 h ago): From shop-1. Task: fix date parsing. Changed: shop/dates.py, tests/test_dates.py. Last test: `pytest` failed (1 failing). Open failure: tests/test_dates.py::test_leap_year: assert None == date(2024, 2, 29). The agent's handoff: next: fix parse_date
+- m-4 (gotcha, by user): integration tests need DB_URL; use make test-int</pre>
+            </div>
+          </div>
+          <div class="cmp-col">
+            <p class="cmp-k">The same conversation, resumed</p>
+            <div class="win">
+              <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay claude --continue</div></div>
+<pre tabindex="0" role="region" aria-label="The carry pack a resumed conversation reads"><span class="gn">belay:</span> carried over from this conversation's earlier run (belay's own record):
+- Task: fix date parsing
+- Open failure: tests/test_dates.py::test_leap_year: assert None == date(2024, 2, 29)
+- Guard: a-9 blocked an edit of tests/test_dates.py.
+- m-4 (gotcha): integration tests need DB_URL; use make test-int</pre>
+            </div>
+          </div>
+          <p class="cmp-cap">Illustrative content, in belay's real wording. The third failure of the same test is a loop, even when the first two were before the resume.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== HONESTY ===================== -->
 <section class="sec rule" id="features" aria-labelledby="features-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">02</span> What it does</p>
+      <p class="eyebrow"><span class="n">03</span> Honesty</p>
       <h2 class="h2" id="features-title">It watches every move. <span class="mute">It catches the fall.</span></h2>
-      <p class="sec-lede">belay sees each tool call, and its output, before the agent reads it. Here is what it does with that.</p>
+      <p class="sec-lede">belay sees each tool call, and its output, before the agent reads it. It keeps the agent honest about its tests.</p>
     </div>
 
     <div class="g12 bento">
@@ -1213,7 +1244,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-guard reveal" aria-labelledby="f-guard">
         <p class="kicker">Test guard</p>
         <h3 id="f-guard">Edits that weaken tests wait for you.</h3>
-        <p class="body">Before an Edit or Write lands in a test file, belay compares the old and new text. It flags six things. In optimize mode, the edit is denied until you allow it.</p>
+        <p class="body">Before an Edit or Write lands in a test file, belay compares the old and new text. It flags six things. The edit is denied until you allow it.</p>
         <div class="demo grow">
           <ul class="rules" id="rules">
             <li><span class="x" aria-hidden="true">✕</span><span>An assertion is removed</span><code><i>e.g.</i> - assert total(cart) == 19.99</code></li>
@@ -1233,9 +1264,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
             <div class="who-step"><span class="who-k">Agent</span><span class="who-v">Retries the same edit</span></div>
           </div>
           <div class="notes">
-            <p><b>Only a human can allow it.</b> The allow comes from your <code class="inline-code">!</code> shell line, never from the agent.</p>
+            <p><b>Only you can allow it.</b> belay refuses the agent's own <code class="inline-code">belay allow</code>.</p>
             <p><b>Protect any path.</b> List it in <code class="inline-code">.belay.toml</code>.</p>
-            <p class="wide"><b>In look mode, the edit goes through.</b> belay records the flag and what it would have done. The agent sees no difference.</p>
+            <p class="wide"><b>Or only warn.</b> With <code class="inline-code">guard = warn</code>, the edit goes through and the agent is told why it may weaken tests.</p>
           </div>
         </div>
       </article>
@@ -1338,13 +1369,86 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
   </div>
 </section>
 
-<!-- ===================== HOW IT WORKS ===================== -->
-<section class="sec rule how" id="how" data-mode="look" aria-labelledby="how-title">
+<!-- ===================== SANDBOXES + SKILLS ===================== -->
+<section class="sec rule" id="sandbox" aria-labelledby="sandbox-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">03</span> How it works</p>
+      <p class="eyebrow"><span class="n">04</span> Sandboxes and skills</p>
+      <h2 class="h2" id="sandbox-title">Climb on a short rope.</h2>
+      <p class="sec-lede">Run risky work where it cannot reach your other files. Take in skills from the web only after you have read them.</p>
+    </div>
+
+    <div class="g12 split">
+      <div class="l5 reveal">
+        <h3>Sandboxes.</h3>
+        <p class="t">A sandbox runs a command, a whole agent session, or a headless follow-up on its own clone of the repo, with a private home and limits. git works inside. The work comes back as a branch you read and merge.</p>
+        <ul class="facts">
+          <li><b>Contained</b><span>It does not see the rest of your home (<code>~/.ssh</code>, cloud credentials, other repos), the Docker socket, or your ssh agent. On WSL it cannot run Windows programs.</span></li>
+          <li><b>The network</b><span>The network is the host's. Anything your machine reaches, the sandbox reaches.</span></li>
+          <li><b>Limits</b><span>Memory, processes, disk, and wall time. Past one, belay stops it and records why.</span></li>
+          <li><b>Fails closed</b><span>Without bubblewrap or user namespaces, belay refuses and runs nothing. Linux only.</span></li>
+          <li><code>belay sandbox doctor</code><span>Tries to escape a fresh sandbox, and exits 1 if one gets out.</span></li>
+        </ul>
+        <p class="t">What it protects, and what it does not: <a href="https://github.com/prakhar479/belay/blob/main/docs/sandbox.md">the threat model</a>.</p>
+      </div>
+      <div class="r7 reveal" style="--rd:.08s">
+        <div class="win">
+          <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay sandbox</div></div>
+<pre tabindex="0" role="region" aria-label="belay sandbox commands"><span class="ps">$</span> belay sandbox run -- make test         <span class="dm"># a command; its changes land on a branch</span>
+<span class="ps">$</span> belay sandbox claude                   <span class="dm"># a whole Claude Code session, supervised from outside</span>
+<span class="ps">$</span> belay sandbox task "add tests for parse_size"   <span class="dm"># a headless follow-up</span>
+<span class="ps">$</span> belay sandbox show fix                 <span class="dm"># branch, commits, audit, limit stops</span>
+<span class="ps">$</span> belay sandbox diff fix                 <span class="dm"># what the branch changed</span>
+<span class="ps">$</span> git merge belay/sandbox/fix            <span class="dm"># take the work, once you have read it</span></pre>
+        </div>
+        <div class="fleetflow" role="group" aria-label="How work leaves a sandbox">
+          <div class="ff-step"><span class="ff-k">Start</span><span class="ff-v">A clone of your HEAD</span></div>
+          <div class="ff-step workers"><span class="ff-k">Work</span><span class="ff-v">Private home, limits</span></div>
+          <div class="ff-step"><span class="ff-k">Commit</span><span class="ff-v">On <code>belay/sandbox/&lt;id&gt;</code></span></div>
+          <div class="ff-step gate"><span class="ff-k">You</span><span class="ff-v">Read it, then <code>git merge</code></span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g12 split rev fleet-block">
+      <div class="l5 reveal">
+        <h3>Skills from URLs.</h3>
+        <p class="t">A skill is a lasting way into the agent's instructions. belay makes installing one deliberate: it fetches, checks, pins, and records it. Only you approve it.</p>
+        <ul class="facts">
+          <li><b>Preview</b><span>The name, the files, the warnings, and a digest. It installs nothing.</span></li>
+          <li><b>Checked</b><span>Warnings for <code>curl … | sh</code>, base64 blobs, executables, hidden Unicode, and text that asks to disable belay.</span></li>
+          <li><b>Pinned</b><span>A GitHub source is pinned to its commit. A lock file keeps the digest, and belay says when files drift.</span></li>
+          <li><b>Agents stage</b><span>An agent's <code>belay skill add</code> only stages. You run <code>belay skill approve</code>.</span></li>
+        </ul>
+      </div>
+      <div class="r7 reveal" style="--rd:.08s">
+        <div class="win">
+          <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay skill</div></div>
+<pre tabindex="0" role="region" aria-label="belay skill commands"><span class="dm"># look; this installs nothing</span>
+<span class="ps">$</span> belay skill preview https://github.com/o/r/tree/main/skills/pdf
+<span class="dm"># preview, confirm, install (an agent's add only stages)</span>
+<span class="ps">$</span> belay skill add https://github.com/o/r/tree/main/skills/pdf
+<span class="ps">$</span> belay skill list            <span class="dm"># installed, waiting, drift</span>
+<span class="ps">$</span> belay skill approve pdf     <span class="dm"># yours to run</span></pre>
+        </div>
+        <div class="fleetflow" role="group" aria-label="How a skill is installed">
+          <div class="ff-step"><span class="ff-k">Preview</span><span class="ff-v">Fetch and show</span></div>
+          <div class="ff-step"><span class="ff-k">Stage</span><span class="ff-v">Waits for you</span></div>
+          <div class="ff-step workers"><span class="ff-k">Approve</span><span class="ff-v">In your terminal</span></div>
+          <div class="ff-step gate"><span class="ff-k">Pinned</span><span class="ff-v">Commit and digest</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== WHAT YOU SEE ===================== -->
+<section class="sec rule how" id="how" aria-labelledby="how-title">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow"><span class="n">05</span> What you see</p>
       <h2 class="h2" id="how-title">Between the hook and the agent.</h2>
-      <p class="sec-lede">Claude Code calls a hook on every tool call. belay answers in about 2 ms, or it stays quiet. Either way, it writes down what it saw.</p>
+      <p class="sec-lede">Claude Code calls a hook on every tool call. belay answers in about 2 ms, or it stays quiet. Either way, it writes down what it did.</p>
     </div>
 
     <div class="pipe reveal" role="group" aria-label="Data flow: hook, shim, daemon, core, ledger">
@@ -1354,40 +1458,43 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:.6s"></i></div>
       <div class="node"><p class="nk">3 · Daemon</p><h3>daemon</h3><p>One per session. It keeps the session's state.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.2s"></i></div>
-      <div class="node core"><p class="nk">4 · Core</p><h3>core</h3><p>Decides: guard, loops, summaries, messages.</p></div>
+      <div class="node core"><p class="nk">4 · Core</p><h3>core</h3><p>Decides: guard, loops, summaries, memory.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.8s"></i></div>
       <div class="node"><p class="nk">5 · Ledger</p><h3>ledger</h3><p>Records every action with a reason.</p></div>
     </div>
-    <div class="ret reveal" aria-live="polite">
+    <div class="ret reveal">
       <span class="arrow" aria-hidden="true">←</span>
-      <span class="rtx-off">Look mode: no response. The agent sees no difference.</span>
-      <span class="rtx-on">Optimize mode: the decision goes back to the agent. A deny, a message, or a summary.</span>
+      <span>The decision goes back to the agent: a deny, a message, or a summary. A note goes to you, and never to the model.</span>
       <span class="lane" aria-hidden="true"><i></i></span>
     </div>
 
     <div class="g12 modes">
       <div class="modes-text reveal">
-        <h3>Two modes. Start in look.</h3>
-        <p>Look mode is the default. belay records everything and decides what it would do. The agent sees no difference.</p>
-        <p>In optimize mode, the same decisions reach the agent. Switch when the report looks right to you.</p>
+        <h3>You see what it did.</h3>
+        <p>When belay acts, Claude Code shows you a one-line note under the hook. <code class="inline-code">report = quiet</code> (the default) shows warnings. <code class="inline-code">normal</code> and <code class="inline-code">verbose</code> show more.</p>
+        <p>Each feature has its own switch. <code class="inline-code">belay pause</code> stops one, or all of them, from your terminal. The agent may not pause belay.</p>
+        <p class="was">0.1 had a look mode and an optimize mode; 0.2 has no modes.</p>
       </div>
       <div class="modes-panel reveal" style="--rd:.08s">
-        <div class="seg-ctl" role="group" aria-label="Show the data flow for a mode">
-          <button type="button" aria-pressed="true" data-mode="look">look</button>
-          <button type="button" aria-pressed="false" data-mode="optimize">optimize</button>
+        <div class="toasts">
+          <div class="toast"><p class="when"><i></i> In Claude Code, only to you</p><p>belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: `belay allow a-3`.</p></div>
+          <div class="toast"><p class="when"><i></i> The status line · <code>belay status</code></p><p>belay · 2 blocked · 14k tokens kept out · 1 memory</p></div>
         </div>
-        <table class="mtable">
-          <caption class="sr-only">look and optimize, side by side</caption>
-          <thead>
-            <tr><td></td><th scope="col" class="c-look">look <span class="tag">default</span></th><th scope="col" class="c-opt">optimize <span class="tag">opt in</span></th></tr>
-          </thead>
-          <tbody>
-            <tr><th scope="row">Ledger</th><td class="c-look" data-m="look">Every decision, with its reason</td><td class="c-opt" data-m="optimize">Every decision, with its reason</td></tr>
-            <tr><th scope="row">Hook answer</th><td class="c-look none" data-m="look">None. belay never answers a hook.</td><td class="c-opt hot" data-m="optimize">The decision</td></tr>
-            <tr><th scope="row">Agent sees</th><td class="c-look none" data-m="look">No difference</td><td class="c-opt" data-m="optimize">Denied edits, summaries, loop notes, peer news</td></tr>
-            <tr class="cmdrow"><th scope="row">Run</th><td class="c-look" data-m="look"><code>belay claude</code></td><td class="c-opt" data-m="optimize"><code>belay claude --belay-mode optimize</code></td></tr>
-          </tbody>
-        </table>
+        <div class="win see-win">
+          <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">when the agent exits</div></div>
+<pre tabindex="0" role="region" aria-label="The summary belay prints when the agent exits">belay: session 1793507424-19739 ended.
+  did: 3 summaries · 1 blocked edit · 1 loop warning
+  kept out: 14.2k tokens of tool output
+  handoff: done: the order API; next: the cart tests
+  `belay report` for more</pre>
+        </div>
+        <ul class="facts">
+          <li><code>belay watch</code><span>Every note as it happens, in another terminal.</span></li>
+          <li><code>belay report</code><span>What happened in a session, and why.</span></li>
+          <li><code>belay why a-3</code><span>The cause chain of one action.</span></li>
+          <li><code>belay pause guard</code><span>Pause one feature. <code>belay resume</code> turns it back on.</span></li>
+          <li><code>belay undo t-2</code><span>Roll the files back to the end of a turn, also what shell commands changed.</span></li>
+        </ul>
       </div>
     </div>
   </div>
@@ -1397,9 +1504,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule" id="sessions" aria-labelledby="sessions-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">04</span> Many sessions</p>
+      <p class="eyebrow"><span class="n">06</span> Many sessions</p>
       <h2 class="h2" id="sessions-title">Many sessions. <span class="mute">One rope.</span></h2>
-      <p class="sec-lede">Sessions can see each other. Or run a whole fleet, each session in its own worktree.</p>
+      <p class="sec-lede">Sessions on one machine can see each other. Or run a whole fleet, each session in its own worktree.</p>
     </div>
 
     <div class="g12 split">
@@ -1429,7 +1536,6 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         </div>
         <div class="toasts">
           <div class="toast"><p class="when"><i></i> When another session edits your file</p><p>belay: shop-1 edited shop/payments.py after you did. Read it again before you change it.</p></div>
-          <div class="toast"><p class="when"><i></i> When a session starts</p><p>belay: the last session in this repo (shop-1, ended 2 h ago): left: open: the leap-year test, next: fix parse_date; it was on: date parsing; it changed shop/dates.py, tests/test_dates.py; its last test `pytest` failed (1). Check `git status` before you go on.</p></div>
         </div>
       </div>
     </div>
@@ -1437,24 +1543,12 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="g12 split rev fleet-block">
       <div class="l5 reveal">
         <h3>Or run a fleet.</h3>
-        <p class="t"><code class="inline-code">belay fleet up</code> runs a team of headless Claude Code sessions.</p>
+        <p class="t"><code class="inline-code">belay fleet up</code> runs a team of headless Claude Code sessions. Fleets keep working as they are; they get no new features for now.</p>
         <ul class="facts">
           <li><b>Worktrees</b><span>Each session gets its own git worktree.</span></li>
           <li><b>Task board</b><span>Tasks come from a board.</span></li>
           <li><b>Checks</b><span>A check command must pass before a task counts as done.</span></li>
-          <li><b>Limits</b><span>Budgets, and a merge plan.</span></li>
-        </ul>
-        <p class="presets-label">9 presets <span>· the fleet file here uses lead</span></p>
-        <ul class="presets" aria-label="The 9 fleet presets">
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><circle class="nd r" cx="50" cy="22" r="8"/></svg><b>solo</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M30 32 50 10 70 32Z"/><circle class="nd" cx="30" cy="32" r="7"/><circle class="nd" cx="70" cy="32" r="7"/><circle class="nd" cx="50" cy="11" r="7"/></svg><b>peers</b></li>
-          <li class="on"><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M50 11 26 34M50 11v23M50 11l24 23"/><circle class="nd r" cx="50" cy="10" r="7"/><circle class="nd" cx="26" cy="34" r="6"/><circle class="nd" cx="50" cy="34" r="6"/><circle class="nd" cx="74" cy="34" r="6"/></svg><b>lead</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M50 11 30 33M50 11l20 22"/><circle class="nd r" cx="50" cy="10" r="7"/><rect class="nd" x="23" y="27" width="13" height="13" rx="2"/><path class="nd" d="M70 26l8 14H62z"/></svg><b>specialists</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M50 8 32 22M50 8l18 14M32 22l-10 14M32 22l8 14M68 22l-8 14M68 22l10 14"/><circle class="nd r" cx="50" cy="7" r="5.5"/><circle class="nd" cx="32" cy="22" r="5"/><circle class="nd" cx="68" cy="22" r="5"/><circle class="nd" cx="22" cy="37" r="4.5"/><circle class="nd" cx="40" cy="37" r="4.5"/><circle class="nd" cx="60" cy="37" r="4.5"/><circle class="nd" cx="78" cy="37" r="4.5"/></svg><b>tree</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M20 22h60M33 18l4 4-4 4M53 18l4 4-4 4M73 18l4 4-4 4"/><circle class="nd" cx="16" cy="22" r="6"/><circle class="nd" cx="44" cy="22" r="6"/><circle class="nd" cx="64" cy="22" r="6"/><circle class="nd r" cx="86" cy="22" r="6"/></svg><b>pipeline</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M38 16c8-6 16-6 24 0M62 28c-8 6-16 6-24 0M57 13l5 3-4 4M43 31l-5-3 4-4"/><circle class="nd" cx="30" cy="22" r="8"/><circle class="nd r" cx="70" cy="22" r="8"/></svg><b>review</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M28 9 66 22M28 22h38M28 35l38-13"/><circle class="nd" cx="24" cy="9" r="5.5"/><circle class="nd" cx="24" cy="22" r="5.5"/><circle class="nd" cx="24" cy="35" r="5.5"/><circle class="nd r" cx="72" cy="22" r="8"/></svg><b>best-of</b></li>
-          <li><svg viewBox="0 0 100 44" aria-hidden="true" focusable="false"><path class="ed" d="M36 22h14M50 22 64 9M50 22h14M50 22l14 13"/><rect class="nd r" x="14" y="10" width="18" height="6" rx="2"/><rect class="nd r" x="14" y="19" width="18" height="6" rx="2"/><rect class="nd r" x="14" y="28" width="18" height="6" rx="2"/><circle class="nd" cx="70" cy="9" r="5.5"/><circle class="nd" cx="70" cy="22" r="5.5"/><circle class="nd" cx="70" cy="35" r="5.5"/></svg><b>pool</b></li>
+          <li><b>Presets</b><span>Nine, such as <code>lead</code>, <code>pool</code>, and <code>review</code>.</span></li>
         </ul>
       </div>
       <div class="r7 reveal" style="--rd:.08s">
@@ -1470,12 +1564,6 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <span class="k">may_not_write</span> <span class="p">=</span> <span class="p">[</span><span class="s">"tests/**"</span><span class="p">]</span>
 <span class="k">budget</span>        <span class="p">=</span> <span class="p">{</span> <span class="k">tokens</span> <span class="p">=</span> <span class="s">"2M"</span><span class="p">,</span> <span class="k">wall</span> <span class="p">=</span> <span class="s">"45m"</span> <span class="p">}</span></pre>
         </div>
-        <div class="fleetflow" role="group" aria-label="What this fleet file sets up">
-          <div class="ff-step"><span class="ff-k">Board</span><span class="ff-v">Tasks come from it</span></div>
-          <div class="ff-step workers"><span class="ff-k">Workers · 1..3</span><span class="ff-wk"><i class="live" aria-hidden="true"></i><i class="live" aria-hidden="true" style="--ld:.6s"></i><i class="live" aria-hidden="true" style="--ld:1.2s"></i></span><span class="ff-v">One worktree each. May not write tests/**.</span></div>
-          <div class="ff-step gate"><span class="ff-k">Check</span><span class="ff-v"><code>make test</code> must pass</span></div>
-          <div class="ff-step"><span class="ff-k">Budget</span><span class="ff-v">2M tokens, 45 min wall</span></div>
-        </div>
       </div>
     </div>
   </div>
@@ -1486,7 +1574,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec" id="principles" aria-labelledby="principles-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">05</span> Principles</p>
+      <p class="eyebrow"><span class="n">07</span> Principles</p>
       <h2 class="h2" id="principles-title">Built to stay out of the way.</h2>
       <p class="sec-lede">A supervisor should never be the thing that breaks your session.</p>
     </div>
@@ -1495,7 +1583,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <p class="lbl">Fast</p>
         <p class="big" aria-hidden="true">~2<small>ms</small></p>
         <h3><span class="sr-only">About 2 ms </span>per hook, at p95.</h3>
-        <p>The budget is 20 ms, and CI measures it.</p>
+        <p>The budget is 20 ms.</p>
         <div class="meter" role="img" aria-label="About 2 ms of a 20 ms budget"><div class="mt"><i></i></div><div class="ml"><span>2 ms</span><span>budget 20 ms</span></div></div>
       </div>
       <div class="stat">
@@ -1507,8 +1595,8 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <div class="stat">
         <p class="lbl">Local</p>
         <p class="big" aria-hidden="true">0</p>
-        <h3><span class="sr-only">0 </span>network calls. 0 model calls.</h3>
-        <p>Secrets are redacted before anything is written.</p>
+        <h3><span class="sr-only">0 </span>model calls.</h3>
+        <p>belay goes on the network only when you ask: to fetch a skill, or the plugin at install. Secrets are redacted before anything is written.</p>
       </div>
       <div class="stat">
         <p class="lbl">Prompt cache</p>
@@ -1517,21 +1605,16 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <p>belay acts only on what the agent has not seen yet. The prompt cache stays intact.</p>
       </div>
       <div class="stat">
+        <p class="lbl">Yours to approve</p>
+        <p class="big" aria-hidden="true">You</p>
+        <h3><span class="sr-only">You </span>approve what lasts.</h3>
+        <p><code class="inline-code">allow</code>, <code class="inline-code">pause</code>, <code class="inline-code">undo</code>, <code class="inline-code">memory approve</code>, <code class="inline-code">skill approve</code>, and <code class="inline-code">sandbox rm</code> refuse to run outside your terminal.</p>
+      </div>
+      <div class="stat">
         <p class="lbl">One binary</p>
         <p class="big" aria-hidden="true">1</p>
         <h3><span class="sr-only">1 </span>Rust binary.</h3>
         <p>The hook, the daemon and every command ship as one binary. Build it with cargo, or take one from Releases.</p>
-      </div>
-      <div class="stat">
-        <p class="lbl">Tested</p>
-        <p class="big" aria-hidden="true">474</p>
-        <h3><span class="sr-only">474 </span>tests, plus fuzz targets.</h3>
-        <div class="testsplit">
-          <div>285<span>core</span></div>
-          <div>128<span>CLI</span></div>
-          <div>57<span>end-to-end, fake agent</span></div>
-          <div>4<span>property</span></div>
-        </div>
       </div>
     </div>
   </div>
@@ -1542,13 +1625,13 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
   <div class="wrap">
     <div class="g12 qs">
       <div class="l5 reveal">
-        <p class="eyebrow"><span class="n">06</span> Quick start</p>
-        <h2 class="h2" id="start-title">Start with sessions you already ran.</h2>
-        <p class="sec-lede"><code class="inline-code">belay retro --all</code> reads your old transcripts and changes nothing. Then run one session in look mode, and read the report.</p>
+        <p class="eyebrow"><span class="n">08</span> Quick start</p>
+        <h2 class="h2" id="start-title">Try it in a minute.</h2>
+        <p class="sec-lede">Install the binary, then <code class="inline-code">belay install</code>. Your next <code class="inline-code">claude</code> runs with belay. <code class="inline-code">belay retro --all</code> shows what it would have caught in sessions you already ran.</p>
         <div data-tabs>
           <div class="qs-tabs" role="tablist" aria-label="Install with">
             <button role="tab" type="button" id="qt-cargo" aria-controls="qp-cargo" aria-selected="true" tabindex="0">cargo</button>
-            <button role="tab" type="button" id="qt-plugin" aria-controls="qp-plugin" aria-selected="false" tabindex="-1">Claude Code plugin</button>
+            <button role="tab" type="button" id="qt-bin" aria-controls="qp-bin" aria-selected="false" tabindex="-1">Release binary</button>
           </div>
         </div>
       </div>
@@ -1557,34 +1640,36 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
           <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">quick start</div></div>
           <div class="qs-panel" role="tabpanel" id="qp-cargo" aria-labelledby="qt-cargo" data-label="With cargo">
             <ol class="steps">
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</code><span>Rust 1.87+. Or a binary from <a href="https://github.com/prakhar479/belay/releases">Releases</a>.</span></div><button class="mini-copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy: cargo install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay doctor</code><span>Check the setup.</span></div><button class="mini-copy" type="button" data-copy="belay doctor" aria-label="Copy: belay doctor"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay retro --all</code><span>What belay would have caught in sessions you already ran.</span></div><button class="mini-copy" type="button" data-copy="belay retro --all" aria-label="Copy: belay retro --all"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay claude</code><span>Your next session, in look mode. All args go to claude.</span></div><button class="mini-copy" type="button" data-copy="belay claude" aria-label="Copy: belay claude"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay report</code><span>What it saw, and what it would have done.</span></div><button class="mini-copy" type="button" data-copy="belay report" aria-label="Copy: belay report"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay claude --belay-mode optimize</code><span>When you agree with it, let the decisions reach the agent.</span></div><button class="mini-copy" type="button" data-copy="belay claude --belay-mode optimize" aria-label="Copy: belay claude --belay-mode optimize"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</code><span>Rust 1.87 or newer.</span></div><button class="mini-copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy: cargo install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
             </ol>
           </div>
-          <div class="qs-panel" role="tabpanel" id="qp-plugin" aria-labelledby="qt-plugin" data-label="Or as a Claude Code plugin" hidden>
+          <div class="qs-panel" role="tabpanel" id="qp-bin" aria-labelledby="qt-bin" data-label="Or a release binary" hidden>
             <ol class="steps">
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude plugin marketplace add prakhar479/belay</code><span>Add the marketplace.</span></div><button class="mini-copy" type="button" data-copy="claude plugin marketplace add prakhar479/belay" aria-label="Copy: claude plugin marketplace add"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude plugin install belay@belay</code><span>Install the plugin.</span></div><button class="mini-copy" type="button" data-copy="claude plugin install belay@belay" aria-label="Copy: claude plugin install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>curl -L https://github.com/prakhar479/belay/releases/latest/download/belay-&lt;version&gt;-&lt;target&gt;.tar.gz | tar xz</code><span>Linux x86_64 and aarch64, macOS arm64 and x86_64. See <a href="https://github.com/prakhar479/belay/releases">Releases</a>.</span></div><span aria-hidden="true"></span></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>mv belay-*/belay ~/.local/bin/</code><span>Any directory on your PATH.</span></div><button class="mini-copy" type="button" data-copy="mv belay-*/belay ~/.local/bin/" aria-label="Copy: mv belay"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
             </ol>
           </div>
+          <ol class="steps steps-then">
+            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay install</code><span>The Claude Code plugin: hooks, a skill, slash commands, the MCP server. It asks first.</span></div><button class="mini-copy" type="button" data-copy="belay install" aria-label="Copy: belay install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay install --statusline</code><span>Optional: <code>belay status</code> as the status line, with a backup.</span></div><button class="mini-copy" type="button" data-copy="belay install --statusline" aria-label="Copy: belay install --statusline"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay doctor</code><span>Check the setup, and your Claude Code version.</span></div><button class="mini-copy" type="button" data-copy="belay doctor" aria-label="Copy: belay doctor"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay retro --all</code><span>What belay would have caught in sessions you already ran.</span></div><button class="mini-copy" type="button" data-copy="belay retro --all" aria-label="Copy: belay retro --all"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude</code><span>Your next session, with belay. Or <code>belay claude</code>: it takes every <code>claude</code> argument.</span></div><button class="mini-copy" type="button" data-copy="claude" aria-label="Copy: claude"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay report</code><span>What happened, and why belay did what it did.</span></div><button class="mini-copy" type="button" data-copy="belay report" aria-label="Copy: belay report"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+          </ol>
         </div>
         <div class="qs-out" id="start-out">
-          <p class="k">What one session looks like in the report</p>
+          <p class="k">What a past session looks like in a retro</p>
           <div class="win retro">
             <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay retro</div></div>
 <pre tabindex="0" role="region" aria-label="Real output of belay retro on a test fixture"><span class="ps">$</span> belay retro loop_session.jsonl
-Session loop_session.jsonl · claude-code (retro) · 14 s · mode: look
+Session loop_session.jsonl · claude-code (retro) · 14 s
 <span class="hl">Needs attention: 1 loops</span>
 Loops (13 s in loops): 1
-  - <span class="hl">[would steer]</span> after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run): …
-<span class="dm">Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages</span>
-<span class="dm">Test runs: 4 · wrapped (or would be, in auto mode): 4 (100%)</span></pre>
+  - <span class="hl">[would have steered]</span> after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run): …
+<span class="dm">Model tokens: 180.5k prompt (169.3k cache read, 93%) · 1.1k output · 8 messages</span></pre>
           </div>
-          <p class="cap">Real output on a test fixture, shortened. In look mode, belay says what it would have done.</p>
+          <p class="cap">Real output on a test fixture, shortened. In a retro, belay says what it would have done.</p>
         </div>
         <div class="qs-links">
           <a class="btn" href="https://github.com/prakhar479/belay/blob/main/docs/guide.md">Read the guide <span class="arr" aria-hidden="true">→</span></a>
@@ -1599,23 +1684,26 @@ Loops (13 s in loops): 1
 <section class="sec rule" id="status" aria-labelledby="status-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">07</span> Status</p>
+      <p class="eyebrow"><span class="n">09</span> Status</p>
       <h2 class="h2" id="status-title">An honest status.</h2>
     </div>
     <div class="status-card reveal">
       <div class="status-top">
         <div>
-          <h3>belay is a prototype.</h3>
+          <h3>belay 0.2 is a prototype.</h3>
           <p>Read this before you rely on it.</p>
         </div>
         <span class="badge-proto"><i aria-hidden="true"></i> Prototype</span>
       </div>
       <div class="status-grid">
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other agents are not supported yet.</span><p class="st">Supported</p></div></div>
-        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>The Claude Code versions it is checked against:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code></span><p class="st">Checked</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>The Claude Code versions its conformance is checked on:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code><code>2.1.316</code></span><p class="st">Checked</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Linux and WSL</b><span>Where it is tested.</span><p class="st">Tested</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Builds exist. They are untested.</span><p class="st">Untested</p></div></div>
         <div class="srow2 no"><span class="si" aria-hidden="true">✕</span><div><b>Windows</b><span>Not supported.</span><p class="st">Not supported</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only, with bubblewrap. The network is the host's.</span><p class="st">Linux only</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They keep working. No new features for now.</span><p class="st">Frozen</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Audit</b><span><code>belay audit</code> is under test. Its output may change.</span><p class="st">Experimental</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>MIT OR Apache-2.0</b><span>Open source, your choice of license.</span><p class="st">License</p></div></div>
       </div>
     </div>
@@ -1635,11 +1723,12 @@ Loops (13 s in loops): 1
     </svg>
     <p class="call reveal">On belay?</p>
     <h2 class="reveal" id="final-title"><span class="grad-text">Belay on.</span></h2>
-    <p class="sub reveal">Install it, replay your history, and run your next session on belay.</p>
-    <div class="install reveal" data-tabs>
+    <p class="sub reveal">Install it once. Your next session starts where the last one stopped.</p>
+    <div class="install reveal">
       <div class="ibox">
-        <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</pre>
-        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy the install command"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+        <pre tabindex="0" role="region" aria-label="Install commands"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli
+<span class="ps">$ </span>belay install</pre>
+        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli&#10;belay install" aria-label="Copy the install commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
       </div>
     </div>
     <div class="cta-row reveal">
@@ -1655,7 +1744,7 @@ Loops (13 s in loops): 1
     <div class="g12 foot-grid">
       <div class="foot-brand">
         <a class="brand" href="#top"><svg aria-hidden="true"><use href="#mark"/></svg> belay</a>
-        <p>A local supervisor for Claude Code. Formerly called tend. In climbing, the belayer holds the rope and catches the fall.</p>
+        <p>One install that upgrades Claude Code. Formerly called tend. In climbing, the belayer holds the rope and catches the fall.</p>
       </div>
       <div class="foot-col">
         <h2>Project</h2>
@@ -1663,16 +1752,16 @@ Loops (13 s in loops): 1
           <li><a href="https://github.com/prakhar479/belay">GitHub</a></li>
           <li><a href="https://github.com/prakhar479/belay/releases">Releases</a></li>
           <li><a href="https://github.com/prakhar479/belay/blob/main/docs/guide.md">Usage guide</a></li>
-          <li><a href="https://github.com/prakhar479/belay/issues">Issues</a></li>
+          <li><a href="https://github.com/prakhar479/belay/blob/main/docs/sandbox.md">Sandbox threat model</a></li>
         </ul>
       </div>
       <div class="foot-col">
         <h2>On this page</h2>
         <ul>
-          <li><a href="#demo">Demo</a></li>
-          <li><a href="#features">Features</a></li>
-          <li><a href="#how">How it works</a></li>
-          <li><a href="#sessions">Sessions</a></li>
+          <li><a href="#memory">Memory</a></li>
+          <li><a href="#features">Honesty</a></li>
+          <li><a href="#sandbox">Sandboxes and skills</a></li>
+          <li><a href="#how">What you see</a></li>
           <li><a href="#status">Status</a></li>
         </ul>
       </div>
@@ -1784,14 +1873,6 @@ Loops (13 s in loops): 1
     return { select: select, tabs: tabs };
   }
   document.querySelectorAll('.install-tabs, .qs-tabs').forEach(function (l) { setupTabs(l); });
-  var how = document.getElementById('how');
-  var segBtns = document.querySelectorAll('.seg-ctl button');
-  segBtns.forEach(function (b) {
-    b.addEventListener('click', function () {
-      segBtns.forEach(function (o) { o.setAttribute('aria-pressed', o === b ? 'true' : 'false'); });
-      how.setAttribute('data-mode', b.getAttribute('data-mode'));
-    });
-  });
 
   /* ---------- Hero demo player ---------- */
   var stage = document.getElementById('stage');
