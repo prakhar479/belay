@@ -36,6 +36,12 @@ curl -L https://github.com/prakhar479/belay/releases/latest/download/belay-<vers
 mv belay-*/belay ~/.local/bin/        # any directory on PATH
 ```
 
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), the same tarball in one step:
+
+```sh
+cargo binstall --git https://github.com/prakhar479/belay belay-cli
+```
+
 **From source** (Rust 1.87 or newer):
 
 ```sh
