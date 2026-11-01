@@ -259,7 +259,14 @@ fn curl(url: &str, out: &Path, work: &Path) -> Result<Option<String>> {
     let headers = work.join(".headers");
     run(
         Command::new("curl")
-            .args(["-fsSL", "--proto", "=https,http", "--max-filesize"])
+            .args([
+                "-fsSL",
+                "--proto",
+                "=https,http",
+                "--proto-redir",
+                "=https,http",
+            ])
+            .args(["--max-redirs", "5", "--max-filesize"])
             .arg(skills::MAX_BYTES.to_string())
             .arg("--max-time")
             .arg(FETCH_TIMEOUT.as_secs().to_string())
@@ -284,6 +291,29 @@ fn curl(url: &str, out: &Path, work: &Path) -> Result<Option<String>> {
             .eq_ignore_ascii_case("etag")
             .then(|| v.trim().to_string())
     }))
+}
+
+/// `git` for an untrusted repo: no hooks, no fsmonitor, and only the web transports
+/// (plus `file` for the test repos of `github_base`). Clone runs no hooks today; this
+/// keeps it so whatever the user's git config says.
+fn git_cmd() -> Command {
+    let mut c = Command::new("git");
+    c.args([
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.fsmonitor=false",
+    ])
+    .env("GIT_ALLOW_PROTOCOL", git_protocols());
+    c
+}
+
+fn git_protocols() -> &'static str {
+    if github_base().starts_with("https://") {
+        "https:http"
+    } else {
+        "https:http:file"
+    }
 }
 
 /// Where the GitHub repos are: `https://github.com`, or a local dir of `<o>/<r>.git`
@@ -314,7 +344,7 @@ fn from_github(
     let dest = work.join("repo");
     let is_sha = git_ref
         .is_some_and(|r| (7..=40).contains(&r.len()) && r.chars().all(|c| c.is_ascii_hexdigit()));
-    let mut clone = Command::new("git");
+    let mut clone = git_cmd();
     clone.args(["clone", "-q", "--depth", "1", "--filter=blob:none"]);
     if !path.is_empty() {
         clone.arg("--sparse");
@@ -326,7 +356,7 @@ fn from_github(
     run(&mut clone, FETCH_TIMEOUT, work, "git clone")?;
     let git = |args: &[&str], what: &str| {
         run(
-            Command::new("git").arg("-C").arg(&dest).args(args),
+            git_cmd().arg("-C").arg(&dest).args(args),
             FETCH_TIMEOUT,
             work,
             what,
@@ -1289,6 +1319,32 @@ mod tests {
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn git_for_a_skill_repo_runs_no_hooks_and_only_web_transports() {
+        let c = git_cmd();
+        let args: Vec<String> = c.get_args().map(|a| a.to_string_lossy().into()).collect();
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["-c", "core.hooksPath=/dev/null"]),
+            "{args:?}"
+        );
+        assert!(
+            args.windows(2).any(|w| w == ["-c", "core.fsmonitor=false"]),
+            "{args:?}"
+        );
+        let protocols = c
+            .get_envs()
+            .find(|(k, _)| *k == "GIT_ALLOW_PROTOCOL")
+            .and_then(|(_, v)| v)
+            .map(|v| v.to_string_lossy().to_string());
+        let want = if std::env::var_os("BELAY_TEST_GITHUB").is_some() {
+            "https:http:file"
+        } else {
+            "https:http"
+        };
+        assert_eq!(protocols.as_deref(), Some(want));
     }
 
     #[test]
