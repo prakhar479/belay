@@ -213,7 +213,17 @@ pub struct Flag {
     pub ts_ms: u64,
     /// `a-N`, `o-N`, an entry number, or `session`.
     pub target: String,
+    /// Optional: `belay flag a-N` alone says "this was wrong".
+    #[serde(default)]
     pub note: String,
+    /// Who flagged it: `user` (their own terminal) or `agent`. Flags written before
+    /// 0.2 have none and are the user's.
+    #[serde(default = "flag_by_user")]
+    pub by: String,
+}
+
+fn flag_by_user() -> String {
+    "user".into()
 }
 
 pub fn append_flag(dir: &Path, flag: &Flag) -> Result<()> {

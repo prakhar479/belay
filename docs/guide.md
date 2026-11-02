@@ -341,7 +341,7 @@ Only you can undo. belay refuses `belay undo` from an agent's shell, and denies 
 
 belay tells you what it does. It never tells the model: these notes go only to you.
 
-- **In Claude Code.** When belay acts, a one-line note appears under the hook, for example `belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: belay allow a-3.` A hook gets at most one note. If belay did more in that hook, the note counts the rest: `(+2 more summaries)`.
+- **In Claude Code.** When belay acts, a one-line note appears under the hook, for example `belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: belay allow a-3. Wrong? belay flag a-3`. Every warning ends with that `Wrong?` hint (see [When belay is wrong](#when-belay-is-wrong)). A hook gets at most one note. If belay did more in that hook, the note counts the rest: `(+2 more summaries)`.
 - **`report` decides what you see there.** `quiet` (the default) shows warnings: blocked edits and commands, guard warnings, and loops. `normal` adds what belay did for the agent: summaries, recalled fixes, notes, handoffs, and fleet notices. `verbose` adds minor notes: wrapped test runs, retries, and the tokens each summary kept out.
 - **The status line.** `belay status` prints `belay · 2 blocked · 14k tokens kept out · 1 memory`. Memories are fixes the session learned or was told about.
 - **`belay watch`** prints each note as it happens, in another terminal. It follows the newest live session, or the one you name with `--session`, and stops when the session ends or you press Ctrl-C. It shows every note, whatever `report` says; `--verbose` adds the minor ones. It reads only the ledger, so it works with any agent.
@@ -352,6 +352,7 @@ belay: session 1793507424-19739 ended.
   did: 3 summaries · 1 blocked edit · 1 loop warning
   kept out: 14.2k tokens of tool output
   handoff: done: the order API; next: the cart tests
+  2 warnings · flag any that were wrong: `belay flag a-7`
   `belay report` for more
 ```
 
@@ -375,14 +376,33 @@ belay also sees what the agent reads: each Read, Grep, and Glob is recorded afte
 
 "Tokens kept out" (in the report, `belay status`, and the exit summary) adds up, for each summary that reached the agent, the original's tokens minus the summary's. A summary the agent could not take, or whose reply came too late, counts nothing. Tokens are estimated at 4 characters each.
 
-If belay got something wrong, note it where it happened. The notes collect in one list:
-
-```sh
-belay flag a-2 "summary hid the error"
-belay review                     # every flag, with what it points at
-```
+If belay got something wrong, flag it: see [When belay is wrong](#when-belay-is-wrong).
 
 To report a bug, `belay export --session -1 > s.json` writes one session with paths, your user name, and secrets replaced.
+
+### When belay is wrong
+
+belay learns its false positives only from flags. A flag takes one command, and the note is optional:
+
+```sh
+belay flag                       # the newest warning of the newest session here
+belay flag a-3                   # that action
+belay flag a-3 "the test name changed, not the test"
+belay flag "too eager"           # the newest warning, with a note
+belay flag o-4 "summary hid the error"   # also an output, an entry number, or `session`
+```
+
+`belay report` lists the session's flags and counts the warnings nobody flagged.
+
+`belay review` lists every flag across sessions. Flags are grouped by rule: the guard rule (`guard: tests_removed`, `guard: skip`, …), `loop`, `cycle`, `verify`, or the kind of action. The newest come first. Each flag shows the action's reason and two commands: one to look closer, and one to save it as a fixture:
+
+```sh
+belay export --action a-3 --fixture flagged-a-3 --session <id>
+```
+
+That writes what led to the action into a new directory: the edit's before and after (`before.py`, `after.py`, `path.txt`), or the outputs (`output-o-N.txt`), with `action.json` and a `README.md`. The text is cleaned like `belay export`: paths, your home, your user name, and secrets are replaced. It still comes from your project, so review it before you commit it anywhere public.
+
+**The agent can flag too.** When it thinks a belay warning is wrong, the plugin's skill tells it to say so in one line with `belay flag a-N "why"`. A flag run anywhere but your own terminal is recorded as the agent's. `belay review` shows the agent's flags apart from yours, and `belay report` marks them `[agent]`. A flag changes nothing: it lifts no guard and allows no edit. Only `belay allow` does that, from your terminal.
 
 ## Sandboxes
 
@@ -752,7 +772,8 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay status` | One line for the status line |
 | `belay watch [--session S] [--verbose]` | Print what belay does as it happens |
 | `belay retro <transcript> \| --all [--summary]` | What belay would have done in past transcripts |
-| `belay flag <target> "note"` · `belay review` | Note and list where belay got it wrong |
+| `belay flag [target] ["note"]` · `belay review` | Note and list where belay got it wrong |
+| `belay export --action a-N --fixture <dir>` | Save what led to an action as fixture files |
 | `belay sessions [--all\|--json\|--history]` | The board of live sessions |
 | `belay card [--task …] [--name …] [--join …]` | This session's card |
 | `belay msg <to> "text"` · `belay inbox` | Messages between sessions and you |

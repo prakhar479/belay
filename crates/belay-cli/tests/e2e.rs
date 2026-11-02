@@ -253,6 +253,103 @@ fn launcher_prints_an_exit_summary() {
     assert!(summary.contains(&"  `belay report` for more"), "{err}");
 }
 
+/// P0.2: a warning says how to flag it; `belay flag` alone takes the newest warning;
+/// `belay review` groups flags by rule, the agent's apart; a flagged action exports as
+/// a fixture.
+#[test]
+fn a_warning_can_be_flagged_reviewed_and_exported() {
+    let (dir, session) = run_session("flagflow", "", &[]);
+    let err = fs::read_to_string(dir.join("launcher-err.txt")).unwrap();
+    assert!(
+        err.contains("1 warning · flag any that were wrong: `belay flag a-"),
+        "{err}"
+    );
+    let run = |args: &[&str], user: bool| {
+        let mut c = Command::new(bin());
+        c.args(args)
+            .env("BELAY_HOME", dir.join("home"))
+            .env_remove("BELAY_SESSION_DIR")
+            .env_remove("CLAUDECODE");
+        if user {
+            c.env("BELAY_TEST_TERMINAL", "1");
+        } else {
+            c.env("CLAUDECODE", "1");
+        }
+        let out = c.arg("--session").arg(&session).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let said = run(&["flag"], true);
+    assert!(
+        said.starts_with("Flagged a-") && said.contains("(guard: "),
+        "{said}"
+    );
+    let id = said["Flagged ".len()..]
+        .split(' ')
+        .next()
+        .unwrap()
+        .to_string();
+    let said = run(&["flag", &id, "the test was wrong"], false);
+    assert!(said.contains("as the agent's view"), "{said}");
+    let report = run(&["report"], true);
+    assert!(
+        report.contains(&format!("Flags: 2\n  - {id} (guard: ")),
+        "{report}"
+    );
+    assert!(report.contains("[agent]: the test was wrong"), "{report}");
+
+    let mut c = Command::new(bin());
+    let out = c
+        .arg("review")
+        .env("BELAY_HOME", dir.join("home"))
+        .output()
+        .unwrap();
+    let review = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        review.starts_with("2 flags in 1 sessions (1 from the agent)"),
+        "{review}"
+    );
+    assert!(review.contains("\nguard: "), "{review}");
+    assert!(review.find("From the agent").is_some(), "{review}");
+    assert!(
+        review.contains(&format!(
+            "belay export --action {id} --fixture flagged-{id}"
+        )),
+        "{review}"
+    );
+
+    let out_dir = dir.join("fixture");
+    let said = run(
+        &[
+            "export",
+            "--action",
+            &id,
+            "--fixture",
+            out_dir.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert!(
+        said.contains("Review it before you commit it anywhere public."),
+        "{said}"
+    );
+    let readme = fs::read_to_string(out_dir.join("README.md")).unwrap();
+    assert!(readme.contains("Rule: guard: "), "{readme}");
+    assert!(out_dir.join("action.json").exists());
+    assert!(
+        fs::read_dir(&out_dir).unwrap().any(|f| f
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("before")),
+        "the edit before and after"
+    );
+}
+
 /// U2b (rule 5): what belay did reaches the user as `systemMessage`, never the model's
 /// context; `report` decides which notices the user sees; `belay watch` prints them.
 #[test]
@@ -793,8 +890,9 @@ fn flags_and_review() {
 
     let report = belay(&["report"], &session);
     assert!(report.contains("Flags: 2"), "{report}");
+    // Not run from a terminal: the flags are recorded as the agent's.
     assert!(
-        report.contains("a-1: this summary hid the failure"),
+        report.contains("a-1 (shape) [agent]: this summary hid the failure"),
         "{report}"
     );
 

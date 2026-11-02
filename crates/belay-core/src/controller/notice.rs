@@ -29,6 +29,26 @@ impl ReportLevel {
     }
 }
 
+impl Notice {
+    /// End a Warn notice about an action with how to say belay was wrong. Without
+    /// flags belay cannot learn its false positives, and nobody flagged anything while
+    /// the command was not in front of them (retro 2026-11-02). Adding it twice is a
+    /// no-op, so a reader of an older ledger can call it too.
+    pub fn add_flag_hint(&mut self) {
+        let Some(id) = self
+            .action
+            .as_deref()
+            .filter(|_| self.level == NoticeLevel::Warn)
+        else {
+            return;
+        };
+        let hint = format!(" Wrong? `belay flag {id}`");
+        if !self.text.ends_with(&hint) {
+            self.text.push_str(&hint);
+        }
+    }
+}
+
 /// The notice for one applied action, and a plural noun for counting repeats.
 pub fn notice_for(
     id: &str,
@@ -220,13 +240,14 @@ impl Controller {
             .cloned()
             .collect();
         let shown = to_user && self.caps.notify_user && !visible.is_empty();
-        let Some((notice, seq)) = collapse(if visible.is_empty() {
+        let Some((mut notice, seq)) = collapse(if visible.is_empty() {
             &candidates
         } else {
             &visible
         }) else {
             return;
         };
+        notice.add_flag_hint();
         self.push(
             d,
             now,
@@ -297,6 +318,37 @@ mod tests {
         };
         let (n, _) = notice_for("a-2", &carry, "", false);
         assert_eq!(n.text, "gave the agent back its task and 1 memory.");
+    }
+
+    #[test]
+    fn warn_notices_end_with_the_flag_hint_once() {
+        let guard = ActionKind::Guard {
+            path: "t.py".into(),
+            decision: GuardDecision::Deny,
+        };
+        let (mut w, _) = notice_for("a-4", &guard, "", false);
+        w.text.push_str(" (+1 more summaries)");
+        w.add_flag_hint();
+        assert!(
+            w.text
+                .ends_with("(+1 more summaries) Wrong? `belay flag a-4`"),
+            "{}",
+            w.text
+        );
+        let once = w.text.clone();
+        w.add_flag_hint();
+        assert_eq!(w.text, once);
+        let shape = ActionKind::Shape {
+            output_id: "o-1".into(),
+            from_tokens: 10,
+            to_tokens: 5,
+            from_lines: 10,
+            to_lines: 5,
+        };
+        let (mut a, _) = notice_for("a-5", &shape, "", false);
+        let before = a.text.clone();
+        a.add_flag_hint();
+        assert_eq!(a.text, before, "only warnings get the hint");
     }
 
     #[test]
