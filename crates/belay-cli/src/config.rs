@@ -33,8 +33,9 @@
 //! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
 //! ```
 //!
-//! 0.1 keys still load, with a warning: `look` reads as `on`; `fleet` is `awareness`,
-//! `learn` is `memory`; `plugin_mode` is ignored.
+//! 0.1 keys still load: `look` reads as `on`; `fleet` is `awareness`, `learn` is
+//! `memory`; `plugin_mode` is ignored. One line says so, at most once a day per file;
+//! `belay config migrate` (config/migrate.rs) rewrites them.
 
 use std::env;
 use std::fs;
@@ -46,6 +47,8 @@ use anyhow::{anyhow, bail, Result};
 use belay_core::{GuardSetting, ReportLevel};
 
 use crate::sandbox::limits;
+
+pub mod migrate;
 
 fn on_off_word(b: bool) -> &'static str {
     if b {
@@ -192,36 +195,189 @@ pub fn path() -> PathBuf {
     base.join("belay/config.toml")
 }
 
-/// The config, and one warning per line that was not used. A missing file gives the
-/// defaults; a bad line is skipped and the rest still apply.
-pub fn load_from(path: &Path) -> (Config, Vec<String>) {
-    match fs::read_to_string(path) {
-        Ok(text) => parse(&text),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Config::default(), Vec::new()),
-        Err(e) => (
-            Config::default(),
-            vec![format!("read {}: {e}; using defaults", path.display())],
-        ),
+/// One line of the file the config could not use as written: a bad line (skipped), or
+/// a 0.1 key or value (`old`: read, and `belay config migrate` rewrites it).
+#[derive(Debug, Clone)]
+pub struct Note {
+    pub line: usize,
+    pub text: String,
+    /// The 0.1 key, or `key = look`, for the short once-a-day warning.
+    pub old: Option<String>,
+}
+
+impl std::fmt::Display for Note {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "line {}: {}", self.line, self.text)
     }
 }
 
-/// Never fails. Warnings go to stderr, each once per process: the launcher's reaches
-/// the user before claude starts; the daemon's goes to `daemon.log`.
+/// A parsed file: the config, which keys the file set (key → line), and its notes.
+#[derive(Debug, Clone, Default)]
+pub struct Parsed {
+    pub config: Config,
+    pub set: BTreeMap<String, usize>,
+    pub notes: Vec<Note>,
+}
+
+/// The config, and one warning per line that was not used. A missing file gives the
+/// defaults; a bad line is skipped and the rest still apply.
+pub fn load_from(path: &Path) -> (Config, Vec<String>) {
+    let (p, _) = parse_file(path);
+    (p.config, p.notes.iter().map(Note::to_string).collect())
+}
+
+/// The parsed file and its text (`None`: no file). A file that cannot be read gives the
+/// defaults with a note.
+fn parse_file(path: &Path) -> (Parsed, Option<String>) {
+    match fs::read_to_string(path) {
+        Ok(text) => (parse_full(&text), Some(text)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Parsed::default(), None),
+        Err(e) => {
+            let mut p = Parsed::default();
+            p.notes.push(Note {
+                line: 0,
+                text: format!("read {}: {e}; using defaults", path.display()),
+                old: None,
+            });
+            (p, None)
+        }
+    }
+}
+
+static QUIET: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// No config warnings from this process: `belay hook` prints nothing (rule 1), and
+/// the status line shows only its line.
+pub fn quiet() {
+    QUIET.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Never fails. Warnings about bad lines go to stderr, each once per process: the
+/// launcher's reaches the user before claude starts; the daemon's goes to `daemon.log`.
+/// 0.1 keys get one short line, at most once a day per file, and only on a terminal.
 pub fn load() -> Config {
     static SAID: std::sync::Mutex<std::collections::BTreeSet<String>> =
         std::sync::Mutex::new(std::collections::BTreeSet::new());
     let p = path();
-    let (c, warnings) = load_from(&p);
+    let (parsed, text) = parse_file(&p);
+    if QUIET.load(std::sync::atomic::Ordering::Relaxed) {
+        return parsed.config;
+    }
     let mut said = SAID.lock().unwrap_or_else(|e| e.into_inner());
-    for w in warnings {
-        if said.insert(w.clone()) {
-            eprintln!("belay: config {}: {w}", p.display());
+    for n in parsed.notes.iter().filter(|n| n.old.is_none()) {
+        if said.insert(n.to_string()) {
+            eprintln!("belay: config {}: {n}", p.display());
         }
     }
-    c
+    let old: Vec<&str> = parsed
+        .notes
+        .iter()
+        .filter_map(|n| n.old.as_deref())
+        .collect();
+    if let (false, Some(text)) = (old.is_empty(), text) {
+        use std::io::IsTerminal;
+        let stamp = crate::paths::home().join("state/config-warned");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        if said.insert("old keys".into())
+            && std::io::stderr().is_terminal()
+            && warn_due(&stamp, &p, &belay_core::text::sha256_hex(&text), now)
+        {
+            eprintln!("{}", old_keys_line(&p, &old));
+        }
+    }
+    parsed.config
 }
 
-const KEYS: [&str; 30] = [
+fn old_keys_line(path: &Path, old: &[&str]) -> String {
+    format!(
+        "belay: config {} has 0.1 keys ({}); they still work. Run `belay config migrate` to update the file.",
+        path.display(),
+        old.join(", ")
+    )
+}
+
+const DAY_SECS: u64 = 24 * 3600;
+
+/// Whether to warn about `cfg`'s old keys now: not if the stamp file says this same
+/// content (`hash`) was warned about less than a day ago. When it says yes, it writes
+/// the stamp. The stamp has one `path<TAB>hash<TAB>unix secs` line per config file.
+fn warn_due(stamp: &Path, cfg: &Path, hash: &str, now: u64) -> bool {
+    let key = cfg.to_string_lossy();
+    let text = fs::read_to_string(stamp).unwrap_or_default();
+    let mut lines: Vec<&str> = Vec::new();
+    for l in text.lines() {
+        let mut f = l.split('\t');
+        let (p, h, t) = (
+            f.next(),
+            f.next(),
+            f.next().and_then(|t| t.parse::<u64>().ok()),
+        );
+        if p == Some(&*key) {
+            if h == Some(hash) && t.is_some_and(|t| now.saturating_sub(t) < DAY_SECS) {
+                return false;
+            }
+        } else if !l.is_empty() {
+            lines.push(l);
+        }
+    }
+    let mine = format!("{key}\t{hash}\t{now}");
+    lines.push(&mine);
+    // A stamp that cannot be written means the warning may repeat: still fail open.
+    if let Some(d) = stamp.parent() {
+        let _ = fs::create_dir_all(d);
+    }
+    let _ = fs::write(stamp, lines.join("\n") + "\n");
+    true
+}
+
+/// `belay config`: every key, its value, and where it came from.
+pub fn show() -> Result<()> {
+    let p = path();
+    let (parsed, text) = parse_file(&p);
+    print!("{}", describe(&p, &parsed, text.is_some()));
+    Ok(())
+}
+
+fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    if exists {
+        let _ = writeln!(out, "Config file: {}", path.display());
+    } else {
+        let _ = writeln!(out, "Config file: {} (none: all defaults)", path.display());
+    }
+    let fields = parsed.config.fields();
+    let width = fields.keys().map(String::len).max().unwrap_or(0);
+    // A long list (sandbox_ro) does not push every other row's source out.
+    let vwidth = fields
+        .values()
+        .map(String::len)
+        .filter(|n| *n <= 16)
+        .max()
+        .unwrap_or(0);
+    for (k, v) in &fields {
+        let from = match parsed.set.get(k) {
+            Some(line) => format!("file, line {line}"),
+            None => "default".to_string(),
+        };
+        let _ = writeln!(out, "{k:<width$}  {v:<vwidth$}  {from}");
+    }
+    if !parsed.notes.is_empty() {
+        let _ = writeln!(out);
+        for n in &parsed.notes {
+            let _ = writeln!(out, "{n}");
+        }
+    }
+    if parsed.notes.iter().any(|n| n.old.is_some()) {
+        let _ = writeln!(out, "Run `belay config migrate` to rewrite the 0.1 keys.");
+    }
+    out
+}
+
+/// Every key of 0.2. The 0.1 names are in `RENAMED`.
+const KEYS: [&str; 27] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -249,43 +405,74 @@ const KEYS: [&str; 30] = [
     "sandbox_task_tokens",
     "sandbox_ro",
     "resume",
-    // 0.1 keys: read with a warning.
-    "plugin_mode",
-    "fleet",
-    "learn",
 ];
 
+/// 0.1 key names, and the 0.2 name each now has (`None`: ignored).
+pub(crate) const RENAMED: [(&str, Option<&str>); 3] = [
+    ("fleet", Some("awareness")),
+    ("learn", Some("memory")),
+    ("plugin_mode", None),
+];
+
+/// Keys that took `look` in 0.1; it reads as `on` now.
+pub(crate) const LOOK_KEYS: [&str; 3] = ["awareness", "memory", "commons"];
+
+/// The key of a `key = value` line (`None`: blank or comment), comments cut off.
+pub(crate) fn line_key(raw: &str) -> Option<&str> {
+    let line = raw.split('#').next().unwrap_or("").trim();
+    Some(line.split_once('=').map_or(line, |(k, _)| k).trim()).filter(|_| !line.is_empty())
+}
+
+#[cfg(test)]
 fn parse(text: &str) -> (Config, Vec<String>) {
-    let mut c = Config::default();
-    let mut warnings = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
+    let p = parse_full(text);
+    (p.config, p.notes.iter().map(Note::to_string).collect())
+}
+
+fn parse_full(text: &str) -> Parsed {
+    let mut p = Parsed::default();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    // A 0.1 key yields to its new name anywhere in the file, as `config migrate` does.
+    let present: std::collections::BTreeSet<&str> = text.lines().filter_map(line_key).collect();
     for (n, raw) in text.lines().enumerate() {
         let line = raw.split('#').next().unwrap_or("").trim();
         if line.is_empty() {
             continue;
         }
-        match apply(&mut c, line, &mut seen) {
-            Ok(Some(note)) => warnings.push(format!("line {}: {note}", n + 1)),
-            Ok(None) => {}
-            Err(e) => warnings.push(format!("line {}: {e}; line ignored", n + 1)),
-        }
+        let mut old = None;
+        let text = match apply(&mut p.config, line, &mut p.set, &present, &mut old, n + 1) {
+            Ok(notes) if notes.is_empty() => continue,
+            Ok(notes) => notes.join("; "),
+            Err(e) => {
+                old = None;
+                format!("{e}; line ignored")
+            }
+        };
+        p.notes.push(Note {
+            line: n + 1,
+            text,
+            old,
+        });
     }
-    (c, warnings)
+    p
 }
 
-/// Apply one `key = value` line. `Ok(Some(note))`: applied, with a warning for the user
-/// (a 0.1 key or value).
+/// Apply one `key = value` line. `Ok(notes)`: applied (or, for a 0.1 key, read or
+/// skipped), with what changed since 0.1; `old` then names the 0.1 key or value.
 fn apply(
     c: &mut Config,
     line: &str,
-    seen: &mut std::collections::BTreeSet<String>,
-) -> Result<Option<String>> {
+    seen: &mut BTreeMap<String, usize>,
+    present: &std::collections::BTreeSet<&str>,
+    old: &mut Option<String>,
+    line_no: usize,
+) -> Result<Vec<String>> {
     let (key, value) = line
         .split_once('=')
         .ok_or_else(|| anyhow!("expected `key = value`"))?;
     let (key, value) = (key.trim(), value.trim());
-    if !KEYS.contains(&key) {
+    let renamed = RENAMED.iter().find(|(k, _)| *k == key);
+    if !KEYS.contains(&key) && renamed.is_none() {
         match KEYS.iter().find(|k| edit_distance(k, key) <= 2) {
             Some(k) => bail!("unknown key `{key}` (did you mean `{k}`?)"),
             None => bail!("unknown key `{key}`"),
@@ -293,31 +480,35 @@ fn apply(
     }
     let mut notes = Vec::new();
     // 0.1 names (owner, 2026-10-31: modes are gone; features replace them).
-    let key = match key {
-        "plugin_mode" => {
-            return Ok(Some(
-                "`plugin_mode` is ignored: belay has no modes now (see `belay pause`)".into(),
-            ))
+    let key = match renamed {
+        Some((old_key, None)) => {
+            *old = Some(old_key.to_string());
+            return Ok(vec![format!(
+                "`{old_key}` is ignored: belay has no modes now (see `belay pause`)"
+            )]);
         }
-        "fleet" => {
-            notes.push("`fleet` is now `awareness`".to_string());
-            "awareness"
+        Some((old_key, Some(new))) => {
+            *old = Some(old_key.to_string());
+            if present.contains(new) {
+                return Ok(vec![format!("`{old_key}` is ignored: `{new}` is set")]);
+            }
+            notes.push(format!("`{old_key}` is now `{new}`"));
+            *new
         }
-        "learn" => {
-            notes.push("`learn` is now `memory`".to_string());
-            "memory"
-        }
-        k => k,
+        None => key,
     };
-    if seen.contains(key) {
+    if seen.contains_key(key) {
         bail!("`{key}` is set twice; the first value stays");
     }
     // Quotes are allowed on any value, as in TOML.
     let value = value.trim_matches('"');
-    let value = if value == "look" && matches!(key, "awareness" | "memory" | "commons") {
+    let value = if value == "look" && LOOK_KEYS.contains(&key) {
         notes.push(format!(
             "`{key} = look` reads as `{key} = on`: look mode is gone"
         ));
+        if old.is_none() {
+            *old = Some(format!("{key} = look"));
+        }
         "on"
     } else {
         value
@@ -417,8 +608,8 @@ fn apply(
         }
         _ => unreachable!("checked against KEYS"),
     }
-    seen.insert(key.to_string());
-    Ok((!notes.is_empty()).then(|| notes.join("; ")))
+    seen.insert(key.to_string(), line_no);
+    Ok(notes)
 }
 
 /// Levenshtein distance, for "did you mean".
@@ -556,10 +747,14 @@ mod tests {
         assert!(w[1].contains("`commons = look`"), "{w:?}");
         assert!(w[2].contains("`plugin_mode` is ignored"), "{w:?}");
         assert!(c.overrides().keys().all(|k| k != "plugin_mode"));
-        // Old and new name for one key: the first stays.
+        // Old and new name for one key: the new one stays, as `config migrate` keeps it.
         let (c, w) = parse("fleet = off\nawareness = on\n");
-        assert!(!c.awareness);
-        assert!(w[1].contains("set twice"), "{w:?}");
+        assert!(c.awareness);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("`fleet` is ignored: `awareness` is set"),
+            "{w:?}"
+        );
     }
 
     /// A rejected line does not count as the first value, and quotes work everywhere.
@@ -590,6 +785,75 @@ mod tests {
         assert_eq!(c.overrides(), want);
         assert_eq!(c.session().overrides(), want);
         assert_eq!(c.session().loop_threshold, 4);
+    }
+
+    /// The 0.1-key warning shows once a day per file, and again when the file changes.
+    #[test]
+    fn old_key_warning_once_a_day() {
+        let d = std::env::temp_dir().join(format!("belay-cfg-warned-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        let stamp = d.join("state/config-warned");
+        let (a, b) = (Path::new("/a/config.toml"), Path::new("/b/config.toml"));
+        assert!(warn_due(&stamp, a, "h1", 1000));
+        assert!(!warn_due(&stamp, a, "h1", 1000 + DAY_SECS - 1));
+        // Another file has its own stamp; the first one's stays.
+        assert!(warn_due(&stamp, b, "h1", 1000 + 10));
+        assert!(!warn_due(&stamp, a, "h1", 1000 + 20));
+        // A changed file warns again, and so does the next day.
+        assert!(warn_due(&stamp, a, "h2", 1000 + 30));
+        assert!(!warn_due(&stamp, a, "h2", 1000 + 40));
+        assert!(warn_due(&stamp, a, "h2", 1000 + 30 + DAY_SECS));
+        assert_eq!(fs::read_to_string(&stamp).unwrap().lines().count(), 2);
+        let line = old_keys_line(a, &["fleet", "commons = look"]);
+        assert!(line.contains("(fleet, commons = look)"), "{line}");
+        assert!(line.contains("Run `belay config migrate`"), "{line}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    /// `belay config`: every key, its value, and where it came from.
+    #[test]
+    fn describe_lists_every_key_and_its_source() {
+        let p = parse_full("# mine\nguard = warn\nlearn = off\nloop_treshold = 4\n");
+        let out = describe(Path::new("/c.toml"), &p, true);
+        assert!(out.starts_with("Config file: /c.toml\n"), "{out}");
+        for k in KEYS {
+            assert!(
+                out.lines().any(|l| l.starts_with(&format!("{k} "))),
+                "{k}: {out}"
+            );
+        }
+        let line = |k: &str| {
+            out.lines()
+                .find(|l| l.starts_with(&format!("{k} ")))
+                .unwrap()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(line("guard"), "guard warn file, line 2");
+        assert_eq!(line("memory"), "memory off file, line 3");
+        assert_eq!(line("loop_threshold"), "loop_threshold 3 default");
+        assert!(out.contains("line 4: unknown key `loop_treshold`"), "{out}");
+        assert!(out.contains("Run `belay config migrate`"), "{out}");
+        let none = describe(Path::new("/c.toml"), &Parsed::default(), false);
+        assert!(
+            none.contains("(none: all defaults)") && !none.contains("migrate"),
+            "{none}"
+        );
+    }
+
+    /// docs/guide.md § Config names every key.
+    #[test]
+    fn guide_lists_every_key() {
+        let guide = include_str!("../../../docs/guide.md");
+        let section = guide.split("\n## Config\n").nth(1).unwrap();
+        let section = section.split("\n## ").next().unwrap();
+        for k in KEYS {
+            assert!(
+                section.lines().any(|l| l.starts_with(&format!("{k} ="))),
+                "{k} is missing from docs/guide.md § Config"
+            );
+        }
     }
 
     #[test]
