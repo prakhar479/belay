@@ -17,6 +17,7 @@ mod fleet;
 mod hub;
 mod install;
 mod ipc;
+mod keepawake;
 mod launcher;
 mod learnstore;
 mod mcp;
@@ -181,6 +182,19 @@ enum Cmd {
         /// The same checks as JSON.
         #[arg(long)]
         json: bool,
+    },
+    /// Keep the machine awake: for a time, while a process runs, or while a command runs
+    /// (default: until Ctrl-C). Says first what it can hold off here. Records nothing.
+    KeepAwake {
+        /// How long: `90s`, `45m`, `2h`, `1h30m`.
+        #[arg(long = "for", value_name = "DURATION", conflicts_with_all = ["pid", "cmd"])]
+        for_: Option<String>,
+        /// Hold while this process lives.
+        #[arg(long, conflicts_with = "cmd")]
+        pid: Option<u32>,
+        /// Run this command and hold while it runs; exits with its code.
+        #[arg(last = true)]
+        cmd: Vec<String>,
     },
     /// One session as a sanitized JSON bundle (paths, home, user name, and secrets
     /// replaced), to attach to a bug report.
@@ -1150,6 +1164,7 @@ fn run(cli: Cli) -> Result<i32> {
             print!("{report}");
             Ok(code)
         }
+        Cmd::KeepAwake { for_, pid, cmd } => keepawake::run(for_.as_deref(), pid, &cmd),
         Cmd::Review => {
             print!("{}", review(&paths::list_sessions()));
             Ok(0)

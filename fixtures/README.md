@@ -22,6 +22,9 @@
 | `transcripts/loop_session.jsonl` | Claude Code transcript: 4 failing runs, 3 edits | Captured 2026-10-19 (docs/dev/TASKS.md S5). Only user/assistant lines and the fields belay reads |
 | `transcripts/reads_session.jsonl` | Claude Code transcript: the same file read twice, a Grep, a Glob, a WebFetch, with `toolUseResult` | **Hand-made** (U5.1) in the shape of 2.1.316 transcripts |
 | `sessions/mcp/` | A session dir: ledger with one test output `o-1` (and its blob) and the shape action `a-1` | **Hand-made** in ledger format 1, for `belay mcp` |
+| `keepawake/powercfg_qh_lidaction_wsl.txt`, `powercfg_q_lidaction_hidden.txt` | `powercfg /qh` and `/q SCHEME_CURRENT SUB_BUTTONS LIDACTION` from WSL2 on a laptop: `/q` leaves the hidden lid setting out | Captured 2026-11-02 (Windows, powercfg via WSL interop) |
+| `keepawake/systemd_inhibit_no_bus.txt` | `systemd-inhibit` with no logind (WSL without systemd) | Captured 2026-11-02 (systemd 255) |
+| `keepawake/systemd_inhibit_polkit_denied.txt`, `pmset_batt_*.txt` | polkit refusing an inhibitor; `pmset -g batt` on battery and on AC | **Hand-made**; [Verify] with captures on a logind desktop and a Mac |
 
 Rules:
 
