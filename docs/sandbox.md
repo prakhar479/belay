@@ -201,7 +201,7 @@ Each try must be contained:
 | on WSL: run `cmd.exe /c ver`, and a copy of `cmd.exe` in the worktree | Windows does not answer |
 | find a Docker socket | there is none |
 | plant hooks and config that name programs (`core.fsmonitor`, `core.hooksPath`, `uploadpack.packObjectsHook`, `core.alternateRefsCommand`, `gpg.program` with `commit.gpgSign`, a clean filter) in the clone's `.git`, then let belay bring the work out | none runs on the host, and the work reaches the branch |
-| a fork bomb (bounded at 2000) | the watchdog stops it at the process limit (64 here) |
+| a fork bomb (bounded at 2000) | the watchdog stops it at the process limit (64 here), or the systemd scope's task limit refuses the forks |
 | a memory hog | the watchdog stops it at the memory limit (256M here) |
 
 The doctor exits 1 if any probe escapes.

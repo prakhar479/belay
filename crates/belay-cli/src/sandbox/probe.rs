@@ -238,18 +238,12 @@ fn probes(ctx: &Ctx, scratch: &Path) -> Result<Vec<(&'static str, Found)>> {
 
     // A fork bomb, bounded so a failed limit cannot take the machine down.
     let o = ctx.run(
-        r#"i=0; while [ $i -lt 2000 ]; do sleep 30 & i=$((i+1)); done; wait"#,
+        // stdout carries the count so a refused fork can be told from a bomb that ran.
+        r#"i=0; while [ $i -lt 2000 ]; do sleep 30 & i=$((i+1)); echo $i; done; wait; echo done"#,
         &[],
         lim,
     )?;
-    out.push((
-        "fork bomb",
-        stopped_for(
-            &o,
-            "sandbox_procs",
-            &format!("stopped at {} processes", lim.procs),
-        ),
-    ));
+    out.push(("fork bomb", judge_bomb(&o, lim.procs)));
 
     // A memory hog: `tail` keeps the "line" from /dev/zero, which never ends.
     let o = ctx.run("head -c 8000M /dev/zero | tail", &[], lim)?;
@@ -321,10 +315,74 @@ fn windows(o: &super::Outcome) -> Found {
     }
 }
 
+/// A fork bomb is contained when the watchdog stopped it, or when the forks were
+/// refused by the task limit belay put on the systemd scope. Without a belay limit,
+/// a refusal or a finished bomb is an escape (the host's own limit does not count).
+fn judge_bomb(o: &super::Outcome, procs: u64) -> Found {
+    let ran_all = text(&o.stdout).lines().any(|l| l.trim() == "done");
+    if o.stopped.is_some() {
+        return stopped_for(o, "sandbox_procs", &format!("stopped at {procs} processes"));
+    }
+    if o.scoped && !ran_all && o.code != 0 {
+        return Found::Contained(format!(
+            "forks refused at the {procs}-process limit (systemd scope)"
+        ));
+    }
+    if ran_all {
+        Found::Escaped("all 2000 processes started".into())
+    } else {
+        Found::Escaped(format!("not stopped (exit {})", o.code))
+    }
+}
+
 fn stopped_for(o: &super::Outcome, key: &str, how: &str) -> Found {
     match &o.stopped {
         Some(why) if why.contains(key) => Found::Contained(format!("the watchdog {how}")),
         Some(why) => Found::Escaped(format!("stopped, but for another limit: {why}")),
         None => Found::Escaped(format!("not stopped (exit {})", o.code)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sandbox::Outcome;
+
+    fn out(code: i32, stopped: Option<&str>, stdout: &str, scoped: bool) -> Outcome {
+        Outcome {
+            code,
+            stopped: stopped.map(Into::into),
+            stdout: stdout.as_bytes().to_vec(),
+            scoped,
+        }
+    }
+
+    #[test]
+    fn bomb_refused_by_the_scope_is_contained() {
+        let o = out(2, None, "1\n2\n3\n", true);
+        assert!(matches!(judge_bomb(&o, 64), Found::Contained(m) if m.contains("refused")));
+    }
+
+    #[test]
+    fn bomb_stopped_by_the_watchdog_is_contained() {
+        let o = out(
+            137,
+            Some("it ran more than 64 processes (sandbox_procs)"),
+            "1\n",
+            false,
+        );
+        assert!(matches!(judge_bomb(&o, 64), Found::Contained(m) if m.contains("watchdog")));
+    }
+
+    #[test]
+    fn bomb_that_ran_free_is_escaped() {
+        let o = out(0, None, "1999\n2000\ndone\n", true);
+        assert!(matches!(judge_bomb(&o, 64), Found::Escaped(_)));
+    }
+
+    #[test]
+    fn refusal_without_a_belay_limit_is_escaped() {
+        let o = out(2, None, "1\n2\n", false);
+        assert!(matches!(judge_bomb(&o, 64), Found::Escaped(_)));
     }
 }

@@ -6,7 +6,9 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::unix::io::OwnedFd;
+#[cfg(target_os = "linux")]
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -198,12 +200,18 @@ pub struct Target {
 
 impl Target {
     pub fn new(pid: i32) -> Self {
-        // SAFETY: pidfd_open takes a pid and flags; it returns a new fd or -1.
-        let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
-        let fd = (fd >= 0).then(|| {
-            // SAFETY: the fd is new and ours alone.
-            unsafe { OwnedFd::from_raw_fd(fd as i32) }
-        });
+        // pidfds are Linux-only; elsewhere signals use kill(2).
+        #[cfg(target_os = "linux")]
+        let fd = {
+            // SAFETY: pidfd_open takes a pid and flags; it returns a new fd or -1.
+            let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, pid, 0) };
+            (fd >= 0).then(|| {
+                // SAFETY: the fd is new and ours alone.
+                unsafe { OwnedFd::from_raw_fd(fd as i32) }
+            })
+        };
+        #[cfg(not(target_os = "linux"))]
+        let fd: Option<OwnedFd> = None;
         Self { pid, fd }
     }
 
@@ -211,6 +219,7 @@ impl Target {
     pub fn signal(&self, sig: i32) -> bool {
         match &self.fd {
             // SAFETY: a valid pidfd, a null siginfo, no flags.
+            #[cfg(target_os = "linux")]
             Some(fd) => unsafe {
                 libc::syscall(
                     libc::SYS_pidfd_send_signal,
@@ -220,6 +229,8 @@ impl Target {
                     0,
                 ) == 0
             },
+            #[cfg(not(target_os = "linux"))]
+            Some(_) => unreachable!("pidfds exist only on Linux"),
             // Kernels before 5.3: the pid is still ours while the child is not reaped,
             // and the watchdog stops before it is.
             // SAFETY: kill has no memory preconditions.

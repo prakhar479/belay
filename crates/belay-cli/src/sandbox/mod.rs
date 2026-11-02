@@ -547,6 +547,8 @@ pub struct Outcome {
     /// Why belay stopped it (a limit, the user), or None if it ended itself.
     pub stopped: Option<String>,
     pub stdout: Vec<u8>,
+    /// Whether it ran in a systemd scope with belay's memory and task limits.
+    pub scoped: bool,
 }
 
 /// What the sandboxed process's stdin and stdout are.
@@ -568,7 +570,8 @@ pub fn exec(
     mut io: Io,
 ) -> Result<Outcome> {
     let mut argv = backend.argv(spec);
-    if limits::systemd_scope_works() {
+    let scoped = limits::systemd_scope_works();
+    if scoped {
         let mut pre: Vec<OsString> = limits::systemd_prefix(&lim)
             .into_iter()
             .map(Into::into)
@@ -652,6 +655,7 @@ pub fn exec(
         code,
         stopped: breach.or(by_user),
         stdout,
+        scoped,
     })
 }
 
