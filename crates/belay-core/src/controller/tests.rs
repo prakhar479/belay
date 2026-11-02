@@ -2370,6 +2370,22 @@ fn the_agent_may_run_a_sandbox_but_not_remove_one() {
 }
 
 #[test]
+fn the_agent_may_list_a_fleet_prune_but_not_run_it() {
+    let mut c = ctl();
+    let d = c.handle(
+        requested("p", "belay fleet prune --branches --yes", false),
+        1,
+    );
+    assert!(
+        matches!(&d.response.permission, Some(Permission::Deny(m)) if m.contains("belay fleet prune --yes")),
+        "{:?}",
+        d.response
+    );
+    let d = c.handle(requested("l", "belay fleet prune --branches", false), 2);
+    assert!(d.response.permission.is_none());
+}
+
+#[test]
 fn sandbox_events_are_recorded_and_shown_on_the_card() {
     let mut c = ctl();
     let d = c.handle(

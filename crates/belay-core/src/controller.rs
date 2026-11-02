@@ -358,6 +358,19 @@ fn runs_belay_sandbox_rm(command: &str) -> bool {
     })
 }
 
+/// A simple command runs `belay fleet prune --yes`: it deletes worktrees and branches
+/// (rule 12). The listing without `--yes` is the agent's to run.
+fn runs_belay_fleet_prune(command: &str) -> bool {
+    shell::parse(command).segments.iter().any(|seg| {
+        let w = shell::program_words(seg);
+        w.len() >= 3
+            && shell::program_name(&w[0]) == "belay"
+            && w[1] == "fleet"
+            && w[2] == "prune"
+            && w[3..].iter().any(|a| a == "--yes")
+    })
+}
+
 /// A simple command runs `belay notes approve|drop`, `belay memory approve|drop`, or
 /// `belay fixes forget`: the user's
 /// review of what sessions share (F2, L4).
@@ -1930,6 +1943,8 @@ impl Controller {
             "belay: only the user rolls files back. Ask the user to run `belay undo` in their own terminal.".to_string()
         } else if runs_belay_sandbox_rm(&command) {
             "belay: only the user removes a sandbox. Ask the user to run `belay sandbox rm` in their own terminal.".to_string()
+        } else if runs_belay_fleet_prune(&command) {
+            "belay: only the user prunes fleet worktrees and branches. Ask the user to run `belay fleet prune --yes` in their own terminal.".to_string()
         } else if runs_belay(&command, "pause") || runs_belay(&command, "resume") {
             // Pausing would lift every guard at once.
             "belay: only the user pauses or resumes belay. Ask the user if belay should pause."
