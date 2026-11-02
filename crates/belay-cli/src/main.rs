@@ -10,6 +10,7 @@ mod commons;
 mod config;
 mod connector;
 mod daemon;
+mod disk;
 mod doctor;
 mod export;
 mod findings;
@@ -1151,7 +1152,12 @@ fn run(cli: Cli) -> Result<i32> {
             })
         }
         Cmd::Fleet { cmd: None, all } => {
-            print!("{}{}", hub::list(all), fleet::view_default());
+            print!(
+                "{}{}{}",
+                hub::list(all),
+                fleet::view_default(),
+                hub::disk_use()
+            );
             Ok(0)
         }
         Cmd::Fleet { cmd: Some(c), .. } => fleet_cmd(c),

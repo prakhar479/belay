@@ -436,6 +436,8 @@ The sandbox owns its clone's `.git`, hooks and config included, so belay runs no
 
 belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`sandbox_procs`), disk use of the clone and home (`sandbox_disk`), and wall time (`sandbox_wall`). When one is passed, belay stops the sandbox and records why. `belay sandbox show` lists these stops. Run from a belay session, the start and stop are also in the session's ledger, and the card shows the sandbox.
 
+**Build cache.** A sandbox builds in its own clone, and the build goes when the clone goes. With `sandbox_build_cache = shared`, belay binds `<belay home>/cache/<repo>/sandbox/target` read-write into each sandbox of the repo and sets `CARGO_TARGET_DIR` to it, so builds start warm. It is off by default: a sandbox could leave build output there (a build script, a proc macro) that the next sandbox of the repo runs. Fleet sessions never use it. See [sandbox.md](sandbox.md#what-it-does-not-protect).
+
 There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
 
 ## Skills
@@ -626,7 +628,17 @@ Other commands: `belay fleet scale <role> <n>` (also a ceiling: belay starts no 
 
 `belay fleet prune` lists the worktrees of fleets that are down; `--yes` removes them. It never removes a worktree with unsaved work. With `--branches`, it also deletes those fleets' `belay/<fleet>/*` branches that are merged into your current branch, with `git branch -d`. A branch with commits your branch lacks is listed with their count and kept. Sandbox branches (`belay/sandbox/*`) are never touched. Run `prune --yes` yourself, in your own terminal: belay refuses it elsewhere and denies it to agents.
 
-`belay fleet` alone lists fleets and live sessions. A fleet that is down, with no running session and no worktree left, is not listed; `belay fleet --all` shows it.
+`belay fleet down` cleans up after itself. Once the sessions have stopped, it removes each worktree that `prune --yes` would remove, unless a task in it is not finished (done or dropped). It lists what it removed and what it kept. Merge the work that is left, then run `belay fleet prune --yes`.
+
+`belay fleet` alone lists fleets and live sessions. A fleet that is down, with no running session and no worktree left, is not listed; `belay fleet --all` shows it. The last line is the disk belay's data takes (fleets, sandboxes, sessions, build cache) and its largest item. Above 10 GB it is a warning. `belay doctor` shows the same line.
+
+### Build cache
+
+In a Rust repo (a `Cargo.toml` at the top), each fleet session builds into `<belay home>/cache/<repo>/<slot>/target`, not into its worktree: belay sets `CARGO_TARGET_DIR`, for the session and for its checks. The next fleet's `worker-1` starts from the last one's build. Disk use stays at one build per slot, however many fleets you run.
+
+Two running sessions never share a build dir. cargo lets one build at a time use a dir: two cold builds of belay took 80 s on one dir and 34 s on two. Tests also run binaries from it, so one worker's tests could run another's binary.
+
+A `CARGO_TARGET_DIR` you set, or a `target-dir` in the repo's `.cargo/config.toml`, wins. `build_cache = separate` keeps a `target/` in each worktree, and sets `RUSTC_WRAPPER=sccache` when `sccache` is on PATH and you set no wrapper. `build_cache = off` sets nothing. Delete `<belay home>/cache` at any time; the next build fills it again.
 
 ## Repo policy
 
@@ -697,6 +709,8 @@ sandbox_agent = on              # agents may run `belay sandbox run` and `task`
 sandbox_tasks_per_hour = 4      # most `belay sandbox task` runs an agent starts per hour
 sandbox_task_tokens = 2M        # a sandbox task is stopped past this many tokens
 sandbox_ro = ~/.cargo, ~/.rustup, ~/.nvm, ~/.pyenv, ~/.local/bin   # read-only in a sandbox, when they exist
+build_cache = shared            # fleet cargo builds: a dir per repo and slot in belay's cache; separate, off
+sandbox_build_cache = off       # sandbox cargo builds: shared binds one cache per repo in, read-write
 ```
 
 `belay config` prints the config belay runs with: every key, its value, and where it came from (`file, line N`, or `default`). It also lists any line belay could not use.
@@ -748,6 +762,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 - `sandbox`: bubblewrap is installed and can make a sandbox (user namespaces work); on WSL, the layout hides `/init`, `/mnt`, and `WSL_INTEROP`; limits use a systemd user scope, or belay's watchdog alone. It runs no escape probe: `belay sandbox doctor` does. The sandbox is optional, so these only warn.
 - `skills`: skills whose files differ from the lock, and skills waiting for `belay skill approve`.
 - `data`: the size of belay's home, the sessions, and whether the oldest is past `keep_days`.
+- `disk`: what fleets, sandboxes, sessions, and the build cache take, and the largest item. It warns above 10 GB.
 
 **Something else.** Run `belay doctor`, then open an issue with `belay export --session -1`.
 

@@ -321,3 +321,54 @@ fn text_lines_have_status_area_and_fix() {
         .lines()
         .all(|l| ["ok ", "warn ", "fail "].iter().any(|s| l.starts_with(s))));
 }
+
+#[test]
+fn disk_use_is_one_line_and_warns_past_10_gb() {
+    // A fake belay home: a fleet worktree with a build dir, a sandbox, a cache.
+    let h = std::env::temp_dir().join(format!("belay-doctor-disk-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&h);
+    for (p, n) in [
+        ("fleets/f1/worktrees/worker-1/target/x", 3_000_000),
+        ("sandboxes/sb-1/work/a", 1_000_000),
+        ("sessions/s1/ledger.jsonl", 10_000),
+        ("cache/repo-1/worker-1/target/x", 2_000_000),
+    ] {
+        let p = h.join(p);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, vec![0u8; n]).unwrap();
+    }
+    let f = Facts {
+        disk: disk::usage(&h),
+        ..good()
+    };
+    let c = one(&f, "disk");
+    assert_eq!(c.status, Status::Ok, "{c:?}");
+    assert!(c.text.contains("belay data 6.0 MB"), "{}", c.text);
+    assert!(c.text.contains("fleets 3.0 MB"), "{}", c.text);
+    assert!(c.text.contains("cache 2.0 MB"), "{}", c.text);
+    assert!(
+        c.text.contains(&format!(
+            "largest: {} (3.0 MB)",
+            h.join("fleets/f1/worktrees/worker-1").display()
+        )),
+        "{}",
+        c.text
+    );
+    let _ = std::fs::remove_dir_all(&h);
+
+    let big = disk::Usage {
+        parts: vec![("fleets", 46_000_000_000), ("cache", 2_000_000_000)],
+        largest: Some(("/h/fleets/f/worktrees/worker-1".into(), 3_100_000_000)),
+        rest: 0,
+    };
+    let c = one(
+        &Facts {
+            disk: big,
+            ..good()
+        },
+        "disk",
+    );
+    assert_eq!(c.status, Status::Warn);
+    assert!(c.text.contains("belay data 48.0 GB"), "{}", c.text);
+    assert!(c.fix.unwrap().contains("belay fleet prune --yes"));
+}

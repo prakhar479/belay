@@ -99,6 +99,7 @@ fn spec(meta: &Meta, argv: Vec<String>) -> Result<Spec> {
         home: meta.home(),
         cwd: meta.work(),
         ro: vec![(objects.clone(), objects)],
+        rw: Vec::new(),
         env: super::environment(&host_env, &[], &meta.home(), &meta.id, None),
         argv,
     })

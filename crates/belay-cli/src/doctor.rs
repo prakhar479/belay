@@ -16,7 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::sandbox::{self, Backend as _};
-use crate::{config, install, paths, sessions, skillstore};
+use crate::{config, disk, install, paths, sessions, skillstore};
 
 #[cfg(test)]
 mod tests;
@@ -117,6 +117,8 @@ pub struct Facts {
     /// From the skill store: drift and pending lines (status, text).
     pub skills: Vec<(&'static str, String)>,
     pub data: DataFacts,
+    /// Disk use by part (fleets, sandboxes, sessions, cache), P0.4.
+    pub disk: disk::Usage,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -167,6 +169,7 @@ pub fn checks(f: &Facts) -> Vec<Check> {
     out.extend(sandbox_checks(&f.sandbox));
     out.extend(skills(&f.skills));
     out.push(data(&f.data));
+    out.push(disk_check(&f.disk));
     out
 }
 
@@ -560,11 +563,19 @@ fn data(d: &DataFacts) -> Check {
     }
 }
 
-fn human_size(b: u64) -> String {
-    if b >= 1_000_000_000 {
-        format!("{:.1} GB", b as f64 / 1e9)
+use disk::human as human_size;
+
+/// What fleets, sandboxes, sessions and the build cache take; a warning past 10 GB.
+fn disk_check(u: &disk::Usage) -> Check {
+    if u.over() {
+        check(
+            Status::Warn,
+            "disk",
+            format!("{} That is over {}.", u.line(), human_size(disk::WARN_BYTES)),
+            Some("`belay fleet prune --yes` removes finished fleet worktrees; `belay sandbox rm <id>` a sandbox; `belay purge --older-than <days>` old sessions; the build cache can go (`rm -r <home>/cache`)."),
+        )
     } else {
-        format!("{:.1} MB", b as f64 / 1e6)
+        check(Status::Ok, "disk", u.line(), None)
     }
 }
 
@@ -615,6 +626,8 @@ fn gather() -> Facts {
         .is_some_and(|t| has_alias(&t));
     let alias_place = alias_file.map_or("your shell config".into(), |p| p.display().to_string());
     let settings = fs::read_to_string(install::settings_path()).unwrap_or_default();
+    // One walk of belay's home: the data line and the disk line both come from it.
+    let disk = disk::usage(&home);
     let root = paths::sessions_dir();
     let all: Vec<PathBuf> = fs::read_dir(&root)
         .into_iter()
@@ -652,12 +665,13 @@ fn gather() -> Facts {
         sandbox: gather_sandbox(),
         skills: skillstore::doctor_lines(),
         data: DataFacts {
-            home_bytes: dir_size(&home),
+            home_bytes: disk.total() + disk.rest,
             sessions: all.len(),
             live: all.iter().filter(|d| sessions::is_live(d)).count(),
             oldest_days,
             keep_days: cfg.keep_days,
         },
+        disk,
         home,
     }
 }
@@ -738,19 +752,6 @@ fn same_file(a: &Path, b: &Path) -> bool {
         (Ok(x), Ok(y)) => x == y,
         _ => false,
     }
-}
-
-fn dir_size(dir: &Path) -> u64 {
-    fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|e| e.ok())
-        .map(|e| match e.metadata() {
-            Ok(m) if m.is_dir() => dir_size(&e.path()),
-            Ok(m) => m.len(),
-            Err(_) => 0,
-        })
-        .sum()
 }
 
 /// `<bin> --version`, given at most 3 s: a stuck binary must not hang `belay doctor`.
