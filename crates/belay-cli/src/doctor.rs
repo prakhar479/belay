@@ -104,8 +104,6 @@ pub struct Facts {
     pub config_text: Option<String>,
     pub config_warnings: Vec<String>,
     pub config_overrides: usize,
-    /// Whether `belay config migrate` is in this build.
-    pub has_config_migrate: bool,
     pub plugin: Plugin,
     /// The launcher alias: the file looked in, and whether it is there.
     pub alias_place: String,
@@ -280,11 +278,7 @@ fn config_checks(f: &Facts) -> Vec<Check> {
     let mut out = Vec::new();
     let old = old_keys(text);
     if !old.is_empty() {
-        let fix = if f.has_config_migrate {
-            "run `belay config migrate`."
-        } else {
-            "rename them as docs/guide.md § Config says."
-        };
+        let fix = "run `belay config migrate`.";
         out.push(check(
             Status::Warn,
             "config",
@@ -669,7 +663,6 @@ fn gather() -> Facts {
         config_warnings,
         config_overrides: cfg.overrides().len(),
         // `belay config migrate` is not in this build; the check points to the guide.
-        has_config_migrate: false,
         plugin,
         alias_place,
         alias_line,

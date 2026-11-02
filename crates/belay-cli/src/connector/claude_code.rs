@@ -803,6 +803,12 @@ fn user_notice(notices: &[belay_core::Notice]) -> Option<String> {
     Some(text)
 }
 
+/// The daemon's own binary, if it is still there to run. Linux names a replaced
+/// executable "<path> (deleted)", which does not exist.
+fn usable_exe(exe: Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
+    exe.filter(|p| p.is_file())
+}
+
 impl ClaudeCode {
     /// The part of the reply the agent acts on. Notices never go here (rule 5).
     fn encode_for_agent(&self, hook_event: &str, payload: &Value, r: &Response) -> Option<Value> {
@@ -832,7 +838,10 @@ impl ClaudeCode {
         let mut h = json!({ "hookEventName": hook_event });
         match hook_event {
             "PreToolUse" => {
-                if r.wrap {
+                // Wrap only through a belay binary that is still on disk: after an
+                // upgrade during a live session, the daemon's own executable is gone
+                // ("… (deleted)"), and a wrapped command would fail to start.
+                if let (true, Some(exe)) = (r.wrap, usable_exe(std::env::current_exe().ok())) {
                     let mut input = payload
                         .get("tool_input")
                         .filter(|i| i.is_object())
@@ -841,7 +850,6 @@ impl ClaudeCode {
                     let command = s(&input, "command").to_string();
                     // The daemon is the belay binary; its absolute path does not depend on
                     // the PATH in the agent's shell snapshot (R0.4).
-                    let exe = std::env::current_exe().unwrap_or_else(|_| "belay".into());
                     // A leading `cd DIR &&` runs in the agent's shell, so it persists.
                     let (prefix, _) = belay_core::perception::shell::leading_cd(&command);
                     input["command"] = json!(format!(
@@ -1682,6 +1690,15 @@ mod tests {
             "other fields kept"
         );
         assert!(h.get("permissionDecision").is_none(), "never auto-allow");
+    }
+
+    #[test]
+    fn a_replaced_belay_binary_is_not_used_to_wrap() {
+        let gone = std::path::PathBuf::from("/usr/local/bin/belay (deleted)");
+        assert_eq!(usable_exe(Some(gone)), None);
+        assert_eq!(usable_exe(None), None);
+        let here = std::env::current_exe().unwrap();
+        assert_eq!(usable_exe(Some(here.clone())), Some(here));
     }
 
     #[test]

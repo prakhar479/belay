@@ -257,12 +257,7 @@ fn old_config_keys_point_to_the_fix() {
     let c = one(&f, "config");
     assert_eq!(c.status, Status::Warn);
     assert!(c.text.contains("plugin_mode"));
-    assert!(c.fix.as_deref().unwrap().contains("guide"));
-    f.has_config_migrate = true;
-    assert!(one(&f, "config")
-        .fix
-        .unwrap()
-        .contains("belay config migrate"));
+    assert!(c.fix.as_deref().unwrap().contains("belay config migrate"));
 
     // A bad line still gets its own warning.
     f.config_text = Some("loop_treshold = 4\n".into());
