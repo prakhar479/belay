@@ -41,6 +41,9 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - **Undo:** belay keeps the working tree at the start and at the end of each agent turn, as private git refs. `belay undo t-N` rolls the files back to one, also what shell commands changed, without touching your index, HEAD, stash, or branches.
 - **`belay usage`: where your tokens went.** Tokens (input, output, cache read, cache write) and an estimated cost from Claude Code's transcripts, for `--today`, `--week` (the default), or `--since DATE`, grouped `--by project|session|day`, or `--json`. Cost comes from a dated per-model price table, labelled est.; the new `prices` config key overrides it. For sessions belay recorded, it says how many tokens went into loops, after failing runs, and after repeated reads, and how many summaries kept out. It finds the 5-hour limit hits in the transcripts and estimates your usual 5-hour budget as the median cost before them (from 2 hits). `belay status` then adds `~N% of usual 5-hour budget`, from a cache in `usage-cache.json` (a few ms when warm).
 - **Verify before done** (`verify = on`, new key, default `on`): when the agent ends its turn with files changed since the last passing run of its tests, belay keeps it going once: "Run it before you finish." Once per turn, never twice for the same state, never in a fleet session (the hub runs the check). Claude Code gets a Stop `decision: block`. New action kind `verify` (older belay versions skip those lines with a warning).
+- **Routine line:** a fresh session (not a resume or a compaction) gets one line at its start that points the agent at belay: read the last handoff, say what it works on, run `belay brief` before it is done, leave a handoff before it stops. It is recorded as a `routine` action. New config key `agent_skill = on|off` (default on) turns it off.
+- `belay claude` gives the agent belay's skill, slash commands, and MCP tools with no plugin install (`--plugin-dir`, hooks left out; skipped when the plugin is installed). Turn off with `agent_skill = off`.
+- `belay install --permissions` (in the default install) allows belay's read-only and note-taking commands and MCP tools in Claude Code's settings, so the agent is not asked each time. `belay uninstall` removes exactly those rules, and `belay doctor` reports them.
 
 ### Changed
 
@@ -61,6 +64,9 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - `belay doctor` is calmer: shorter lines, `~` for your home folder, one "Not set up with Claude Code yet" line on a fresh machine, and a short sleep warning (exact fix in `belay keep-awake --help`).
 - `belay memory add` from an agent says "Kept m-1. It waits for your OK: `belay memory approve m-1`."
 - Fleet control refusals say "yours to run: use your own terminal".
+- belay is now under the MIT license only.
+- The agent skill is a routine the agent follows on its own: read the handoff, search memory, set its card, check the board, use sandboxes for risky work, run `brief` before "done", and leave a handoff. It also covers messages between sessions.
+- The guide and the site give sessions working together, messages between sessions, and fleets their own section ("It works together").
 
 ### Fixed
 
@@ -81,6 +87,7 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - Without HOME, belay uses a per-user directory in the temp dir, not one shared path.
 - A global flag before the verb (`belay --flag allow`) no longer hides user-only commands from the agent denial.
 - The install script rejects a BELAY_VERSION with odd characters.
+- Under plain `claude` (the plugin), the agent's own `belay card`, `belay handoff "…"`, and `belay msg` work and act as its session. Before, they refused or were sent as yours, because the agent's shell did not know its session.
 
 ## 0.1.0
 
