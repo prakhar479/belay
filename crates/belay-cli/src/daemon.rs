@@ -164,12 +164,20 @@ fn keep_handoff(st: &State) {
     }
 }
 
-fn card_ended() {
+/// The end of a session, from any exit path: keep its handoff, then mark the card
+/// ended. The locks are taken in `write_card`'s order, `CARD_LAST` and then the state,
+/// so the two can never deadlock (taking the state first did: the card stayed live with
+/// no handoff, a CI flake). The caller holds both until the process exits, so no request
+/// is writing the ledger or the card when it ends (R0.6).
+fn end_session(state: &Mutex<State>) -> impl Sized + '_ {
+    let mut last = CARD_LAST.lock().unwrap_or_else(|e| e.into_inner());
+    let done = lock(state);
+    keep_handoff(&done);
     if let Some(dir) = CARD_DIR.get() {
-        let mut last = CARD_LAST.lock().unwrap_or_else(|e| e.into_inner());
         crate::commons::mark_ended(dir);
         *last = ENDED.into();
     }
+    (last, done)
 }
 
 /// When the daemon last got a request (ms), for the idle exit.
@@ -902,9 +910,7 @@ fn watch_idle(minutes: u64, sock: &Path, state: &Mutex<State>) {
         if now_ms().saturating_sub(last) > minutes * 60_000 {
             eprintln!("belayd: idle for {minutes} min; exiting");
             // No request may be writing the ledger when the process ends.
-            let done = lock(state);
-            keep_handoff(&done);
-            card_ended();
+            let _held = end_session(state);
             let _ = fs::remove_file(sock);
             std::process::exit(0);
         }
@@ -920,9 +926,7 @@ fn watch_parent(pid: i32, sock: &Path, state: &Mutex<State>) {
             || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH);
         if !alive {
             eprintln!("belayd: launcher {pid} is gone; exiting");
-            let done = lock(state);
-            keep_handoff(&done);
-            card_ended();
+            let _held = end_session(state);
             let _ = fs::remove_file(sock);
             std::process::exit(0);
         }
@@ -1500,13 +1504,7 @@ fn serve(
             thread::sleep(Duration::from_millis(20));
         }
         // Wait for any request that is writing the ledger, then exit (R0.6).
-        {
-            let done = state.lock().unwrap_or_else(|e| e.into_inner());
-            keep_handoff(&done);
-        }
-        // Not under the state lock: `write_card` takes CARD_LAST, then the state, so the
-        // reverse order here could deadlock and leave the card live with no handoff.
-        card_ended();
+        let _held = end_session(state);
         let _ = fs::remove_file(sock);
         std::process::exit(0);
     }
