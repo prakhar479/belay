@@ -33,6 +33,7 @@ mod shim;
 mod skillstore;
 mod store;
 mod undo;
+mod usage;
 mod watch;
 
 use std::path::PathBuf;
@@ -230,6 +231,25 @@ enum Cmd {
     /// One line for the Claude Code status line: what belay did so far.
     /// Prints nothing outside a belay session.
     Status,
+    /// Where the model's tokens went: totals and an estimated cost from Claude Code's
+    /// transcripts, tokens spent in loops and failing runs, and the 5-hour limit.
+    Usage {
+        /// Since local midnight today.
+        #[arg(long, conflicts_with_all = ["week", "since"])]
+        today: bool,
+        /// The last 7 days, today included (the default).
+        #[arg(long, conflicts_with = "since")]
+        week: bool,
+        /// Since this local date (YYYY-MM-DD).
+        #[arg(long)]
+        since: Option<String>,
+        /// Group the totals by project, session, or day.
+        #[arg(long, value_enum, default_value = "day")]
+        by: usage::By,
+        /// Print JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Print what belay does in a session as it happens: the newest live session, or
     /// the one named. Ctrl-C stops.
     Watch {
@@ -945,6 +965,21 @@ fn run(cli: Cli) -> Result<i32> {
             println!("{}", flags::flag(words, session.as_deref())?);
             Ok(0)
         }
+        Cmd::Usage {
+            today,
+            week: _,
+            since,
+            by,
+            json,
+        } => {
+            let since = match (today, since) {
+                (true, _) => usage::Since::Today,
+                (_, Some(d)) => usage::Since::Date(usage::parse_date(&d)?),
+                _ => usage::Since::Week,
+            };
+            print!("{}", usage::run(since, by, json)?);
+            Ok(0)
+        }
         Cmd::Watch { session, verbose } => {
             watch::run(session.as_deref(), verbose)?;
             Ok(0)
@@ -969,6 +1004,7 @@ fn run(cli: Cli) -> Result<i32> {
             if let Some(dir) = dir {
                 if let Ok(entries) = store::read_entries(&dir) {
                     let mut line = report::status_line(&entries);
+                    line.push_str(&report::budget_segment());
                     // In a fleet session: messages waiting for the next hook (G6).
                     let inbox = std::env::var("BELAY_FLEET_RULES")
                         .ok()

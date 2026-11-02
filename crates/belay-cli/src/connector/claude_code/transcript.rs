@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -17,6 +17,7 @@ use serde_json::Value;
 use super::{extract_output, runner_is_executable, tool_kind, HOOKED_TOOLS, READ_TOOLS};
 use crate::connector::{TranscriptFile, TranscriptSource, TranscriptStep};
 use crate::report::{self, Usage};
+use crate::usage::{MessageUsage, UsageLog};
 
 pub struct ClaudeTranscripts;
 
@@ -57,6 +58,10 @@ impl TranscriptSource for ClaudeTranscripts {
 
     fn usage(&self, path: &Path) -> Option<Usage> {
         report::usage_from_transcript(path)
+    }
+
+    fn usage_log(&self, path: &Path, from: u64) -> UsageLog {
+        usage_log(path, from)
     }
 
     /// `<project>/<session>.jsonl` and `<project>/<session>/subagents/*.jsonl`. A
@@ -187,6 +192,119 @@ fn tool_result(
         output,
         failed,
     });
+}
+
+/// Each API message's usage, and each limit hit, from byte `from` on. A last line with
+/// no newline yet is left for the next read: `end` stops before it.
+fn usage_log(path: &Path, from: u64) -> UsageLog {
+    let mut log = UsageLog {
+        end: from,
+        ..UsageLog::default()
+    };
+    let Ok(mut f) = File::open(path) else {
+        return log;
+    };
+    if f.seek(SeekFrom::Start(from)).is_err() {
+        return log;
+    }
+    let mut reader = BufReader::new(f);
+    let mut index: HashMap<String, usize> = HashMap::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(n) if n > 0 && line.last() == Some(&b'\n') => log.end += n as u64,
+            _ => break,
+        }
+        if !may_hold_usage(&line) {
+            continue;
+        }
+        let Ok(v) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        if log.cwd.is_none() {
+            log.cwd = v["cwd"].as_str().map(String::from);
+        }
+        let Some(at_ms) = v["timestamp"].as_str().and_then(parse_rfc3339_ms) else {
+            continue;
+        };
+        if is_limit_hit(&v) {
+            log.limit_hits.push(at_ms);
+            continue;
+        }
+        let msg = &v["message"];
+        let usage = &msg["usage"];
+        let model = msg["model"].as_str().unwrap_or("");
+        // Claude Code writes its own notices as `<synthetic>` messages: no API call.
+        if !usage.is_object() || model == "<synthetic>" {
+            continue;
+        }
+        let n = |k: &str| usage[k].as_u64().unwrap_or(0);
+        let u = Usage {
+            input: n("input_tokens"),
+            cache_creation: n("cache_creation_input_tokens"),
+            cache_read: n("cache_read_input_tokens"),
+            output: n("output_tokens"),
+            messages: 1,
+        };
+        let id = match msg["id"].as_str().or(v["uuid"].as_str()) {
+            Some(id) if !id.is_empty() => id.to_string(),
+            _ => format!("{}#{}", path.display(), log.end),
+        };
+        // One API message spans several lines; the last line's usage wins (S5).
+        match index.get(&id) {
+            Some(&i) => log.messages[i].usage = u,
+            None => {
+                index.insert(id.clone(), log.messages.len());
+                log.messages.push(MessageUsage {
+                    at_ms,
+                    id,
+                    model: model.to_string(),
+                    usage: u,
+                });
+            }
+        }
+    }
+    log
+}
+
+/// Most bytes are users' lines (tool results): skip them unparsed, from the line's
+/// head, where Claude Code writes `type`. The first `belay status` scans every
+/// transcript, so this keeps it to about a second for 1 GB.
+fn may_hold_usage(line: &[u8]) -> bool {
+    let head = &line[..line.len().min(400)];
+    let has = |needle: &[u8]| head.windows(needle.len()).any(|w| w == needle);
+    !has(b"\"type\"") || has(b"\"assistant\"") || has(b"\"result\"")
+}
+
+/// A plan limit the user hit: Claude Code's own error line, not text that quotes it
+/// (a prompt or a tool result can). `result`: the headless `-p` stream's last line
+/// (fixtures/fleet/result_five_hour_limit.json). In a transcript (checked in V2 on real
+/// ones): an assistant line from `<synthetic>` with `isApiErrorMessage`, text "You've
+/// hit your 5-hour limit · resets …" or "… session limit …" (the same window). A
+/// weekly limit is not the 5-hour one.
+fn is_limit_hit(v: &Value) -> bool {
+    let text = match v["type"].as_str() {
+        Some("result") if v["is_error"].as_bool() == Some(true) => {
+            v["result"].as_str().unwrap_or("").to_string()
+        }
+        Some("assistant")
+            if v["isApiErrorMessage"].as_bool() == Some(true)
+                || v["message"]["model"].as_str() == Some("<synthetic>") =>
+        {
+            v["message"]["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["text"].as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+        _ => return false,
+    };
+    let text = text.trim_start();
+    let hit = text.starts_with("You've hit your") || text.contains("usage limit reached");
+    hit && !text.to_lowercase().contains("week")
 }
 
 /// A project dir for a working directory under `/tmp`: scratch work, such as belay's

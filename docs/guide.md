@@ -339,7 +339,7 @@ belay tells you what it does. It never tells the model: these notes go only to y
 
 - **In Claude Code.** When belay acts, a one-line note appears under the hook, for example `belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: belay allow a-3. Wrong? belay flag a-3`. Every warning ends with that `Wrong?` hint (see [When belay is wrong](#when-belay-is-wrong)). A hook gets at most one note. If belay did more in that hook, the note counts the rest: `(+2 more summaries)`.
 - **`report` decides what you see there.** `quiet` (the default) shows warnings: blocked edits and commands, guard warnings, and loops. `normal` adds what belay did for the agent: summaries, recalled fixes, notes, handoffs, and fleet notices. `verbose` adds minor notes: wrapped test runs, retries, and the tokens each summary kept out.
-- **The status line.** `belay status` prints `belay · 2 blocked · 14k tokens kept out · 1 memory`. Memories are fixes the session learned or was told about.
+- **The status line.** `belay status` prints `belay · 2 blocked · 14k tokens kept out · 1 memory`. Memories are fixes the session learned or was told about. Once belay has seen you hit the 5-hour limit twice, it adds `~43% of usual 5-hour budget` (an estimate, see [Usage](#usage)).
 - **`belay watch`** prints each note as it happens, in another terminal. It follows the newest live session, or the one you name with `--session`, and stops when the session ends or you press Ctrl-C. It shows every note, whatever `report` says; `--verbose` adds the minor ones. It reads only the ledger, so it works with any agent.
 - **When the agent exits**, `belay claude` prints a short summary:
 
@@ -399,6 +399,36 @@ belay export --action a-3 --fixture flagged-a-3 --session <id>
 That writes what led to the action into a new directory: the edit's before and after (`before.py`, `after.py`, `path.txt`), or the outputs (`output-o-N.txt`), with `action.json` and a `README.md`. The text is cleaned like `belay export`: paths, your home, your user name, and secrets are replaced. It still comes from your project, so review it before you commit it anywhere public.
 
 **The agent can flag too.** When it thinks a belay warning is wrong, the plugin's skill tells it to say so in one line with `belay flag a-N "why"`. A flag run anywhere but your own terminal is recorded as the agent's. `belay review` shows the agent's flags apart from yours, and `belay report` marks them `[agent]`. A flag changes nothing: it lifts no guard and allows no edit. Only `belay allow` does that, from your terminal.
+
+### Usage
+
+`belay usage` says where the model's tokens went. It reads Claude Code's transcripts in `~/.claude/projects`, so it covers every session, with belay or without.
+
+```sh
+belay usage                      # the last 7 days, by day
+belay usage --today --by project
+belay usage --since 2026-11-01 --by session --json
+```
+
+```text
+Usage since 2026-10-27
+  332.0M tokens: 4.5k input · 2.2M output · 321.8M cache read · 8.0M cache write · 2177 messages
+  Cost: ~$147.97 (est., prices of 2026-10-06; not your bill)
+By day:
+     39.3M tokens    ~$18.21  2026-10-31
+     ...
+Where it went (4 belay sessions): of 1.2M tokens: 180k in loops, 90k after failing runs, 20k after repeated reads; 40k kept out by summaries (est.)
+5-hour limit: hit 11 times; usual budget ~$40.22 (est., median); last 5 hours ~$13.43 (~33%)
+```
+
+What each part is, and what is estimated:
+
+- **Tokens** are the transcripts' own counts: input, output, cache read, and cache write. A message that appears on several lines, or again in a resumed conversation's file, counts once. These are exact.
+- **Cost** is an estimate. belay multiplies the tokens by a price table dated 2026-10-06 (USD per million tokens, per model). It is never your bill: a plan is not billed per token, and prices change. `prices` in the config overrides the table (see [Config](#config)).
+- **Where it went** covers only sessions belay recorded. belay joins each model message to the ledger by time. A message counts *in loops* when it falls between a loop's first failure and belay's steer. It counts *after failing runs* when it follows a failed tool run, up to the agent's next tool call. It counts *after repeated reads* when it follows a read of content the agent already had. Each message counts once, in that order. *Kept out by summaries* is the ledger's estimate (4 characters a token). The tokens count everything the plan counts, cache reads included.
+- **The 5-hour limit.** belay finds each "You've hit your 5-hour limit" (or "session limit") line in the transcripts. Hits less than 5 hours apart are one hit. For each hit, it adds up the estimated cost of the 5 hours before it. Your usual budget is the median of those, once there are 2 hits; before that, it says "no estimate yet". Then `belay status` adds `~43% of usual 5-hour budget`: the cost of the last 5 hours over that median. It is an estimate of where your limit is, from your own history.
+
+`belay status` keeps a cache in `~/.local/share/belay/usage-cache.json`, so the status line reads only what each transcript gained since the last call. The first call scans every transcript once (a few seconds for about 1 GB); after that it takes a few milliseconds.
 
 ## Sandboxes
 
@@ -693,7 +723,10 @@ sandbox_agent = on              # agents may run `belay sandbox run` and `task`
 sandbox_tasks_per_hour = 4      # most `belay sandbox task` runs an agent starts per hour
 sandbox_task_tokens = 2M        # a sandbox task is stopped past this many tokens
 sandbox_ro = ~/.cargo, ~/.rustup, ~/.nvm, ~/.pyenv, ~/.local/bin   # read-only in a sandbox, when they exist
+prices = opus 4/20, sonnet 2/10 # `belay usage`: USD per million tokens, over the built-in table
 ```
+
+`prices` takes comma-separated entries: a model key, then input/output prices, and optionally cache read and cache write (`claude-haiku-5-5 0.1/0.5/0.01/0.125`). Without them, cache reads cost 0.1 × input and cache writes 1.25 × input. A key matches every model id that contains it; the longest matching key wins. Unset, belay uses its own table (dated in `belay usage`).
 
 `belay config` prints the config belay runs with: every key, its value, and where it came from (`file, line N`, or `default`). It also lists any line belay could not use.
 
@@ -766,6 +799,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |
 | `belay status` | One line for the status line |
+| `belay usage [--today\|--week\|--since DATE] [--by project\|session\|day] [--json]` | Tokens and estimated cost from the transcripts, where they went, and the 5-hour limit |
 | `belay watch [--session S] [--verbose]` | Print what belay does as it happens |
 | `belay retro <transcript> \| --all [--summary]` | What belay would have done in past transcripts |
 | `belay flag [target] ["note"]` · `belay review` | Note and list where belay got it wrong |

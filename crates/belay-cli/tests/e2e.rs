@@ -1055,9 +1055,13 @@ fn status_line_shows_mode_and_counts() {
         serde_json::from_str(&fs::read_to_string(fixture("post_tool_use_bash.json")).unwrap())
             .unwrap();
     hook(&sock, "PostToolUse", &post);
+    let claude = dir.join("claude");
     let status = |env: Option<&Path>| {
         let mut cmd = Command::new(bin());
-        cmd.arg("status").env_remove("BELAY_SESSION_DIR");
+        cmd.arg("status")
+            .env_remove("BELAY_SESSION_DIR")
+            .env("BELAY_HOME", dir.join("home"))
+            .env("CLAUDE_CONFIG_DIR", &claude);
         if let Some(d) = env {
             cmd.env("BELAY_SESSION_DIR", d);
         }
@@ -1073,6 +1077,36 @@ fn status_line_shows_mode_and_counts() {
         "{line}"
     );
     assert_eq!(status(None), "", "nothing outside a belay session");
+
+    // V2: two 5-hour limit hits give an estimate, and the line says how much of it the
+    // last 5 hours used (nothing, here: the transcript is old).
+    let project = claude.join("projects/-home-dev-shop");
+    fs::create_dir_all(&project).unwrap();
+    let mut text = String::new();
+    for day in [20, 21] {
+        text += &format!(
+            "{}\n",
+            serde_json::json!({"type": "assistant", "timestamp": format!("2026-10-{day}T10:00:00.000Z"),
+                "message": {"id": format!("m{day}"), "model": "claude-sonnet-5-5", "content": [],
+                    "usage": {"input_tokens": 1000, "output_tokens": 1000}}})
+        );
+        text += &format!(
+            "{}\n",
+            serde_json::json!({"type": "assistant", "isApiErrorMessage": true,
+                "timestamp": format!("2026-10-{day}T11:00:00.000Z"),
+                "message": {"id": format!("l{day}"), "model": "<synthetic>",
+                    "content": [{"type": "text", "text": "You've hit your 5-hour limit · resets 3pm"}]}})
+        );
+    }
+    let first_hit = text.lines().take(2).collect::<Vec<_>>().join("\n") + "\n";
+    fs::write(project.join("s.jsonl"), &first_hit).unwrap();
+    assert!(
+        status(Some(&session)).ends_with(" tokens kept out\n"),
+        "one hit: no estimate"
+    );
+    fs::write(project.join("s.jsonl"), &text).unwrap();
+    let line = status(Some(&session));
+    assert!(line.ends_with(" · ~0% of usual 5-hour budget\n"), "{line}");
 }
 
 /// D9: a hook whose shim has already given up gets no response, and the ledger does
@@ -1754,6 +1788,7 @@ fn plugin_hooks_run_a_session_without_the_launcher() {
     let mut status = Command::new(bin())
         .arg("status")
         .env("BELAY_HOME", &home)
+        .env("CLAUDE_CONFIG_DIR", home.join("claude"))
         .env_remove("BELAY_SESSION_DIR")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

@@ -31,6 +31,7 @@
 //! sandbox_ro = ~/.cargo, ~/.rustup   # toolchain dirs bound read-only (default: these,
 //!                            # ~/.nvm, ~/.pyenv, ~/.local/bin, when they exist)
 //! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
+//! prices = opus 4/20, sonnet 2/10   # `belay usage`: USD per million tokens, over the table
 //! ```
 //!
 //! 0.1 keys still load: `look` reads as `on`; `fleet` is `awareness`, `learn` is
@@ -85,6 +86,8 @@ pub struct Config {
     /// A resumed conversation (`claude --resume`, `-c`, `/resume`) continues the belay
     /// state its earlier runs left (`continue`), or starts clean (`fresh`) (U8).
     pub resume: String,
+    /// `belay usage` prices over the built-in table: `model in/out[/read[/write]], …`.
+    pub prices: String,
 }
 
 impl Default for Config {
@@ -111,6 +114,7 @@ impl Default for Config {
             .map(String::from)
             .to_vec(),
             resume: "continue".into(),
+            prices: String::new(),
         }
     }
 }
@@ -143,6 +147,7 @@ impl Config {
             ),
             ("sandbox_ro", self.sandbox_ro.join(", ")),
             ("resume", self.resume.clone()),
+            ("prices", self.prices.clone()),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -377,7 +382,7 @@ fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
 }
 
 /// Every key of 0.2. The 0.1 names are in `RENAMED`.
-const KEYS: [&str; 27] = [
+const KEYS: [&str; 28] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -405,6 +410,7 @@ const KEYS: [&str; 27] = [
     "sandbox_task_tokens",
     "sandbox_ro",
     "resume",
+    "prices",
 ];
 
 /// 0.1 key names, and the 0.2 name each now has (`None`: ignored).
@@ -605,6 +611,11 @@ fn apply(
                 bail!("{key} must be continue or fresh, got {value}");
             }
             c.resume = value.to_string();
+        }
+        "prices" => {
+            let v = value.trim_matches('"');
+            crate::usage::parse_prices(v)?;
+            c.prices = v.to_string();
         }
         _ => unreachable!("checked against KEYS"),
     }

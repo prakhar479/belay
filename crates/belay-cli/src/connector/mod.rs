@@ -143,6 +143,7 @@ use belay_core::{Capabilities, Event, Response};
 use serde_json::Value;
 
 use crate::report::Usage;
+use crate::usage::UsageLog;
 
 pub trait Connector: Send {
     fn agent(&self) -> &'static str;
@@ -252,6 +253,9 @@ pub trait TranscriptSource {
     fn read(&self, path: &Path) -> Result<Vec<TranscriptStep>>;
     /// The model's token usage, if the transcript records it.
     fn usage(&self, path: &Path) -> Option<Usage>;
+    /// Each model message's usage and time, and each plan-limit hit, read from byte
+    /// `from` on (`belay usage`, V2). Never fails: an unreadable file gives nothing.
+    fn usage_log(&self, path: &Path, from: u64) -> UsageLog;
     /// Every transcript under `root` (the agent's transcript dir), sorted.
     fn list(&self, root: &Path) -> Vec<TranscriptFile>;
 }
