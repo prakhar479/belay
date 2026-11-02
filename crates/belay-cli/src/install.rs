@@ -48,7 +48,7 @@ pub const PERMISSION_RULES: [&str; 26] = [
     "Bash(belay flag:*)",
     "Bash(belay skill preview:*)",
     // A plugin's MCP server is `mcp__plugin_<plugin>_<server>__<tool>`; also for a plugin
-    // given with --plugin-dir. [Verify] live. Not sandbox_run, sandbox_task, bg_start,
+    // given with --plugin-dir (seen live on Claude Code 2.1.316). Not sandbox_run, sandbox_task, bg_start,
     // skill_stage: those run commands or bring work out. memory_add only writes a memory
     // that waits for the user's approval.
     "mcp__plugin_belay_belay__memory_search",
