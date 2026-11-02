@@ -1,6 +1,9 @@
 //! `belay install` / `belay uninstall`: the Claude Code plugin, the status line, and the
 //! launcher alias, in one step. Each change is shown first and needs a yes.
 //!
+//! The permission rules go in the same file, so the agent's everyday `belay` commands run
+//! without a prompt.
+//!
 //! The plugin goes in through `claude plugin …` (never by writing Claude Code's plugin
 //! files). The status line is the one file belay edits: `<claude dir>/settings.json`, with
 //! a backup next to it.
@@ -20,6 +23,43 @@ const MARKETPLACE: &str = "belay";
 const DEFAULT_SOURCE: &str = "prakhar479/belay";
 const STATUS_COMMAND: &str = "belay status";
 
+/// Claude Code permission rules for belay's read-only and note-taking commands, and
+/// nothing that runs arbitrary commands, changes files, or is the user's to decide
+/// (rule 12: allow, pause, undo, approve, drop, remove, rm, stop, sandbox, bg, skill add).
+/// `Bash(cmd:*)` is the prefix form. [Verify] against a live Claude Code (permissions docs).
+pub const PERMISSION_RULES: [&str; 26] = [
+    "Bash(belay handoff:*)",
+    "Bash(belay memory search:*)",
+    "Bash(belay memory list:*)",
+    "Bash(belay memory show:*)",
+    "Bash(belay memory add:*)",
+    "Bash(belay ask:*)",
+    "Bash(belay share:*)",
+    "Bash(belay card:*)",
+    "Bash(belay sessions:*)",
+    "Bash(belay msg:*)",
+    "Bash(belay inbox:*)",
+    "Bash(belay brief:*)",
+    "Bash(belay report:*)",
+    "Bash(belay why:*)",
+    "Bash(belay show:*)",
+    "Bash(belay usage:*)",
+    "Bash(belay status:*)",
+    "Bash(belay flag:*)",
+    "Bash(belay skill preview:*)",
+    // A plugin's MCP server is `mcp__plugin_<plugin>_<server>__<tool>`; also for a plugin
+    // given with --plugin-dir. [Verify] live. Not sandbox_run, sandbox_task, bg_start,
+    // skill_stage: those run commands or bring work out. memory_add only writes a memory
+    // that waits for the user's approval.
+    "mcp__plugin_belay_belay__memory_search",
+    "mcp__plugin_belay_belay__memory_add",
+    "mcp__plugin_belay_belay__handoff_get",
+    "mcp__plugin_belay_belay__output_show",
+    "mcp__plugin_belay_belay__why",
+    "mcp__plugin_belay_belay__brief",
+    "mcp__plugin_belay_belay__skill_preview",
+];
+
 /// What to install or remove. None given means the command's default.
 #[derive(Debug, Default, Clone, Copy, clap::Args)]
 pub struct Parts {
@@ -32,12 +72,15 @@ pub struct Parts {
     /// `belay status` as Claude Code's status line (in settings.json, with a backup).
     #[arg(long)]
     pub statusline: bool,
+    /// Claude Code permission rules for belay's everyday commands (in settings.json).
+    #[arg(long)]
+    pub permissions: bool,
 }
 
 impl Parts {
     /// These parts, or `default` when none was asked for.
     pub fn or(self, default: Parts) -> Parts {
-        if self.plugin || self.launcher || self.statusline {
+        if self.plugin || self.launcher || self.statusline || self.permissions {
             self
         } else {
             default
@@ -131,6 +174,85 @@ pub fn remove_statusline(text: &str) -> Result<Option<String>> {
     }
     m.remove("statusLine");
     Ok(Some(render(m)))
+}
+
+fn allow_list(m: &Map<String, Value>) -> Result<Vec<Value>> {
+    match m.get("permissions") {
+        None => Ok(Vec::new()),
+        Some(Value::Object(p)) => match p.get("allow") {
+            None => Ok(Vec::new()),
+            Some(Value::Array(a)) => Ok(a.clone()),
+            Some(_) => bail!("settings.json permissions.allow is not a list; not changing it"),
+        },
+        Some(_) => bail!("settings.json permissions is not an object; not changing it"),
+    }
+}
+
+fn set_allow(m: &mut Map<String, Value>, allow: Vec<Value>) {
+    let p = m
+        .entry("permissions")
+        .or_insert_with(|| Value::Object(Map::new()));
+    if let Value::Object(p) = p {
+        if allow.is_empty() {
+            p.remove("allow");
+        } else {
+            p.insert("allow".into(), Value::Array(allow));
+        }
+    }
+}
+
+/// The settings with belay's permission rules added to `permissions.allow` (other entries
+/// kept, no duplicates), or `None` when all are there. Refuses malformed JSON.
+pub fn merge_permissions(text: Option<&str>) -> Result<Option<String>> {
+    let mut m = parse_settings(text.unwrap_or(""))?;
+    let mut allow = allow_list(&m)?;
+    let before = allow.len();
+    for rule in PERMISSION_RULES {
+        if !allow.iter().any(|v| v.as_str() == Some(rule)) {
+            allow.push(Value::String(rule.into()));
+        }
+    }
+    if allow.len() == before {
+        return Ok(None);
+    }
+    set_allow(&mut m, allow);
+    Ok(Some(render(m)))
+}
+
+/// The settings without belay's rules, or `None` when none are there. Only entries equal
+/// to one of `PERMISSION_RULES` go; an empty `permissions` that belay made goes with them.
+pub fn remove_permissions(text: &str) -> Result<Option<String>> {
+    let mut m = parse_settings(text)?;
+    let allow = allow_list(&m)?;
+    let kept: Vec<Value> = allow
+        .iter()
+        .filter(|v| !v.as_str().is_some_and(|s| PERMISSION_RULES.contains(&s)))
+        .cloned()
+        .collect();
+    if kept.len() == allow.len() {
+        return Ok(None);
+    }
+    set_allow(&mut m, kept);
+    if m.get("permissions")
+        .and_then(Value::as_object)
+        .is_some_and(Map::is_empty)
+    {
+        m.remove("permissions");
+    }
+    Ok(Some(render(m)))
+}
+
+/// For `belay doctor`: whether every belay rule is in the settings text.
+pub fn permissions_present(text: &str) -> bool {
+    let Ok(m) = parse_settings(text) else {
+        return false;
+    };
+    let Ok(allow) = allow_list(&m) else {
+        return false;
+    };
+    PERMISSION_RULES
+        .iter()
+        .all(|r| allow.iter().any(|v| v.as_str() == Some(r)))
 }
 
 /// Writes `new` to `path`, keeping the old file as `<path>.belay-backup`.
@@ -280,6 +402,13 @@ pub fn install(o: &Opts) -> Result<i32> {
             None => notes.push("The status line already runs `belay status`.".into()),
         }
     }
+    if o.parts.permissions {
+        let path = settings_path();
+        match merge_permissions(read_settings(&path)?.as_deref())? {
+            Some(new) => steps.push(Step::Settings { path, new }),
+            None => notes.push("belay's permission rules are already in settings.json.".into()),
+        }
+    }
     if o.parts.launcher {
         let (line, place) = alias_line(&env::var("SHELL").unwrap_or_default());
         notes.push(format!(
@@ -314,6 +443,17 @@ pub fn uninstall(o: &Opts) -> Result<i32> {
         match new {
             Some(new) => steps.push(Step::Settings { path, new }),
             None => notes.push("The status line is not belay's; leaving it.".into()),
+        }
+    }
+    if o.parts.permissions {
+        let path = settings_path();
+        let new = match read_settings(&path)? {
+            Some(text) => remove_permissions(&text)?,
+            None => None,
+        };
+        match new {
+            Some(new) => steps.push(Step::Settings { path, new }),
+            None => notes.push("None of belay's permission rules are in settings.json.".into()),
         }
     }
     if o.parts.launcher {
@@ -436,6 +576,78 @@ mod tests {
         assert!(write_with_backup(&path, &new).unwrap().is_none());
         assert!(path.exists());
         fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn permissions_into_an_absent_file() {
+        let out = merge_permissions(None).unwrap().unwrap();
+        let allow = obj(&out)["permissions"]["allow"].as_array().unwrap().len();
+        assert_eq!(allow, PERMISSION_RULES.len());
+        assert!(permissions_present(&out));
+        assert!(merge_permissions(Some(&out)).unwrap().is_none());
+    }
+
+    #[test]
+    fn permissions_keep_existing_entries_without_duplicates() {
+        let before = r#"{"model":"opus","permissions":{"allow":["Bash(ls:*)","Bash(belay ask:*)"],"deny":["Bash(rm:*)"]}}"#;
+        let out = merge_permissions(Some(before)).unwrap().unwrap();
+        let v = obj(&out);
+        let allow = v["permissions"]["allow"].as_array().unwrap();
+        assert_eq!(allow[0], "Bash(ls:*)");
+        assert_eq!(allow[1], "Bash(belay ask:*)");
+        assert_eq!(allow.len(), 1 + PERMISSION_RULES.len());
+        assert_eq!(v["permissions"]["deny"][0], "Bash(rm:*)");
+        assert_eq!(v["model"], "opus");
+    }
+
+    #[test]
+    fn permissions_never_allow_what_runs_commands_or_is_the_users() {
+        for r in PERMISSION_RULES {
+            for bad in [
+                "sandbox",
+                "bg",
+                "undo",
+                "install",
+                "allow",
+                "pause",
+                "approve",
+                "remove",
+                "skill add",
+                "skill_stage",
+                "stop",
+                "rm",
+                "drop",
+                "prune",
+            ] {
+                assert!(
+                    !r.contains(&format!("belay {bad}")) && !r.contains(&format!("__{bad}")),
+                    "{r}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn permissions_round_trip_removes_only_belays() {
+        let before = json!({"model":"opus","permissions":{"allow":["Bash(ls:*)"]}});
+        let added = merge_permissions(Some(&before.to_string()))
+            .unwrap()
+            .unwrap();
+        let removed = remove_permissions(&added).unwrap().unwrap();
+        assert_eq!(obj(&removed), before);
+        assert!(remove_permissions(&removed).unwrap().is_none());
+        // Nothing of ours left: the empty `permissions` that belay made goes too.
+        let only = merge_permissions(None).unwrap().unwrap();
+        assert_eq!(obj(&remove_permissions(&only).unwrap().unwrap()), json!({}));
+    }
+
+    #[test]
+    fn permissions_refuse_malformed_settings() {
+        assert!(merge_permissions(Some("{ nope")).is_err());
+        assert!(merge_permissions(Some(r#"{"permissions":{"allow":"x"}}"#)).is_err());
+        assert!(merge_permissions(Some(r#"{"permissions":[]}"#)).is_err());
+        assert!(remove_permissions("{ nope").is_err());
+        assert!(!permissions_present("{ nope"));
     }
 
     #[test]

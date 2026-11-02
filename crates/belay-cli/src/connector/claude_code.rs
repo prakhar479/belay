@@ -15,6 +15,7 @@ use super::{Connector, ResumeTarget, TranscriptSource};
 use crate::paths::now_ms;
 
 mod native;
+pub mod package;
 mod transcript;
 
 const EDIT_TOOLS: [&str; 3] = ["Edit", "MultiEdit", "Write"];

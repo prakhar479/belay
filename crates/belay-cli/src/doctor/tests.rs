@@ -19,6 +19,7 @@ fn good() -> Facts {
         alias_line: "alias claude='belay claude'".into(),
         alias: true,
         statusline: Some(("belay status".into(), true)),
+        permissions: true,
         sandbox: SandboxFacts {
             linux: true,
             bwrap: true,

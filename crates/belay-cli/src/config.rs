@@ -27,6 +27,7 @@
 //! sandbox_procs = 512        # most processes in a sandbox
 //! sandbox_disk = 10G         # most disk its worktree and private home use
 //! sandbox_wall = 4h          # longest a sandboxed command runs
+//! agent_skill = on           # `belay claude` gives the agent belay's skill, commands, and MCP tools
 //! sandbox_agent = on         # agents may run `belay sandbox run` and `task` too
 //! sandbox_tasks_per_hour = 4  # most `belay sandbox task` runs an agent starts per hour
 //! sandbox_task_tokens = 2M   # a sandbox task is stopped past this many tokens
@@ -73,6 +74,9 @@ pub struct Config {
     pub keep_days: u64,
     /// `belay claude` audits what the session changed in tests and checks (experimental).
     pub experimental_audit: bool,
+    /// `belay claude` passes the belay plugin's skill, commands, and MCP tools to the agent
+    /// (`--plugin-dir`) when the plugin is not installed.
+    pub agent_skill: bool,
     /// When belay tells the user they are needed (V3): a block, a loop, a stop with
     /// tests unmet, a finished turn, a prompt that waits.
     pub notify: Notify,
@@ -113,6 +117,7 @@ impl Default for Config {
             core: belay_core::Config::default(),
             keep_days: 30,
             experimental_audit: false,
+            agent_skill: true,
             notify: Notify::Attention,
             notify_command: None,
             notify_quiet: None,
@@ -152,6 +157,7 @@ impl Config {
     fn own_fields(&self) -> BTreeMap<String, String> {
         [
             ("experimental_audit", self.experimental_audit.to_string()),
+            ("agent_skill", on_off_word(self.agent_skill).to_string()),
             ("keep_days", self.keep_days.to_string()),
             ("notify", self.notify.name().to_string()),
             // Only whether it is set: a command may hold a token, and this reaches the ledger.
@@ -465,7 +471,7 @@ fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
 }
 
 /// Every key of 0.2. The 0.1 names are in `RENAMED`.
-const KEYS: [&str; 32] = [
+const KEYS: [&str; 33] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -473,6 +479,7 @@ const KEYS: [&str; 32] = [
     "idle_gap_minutes",
     "keep_days",
     "experimental_audit",
+    "agent_skill",
     "notify",
     "notify_command",
     "notify_quiet",
@@ -689,6 +696,7 @@ fn apply(
             c.notify_quiet = Some(window);
         }
         "experimental_audit" => c.experimental_audit = boolean()?,
+        "agent_skill" => c.agent_skill = on_off()?,
         "sandbox_memory" => c.sandbox_memory = size(16 << 20)?,
         "sandbox_disk" => c.sandbox_disk = size(16 << 20)?,
         "sandbox_procs" => c.sandbox_procs = int(8, 1_000_000)?,
