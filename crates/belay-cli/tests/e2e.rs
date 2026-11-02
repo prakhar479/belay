@@ -1975,7 +1975,10 @@ fn start_fleet_daemon(home: &Path, id: &str, config: &Path) -> (Daemon, PathBuf,
 
 /// Wait until `session`'s ledger contains `text` (the fleet watcher polls each second).
 fn wait_for_ledger(session: &Path, text: &str) {
-    for _ in 0..100 {
+    // Up to 30 s: the watcher's round (peer ledgers, a git check per new peer edit) ran
+    // past 10 s while fleet workers built on this machine.
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
         if fs::read_to_string(session.join("ledger.jsonl")).is_ok_and(|l| l.contains(text)) {
             return;
         }
