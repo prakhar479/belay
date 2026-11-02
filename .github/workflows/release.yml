@@ -54,7 +54,7 @@ jobs:
         run: |
           name="belay-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir "$name"
-          cp "target/${{ matrix.target }}/release/belay" README.md LICENSE-MIT LICENSE-APACHE "$name/"
+          cp "target/${{ matrix.target }}/release/belay" README.md LICENSE "$name/"
           cp -r plugin "$name/"
           tar czf "$name.tar.gz" "$name"
           shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"

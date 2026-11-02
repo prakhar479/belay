@@ -59,4 +59,4 @@ For a security problem, see [SECURITY.md](SECURITY.md) instead.
 
 ## License
 
-By contributing, you agree that your contribution is licensed under MIT OR Apache-2.0, like the rest of belay.
+By contributing, you agree that your contribution is licensed under the MIT license, like the rest of belay.

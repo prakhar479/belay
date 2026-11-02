@@ -1149,7 +1149,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <li><b>Never in the way</b><span>if belay breaks, Claude Code carries on</span></li>
       <li><b>Safe by default</b><span>no safe sandbox, no risky run</span></li>
       <li><b>0</b><span>AI calls, no telemetry</span></li>
-      <li><b>Open source</b><span>MIT or Apache-2.0</span></li>
+      <li><b>Open source</b><span>MIT licensed</span></li>
     </ul>
   </div>
 </section>
@@ -1482,6 +1482,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <h3>You see what it did.</h3>
         <p>When belay does something that matters, you see a one-line note in Claude Code. By default that's only the important stuff; set <code class="inline-code">report = normal</code> or <code class="inline-code">verbose</code> if you'd like to see more.</p>
         <p>Everything can be switched off. <code class="inline-code">belay pause</code> turns belay off for this session, or just one part of it. Only you can do that; the agent can't switch belay off on its own.</p>
+        <p><b>Your agent uses it too, on its own.</b> belay gives Claude Code a skill and tools: the agent reads the last handoff when it starts, says what it's working on, checks <code class="inline-code">belay brief</code> before it says "done", and leaves a handoff before it stops. You don't have to ask.</p>
         <p class="was">There are no modes to choose from: belay just works.</p>
       </div>
       <div class="modes-panel reveal" style="--rd:.08s">
@@ -1521,7 +1522,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">06</span> It remembers, together</p>
       <h2 class="h2" id="sessions-title">Many sessions. <span class="mute">One rope.</span></h2>
-      <p class="sec-lede">Running a few agents at once? belay lets them know about each other, so they don't trip over the same files.</p>
+      <p class="sec-lede">Running a few agents at once? belay lets them see each other and talk to each other, so they don't trip over the same files.</p>
     </div>
 
     <div class="g12 split">
@@ -1530,7 +1531,8 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <p class="t"><code class="inline-code">belay sessions</code> shows every agent running on your machine and what each is up to. An agent hears about it when another one:</p>
         <div class="hears"><span>edits the same file</span><span>runs <code>git reset</code> under it</span><span>is about to cause a merge conflict</span></div>
         <ul class="facts">
-          <li><code>belay msg</code><span>Message another session.</span></li>
+          <li><code>belay msg</code><span>Message one session, every session in the repo, or you.</span></li>
+          <li><code>belay inbox</code><span>Read what other sessions sent.</span></li>
           <li><code>belay share · ask</code><span>Share findings, and search them.</span></li>
           <li><code>belay handoff</code><span>Leave a note for the next session.</span></li>
         </ul>
@@ -1717,7 +1719,7 @@ Loops (13 s in loops): 1
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only for now. Uses your normal internet connection.</span><p class="st">Linux only</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They keep working. No new features for now.</span><p class="st">Frozen</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Audit</b><span><code>belay audit</code> is under test. Its output may change.</span><p class="st">Experimental</p></div></div>
-        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>MIT OR Apache-2.0</b><span>Open source, your choice of license.</span><p class="st">License</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>MIT licensed</b><span>Free and open source: use it, change it, share it.</span><p class="st">License</p></div></div>
       </div>
     </div>
   </div>
@@ -1787,7 +1789,7 @@ Loops (13 s in loops): 1
       </div>
     </div>
     <div class="foot-bottom">
-      <span>MIT OR Apache-2.0</span>
+      <span>MIT licensed</span>
       <span>This page is one file. It makes no outside requests.</span>
     </div>
   </div>

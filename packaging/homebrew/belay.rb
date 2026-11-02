@@ -5,7 +5,7 @@ class Belay < Formula
   desc "Local supervisor for command-line coding agents"
   homepage "https://prakhar479.github.io/belay/"
   version "VERSION"
-  license any_of: ["MIT", "Apache-2.0"]
+  license "MIT"
 
   on_macos do
     on_arm do
