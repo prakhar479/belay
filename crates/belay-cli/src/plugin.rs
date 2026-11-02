@@ -6,6 +6,10 @@
 //! Rules, as for the shim: exit 0, print nothing on any error, never block the agent.
 //! When the launcher runs the session (`BELAY_SOCKET` is set), its own hooks handle it,
 //! and plugin hooks do nothing, so nothing is counted twice.
+//!
+//! At SessionStart the plugin gives the agent's shell the session (`CLAUDE_ENV_FILE`), so
+//! `belay card`, `handoff`, and `msg` from the agent act as this session, as they do
+//! under the launcher. `BELAY_PLUGIN` marks those variables as the plugin's.
 
 use std::fs;
 use std::io::Read;
@@ -23,7 +27,7 @@ const IDLE_EXIT_MINUTES: u64 = 120;
 pub fn run(event: &str) {
     let mut input = String::new();
     let _ = std::io::stdin().read_to_string(&mut input);
-    if std::env::var_os("BELAY_SOCKET").is_some() {
+    if std::env::var_os("BELAY_SOCKET").is_some() && std::env::var_os("BELAY_PLUGIN").is_none() {
         return;
     }
     let Ok(payload) = serde_json::from_str::<Value>(&input) else {
@@ -42,6 +46,11 @@ pub fn run(event: &str) {
     }
     if !alive(&sock) && !start(&dir, &sock) {
         return;
+    }
+    if event == "SessionStart" {
+        if let Some(file) = std::env::var_os("CLAUDE_ENV_FILE") {
+            let _ = append(Path::new(&file), &env_lines(&dir, &sock));
+        }
     }
     let timeout = std::env::var("BELAY_HOOK_TIMEOUT_MS")
         .ok()
@@ -100,6 +109,30 @@ pub fn session_dir(session_id: &str, cwd: &Path) -> Option<PathBuf> {
     Some(dir)
 }
 
+/// What the agent's shell needs to act as this session. Claude Code sources
+/// `CLAUDE_ENV_FILE` before each Bash command (seen live on 2.1.316). If hooks ever got
+/// these variables too, `BELAY_PLUGIN` keeps them working.
+fn env_lines(dir: &Path, sock: &Path) -> String {
+    format!(
+        "export BELAY_SOCKET={}\nexport BELAY_SESSION_DIR={}\nexport BELAY_PLUGIN=1\n",
+        sh_quote(&sock.to_string_lossy()),
+        sh_quote(&dir.to_string_lossy()),
+    )
+}
+
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn append(file: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file)?
+        .write_all(text.as_bytes())
+}
+
 fn alive(sock: &Path) -> bool {
     ipc::send(sock, &Request::Ping, Duration::from_millis(100)).is_ok()
 }
@@ -124,6 +157,15 @@ fn start(dir: &Path, sock: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::paths::{clean_id, mapped_dir};
+
+    #[test]
+    fn the_shell_gets_the_session_quoted() {
+        let lines = env_lines(Path::new("/h/it's/s1"), Path::new("/h/s1/belayd.sock"));
+        assert_eq!(
+            lines,
+            "export BELAY_SOCKET='/h/s1/belayd.sock'\nexport BELAY_SESSION_DIR='/h/it'\\''s/s1'\nexport BELAY_PLUGIN=1\n"
+        );
+    }
 
     #[test]
     fn an_empty_or_odd_mapping_names_no_session() {
