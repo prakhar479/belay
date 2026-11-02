@@ -1,3 +1,0 @@
-kind: added
-
-- **Skills from URLs:** `belay skill preview|add|list|update|approve|reject|remove`. belay fetches a skill from a GitHub tree or blob URL (pinned to its commit), a raw `SKILL.md`, a `.zip` or `.tar.gz` (refused if it has `..`, absolute paths, or links), or a local path. It checks the files, warns about risky text (download piped to a shell, base64 blobs, executables, requests to disable belay or permissions, "ignore previous instructions", hidden Unicode), and writes a `.belay-skills.lock` with the digest. An agent can only stage a skill; you approve it in your own terminal. `belay doctor` warns when installed files drift from the lock. New MCP tools `skill_preview` and `skill_stage`.
