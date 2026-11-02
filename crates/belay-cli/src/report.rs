@@ -502,6 +502,24 @@ pub fn status_line(entries: &[Entry]) -> String {
     line
 }
 
+/// The status line's usage segment (V2): " · ~43% of usual 5-hour budget", only once
+/// two limit hits give an estimate. Reads the usage cache; empty on any error.
+pub fn budget_segment() -> String {
+    let Some(src) = crate::connector::for_agent("claude-code")
+        .ok()
+        .and_then(|c| c.transcript())
+    else {
+        return String::new();
+    };
+    let b = crate::usage::budget(
+        src.as_ref(),
+        &crate::paths::claude_projects_dir(),
+        &crate::config::load().prices,
+        crate::paths::now_ms(),
+    );
+    crate::usage::status_segment(&b)
+}
+
 /// A 0.1 session that ran in look mode, for all or part of it: belay acted on nothing
 /// then, so its `[would …]` lines are not what a 0.2 session would show.
 pub(crate) fn recorded_in_look(entries: &[Entry]) -> bool {

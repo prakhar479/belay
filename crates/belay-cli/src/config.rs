@@ -35,6 +35,7 @@
 //! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
 //! build_cache = shared       # fleet builds: a cargo target dir per repo and slot; separate, off
 //! sandbox_build_cache = off  # sandbox builds: shared binds one cache per repo in (see docs/sandbox.md)
+//! prices = opus 4/20, sonnet 2/10   # `belay usage`: USD per million tokens, over the table
 //! ```
 //!
 //! 0.1 keys still load: `look` reads as `on`; `fleet` is `awareness`, `learn` is
@@ -102,6 +103,8 @@ pub struct Config {
     /// A sandbox's cargo builds: `shared` binds one cache per repo in, read-write;
     /// `off` keeps them in the sandbox's clone.
     pub sandbox_build_cache: BuildCache,
+    /// `belay usage` prices over the built-in table: `model in/out[/read[/write]], …`.
+    pub prices: String,
 }
 
 impl Default for Config {
@@ -133,6 +136,7 @@ impl Default for Config {
             build_cache: BuildCache::Shared,
             // Off: a shared cache lets one sandbox leave artifacts another runs.
             sandbox_build_cache: BuildCache::Off,
+            prices: String::new(),
         }
     }
 }
@@ -186,6 +190,7 @@ impl Config {
                 "sandbox_build_cache",
                 self.sandbox_build_cache.word().to_string(),
             ),
+            ("prices", self.prices.clone()),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -460,7 +465,7 @@ fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
 }
 
 /// Every key of 0.2. The 0.1 names are in `RENAMED`.
-const KEYS: [&str; 31] = [
+const KEYS: [&str; 32] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -492,6 +497,7 @@ const KEYS: [&str; 31] = [
     "resume",
     "build_cache",
     "sandbox_build_cache",
+    "prices",
 ];
 
 /// 0.1 key names, and the 0.2 name each now has (`None`: ignored).
@@ -723,6 +729,11 @@ fn apply(
                 Some(m @ (BuildCache::Shared | BuildCache::Off)) => m,
                 _ => bail!("{key} must be shared or off, got {value}"),
             };
+        }
+        "prices" => {
+            let v = value.trim_matches('"');
+            crate::usage::parse_prices(v)?;
+            c.prices = v.to_string();
         }
         _ => unreachable!("checked against KEYS"),
     }

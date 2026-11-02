@@ -1,0 +1,3 @@
+kind: added
+
+- **`belay usage`: where your tokens went.** Tokens (input, output, cache read, cache write) and an estimated cost from Claude Code's transcripts, for `--today`, `--week` (the default), or `--since DATE`, grouped `--by project|session|day`, or `--json`. Cost comes from a dated per-model price table, labelled est.; the new `prices` config key overrides it. For sessions belay recorded, it says how many tokens went into loops, after failing runs, and after repeated reads, and how many summaries kept out. It finds the 5-hour limit hits in the transcripts and estimates your usual 5-hour budget as the median cost before them (from 2 hits). `belay status` then adds `~N% of usual 5-hour budget`, from a cache in `usage-cache.json` (a few ms when warm).
