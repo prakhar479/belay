@@ -131,7 +131,7 @@ On a session that went in circles, the report looks like this:
 
 ```text
 Session loop_session.jsonl · claude-code (retro) · 14 s
-Needs attention: 1 loops
+For you to look at: 1 loop
 Loops (13 s in loops): 1
   - [would have steered] after 13 s: belay: 2 failures are unchanged after 3 fix attempts (edit, then run):
     tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total' …

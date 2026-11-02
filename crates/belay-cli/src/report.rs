@@ -906,8 +906,17 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
             .iter()
             .filter(|(_, items)| !items.is_empty())
             .map(|(title, items)| {
-                let name = title.split(" (").next().unwrap_or(title).to_lowercase();
-                format!("{} {name}", items.len())
+                let n = items.len();
+                let (one, many) = match title.split(" (").next().unwrap_or(title) {
+                    "Loops" => ("loop", "loops"),
+                    "Edit cycles" => ("edit cycle", "edit cycles"),
+                    "Test guard" => ("test guard warning", "test guard warnings"),
+                    "Fleet notices" => ("fleet notice", "fleet notices"),
+                    "Recalled" => ("memory recalled", "memories recalled"),
+                    "Verify before done" => ("verify nudge", "verify nudges"),
+                    _ => ("item", "items"),
+                };
+                format!("{n} {}", if n == 1 { one } else { many })
             })
             .collect();
         if undelivered > 0 {
