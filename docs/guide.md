@@ -760,11 +760,12 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, and why |
 | `belay fleet up\|status\|report\|merge\|down` | Start a fleet, watch it, merge its work, stop it |
 | `belay fleet pause\|resume\|restart\|replay` | Hold or go on handing out work; start a stopped hub again; replay its records |
-| `belay fleet stop\|spawn\|scale\|prune` | Stop or add sessions; remove worktrees of fleets that are down |
+| `belay fleet stop\|spawn\|scale\|prune` | Stop or add sessions; remove worktrees of fleets that are down (`--branches`: also their merged branches) |
 | `belay task add\|list\|show\|assign\|claim` | Put tasks on a fleet's board, read them, give them out |
 | `belay task done\|blocked\|reject\|drop` | Finish a task, say it is blocked, send it back, or withdraw it |
 | `belay audit [range]` | (Experimental) what a diff did to tests and checks |
 | `belay install [--plugin] [--statusline] [--launcher]` · `belay uninstall` | Set belay up in Claude Code, or remove it |
+| `belay config [migrate]` | Show each setting and where it comes from; rewrite 0.1 keys |
 | `belay doctor` · `belay export` · `belay purge` | Install check, bug bundle, cleanup |
 
 Every command has `--help`.
