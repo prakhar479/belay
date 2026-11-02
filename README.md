@@ -76,6 +76,14 @@ Add `--markdown` to paste it into a pull request.
 
 **You stepped away.** You get a desktop notification when the agent is blocked, looping, or done. To get it on your phone, set `notify_command` to any command you like ([guide](docs/guide.md#getting-told-when-you-are-needed)).
 
+**You're leaving, and the work isn't done.** Tell the agent you're heading out, and it offers to keep going in the background. Or start that yourself:
+
+```sh
+belay bg start "finish the parser and make the tests pass"
+```
+
+It keeps working after you close the terminal, in a sandbox when it can. It keeps the machine awake and notifies you when it's done or needs you. Later, `belay bg attach` brings the conversation back to your terminal. A closed laptop lid still sleeps if your system is set to; `belay doctor` says whether yours is, and how to change it.
+
 **You want to try something risky.** `belay sandbox claude` runs the whole session in a contained copy of your repo. The work comes back as a git branch for you to read and merge.
 
 **Where did my tokens go?** `belay usage` shows them by day, project, or session, including how much went into loops and failing runs.
