@@ -113,6 +113,8 @@ pub struct Facts {
     pub alias: bool,
     /// The status line command, and whether it is belay's.
     pub statusline: Option<(String, bool)>,
+    /// Whether belay's permission rules are all in the Claude Code settings.
+    pub permissions: bool,
     pub sandbox: SandboxFacts,
     /// From the skill store: drift and pending lines (status, text).
     pub skills: Vec<(&'static str, String)>,
@@ -168,6 +170,7 @@ pub fn checks(f: &Facts) -> Vec<Check> {
     out.push(plugin(f));
     out.push(alias(f));
     out.push(statusline(f));
+    out.push(permissions(f));
     out.extend(sandbox_checks(&f.sandbox));
     out.extend(skills(&f.skills));
     out.push(data(&f.data));
@@ -344,6 +347,13 @@ pub fn plugin_of(text: &str) -> Plugin {
     )
 }
 
+/// Whether the belay plugin is installed through `claude plugin`.
+pub fn plugin_installed() -> bool {
+    let text = fs::read_to_string(install::claude_dir().join("plugins/installed_plugins.json"))
+        .unwrap_or_default();
+    matches!(plugin_of(&text), Plugin::Installed(_))
+}
+
 fn plugin(f: &Facts) -> Check {
     match &f.plugin {
         Plugin::Absent => check(
@@ -403,6 +413,24 @@ fn alias(f: &Facts) -> Check {
             "alias",
             format!("No launcher alias in {}.", f.alias_place),
             Some(&format!("add `{}`, or run `belay install`.", f.alias_line)),
+        )
+    }
+}
+
+fn permissions(f: &Facts) -> Check {
+    if f.permissions {
+        check(
+            Status::Ok,
+            "permissions",
+            "belay's everyday commands run without a prompt.",
+            None,
+        )
+    } else {
+        check(
+            Status::Warn,
+            "permissions",
+            "Claude Code asks before the agent runs `belay handoff`, `belay memory search`, and the like.",
+            Some("`belay install --permissions`."),
         )
     }
 }
@@ -675,6 +703,7 @@ fn gather() -> Facts {
         alias_line,
         alias,
         statusline: install::statusline_of(&settings),
+        permissions: install::permissions_present(&settings),
         sandbox: gather_sandbox(),
         skills: skillstore::doctor_lines(),
         data: DataFacts {

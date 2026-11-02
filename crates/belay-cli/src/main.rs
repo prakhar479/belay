@@ -1171,6 +1171,7 @@ fn run(cli: Cli) -> Result<i32> {
         } => install::install(&install::Opts {
             parts: parts.or(install::Parts {
                 plugin: true,
+                permissions: true,
                 ..Default::default()
             }),
             from,
@@ -1181,6 +1182,7 @@ fn run(cli: Cli) -> Result<i32> {
             parts: parts.or(install::Parts {
                 plugin: true,
                 statusline: true,
+                permissions: true,
                 launcher: false,
             }),
             from: None,

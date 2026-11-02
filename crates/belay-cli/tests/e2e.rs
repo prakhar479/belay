@@ -26,6 +26,8 @@ fn hermetic() {
         }
         // The user's own config must not change what a test sees.
         std::env::set_var("BELAY_CONFIG", "/nonexistent/belay-e2e/config.toml");
+        // No belay plugin "installed" from the developer's own Claude config.
+        std::env::set_var("CLAUDE_CONFIG_DIR", "/nonexistent/belay-e2e/claude");
         // A killed test run runs no `Drop`: hubs it started go down on their own.
         std::env::set_var("BELAY_TEST_PARENT", std::process::id().to_string());
     });
@@ -176,6 +178,29 @@ fn features_off_change_nothing() {
         .unwrap()
         .contains("No edit was blocked"));
     assert!(socket_gone(&session), "daemon must stop with the session");
+}
+
+/// The belay plugin reaches the agent through `--plugin-dir`, hooks left out; `agent_skill = off` stops it.
+#[test]
+fn the_launcher_hands_the_agent_the_skill() {
+    let (dir, _s) = run_session("skill-on", "", &[]);
+    let args = fs::read_to_string(dir.join("args.txt")).unwrap();
+    let words: Vec<&str> = args.split_whitespace().collect();
+    let at = words
+        .iter()
+        .position(|w| *w == "--plugin-dir")
+        .expect(&args);
+    let pkg = Path::new(words[at + 1]);
+    assert!(pkg.join("skills/belay/SKILL.md").is_file());
+    assert!(pkg.join(".mcp.json").is_file());
+    assert!(
+        !pkg.join("hooks").exists(),
+        "the launcher has its own hooks"
+    );
+
+    let (dir, _s) = run_session("skill-off", "agent_skill = off\n", &[]);
+    let args = fs::read_to_string(dir.join("args.txt")).unwrap();
+    assert!(!args.contains("--plugin-dir"), "{args}");
 }
 
 /// 0.1's `--belay-mode` still starts a session: ignored, with a warning.

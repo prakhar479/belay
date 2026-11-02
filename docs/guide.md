@@ -88,17 +88,21 @@ belay doctor     # will belay work here? one line per check: ok, warn, or fail, 
 belay install                  # the Claude Code plugin: belay's hooks, its skill, and slash commands
 belay install --statusline     # `belay status` as the status line, in ~/.claude/settings.json
 belay install --launcher       # prints an alias so `claude` starts under belay
+belay install --permissions    # lets the agent run belay's everyday commands without a prompt
 ```
 
 - `--plugin` (the default) runs `claude plugin marketplace add prakhar479/belay` and `claude plugin install belay@belay`. `--from <path>` uses a local clone instead. `BELAY_CLAUDE_BIN` picks the `claude` binary.
 - `--statusline` keeps every other key in `settings.json` and saves the old file as `settings.json.belay-backup`. It refuses to replace a status line that is not belay's unless you add `--force`.
+- `--permissions` (also in the default `belay install`) adds Claude Code permission rules to `permissions.allow` in `settings.json`, with the same backup. It keeps your entries and adds no duplicates. The rules cover belay's read-only and note-taking commands: `belay handoff`, `memory search|list|show|add`, `ask`, `share`, `card`, `sessions`, `msg`, `inbox`, `brief`, `report`, `why`, `show`, `usage`, `status`, `flag`, `skill preview`, and the MCP tools `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `brief`, `skill_preview`. Nothing that runs commands or changes files (`sandbox`, `bg`, `undo`, `skill add`) and nothing that is yours to decide (`allow`, `pause`, `approve`, `drop`, `remove`, `rm`) is in the list.
 - `--launcher` prints the line to add to your shell config. belay does not edit it for you.
 
-`belay uninstall` removes the plugin and belay's status line. A status line that is not belay's stays. `belay doctor` says whether the plugin is installed and whether the status line is belay's.
+`belay uninstall` removes the plugin, belay's status line, and belay's permission rules. A status line that is not belay's stays, and so does every other rule. `belay doctor` says whether the plugin is installed, whether the status line is belay's, and whether the permission rules are in place.
 
 The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
+
+You do not need the plugin for `belay claude`. When the plugin is not installed, the launcher writes the same skill, slash commands, and MCP tools to `<belay home>/plugin/<version>/` and starts the agent with `--plugin-dir` for them. It leaves out the plugin's hooks, because the launcher has its own. If the plugin is installed, the launcher does not add them a second time. `agent_skill = off` in the config turns this off.
 
 The first hook of each conversation starts belay's session for it, and `SessionEnd` stops it. Plugin sessions use the same [features](#features) as `belay claude`. When you start with `belay claude`, the plugin's hooks step aside, so nothing is recorded twice.
 
@@ -909,6 +913,7 @@ sandbox_memory = 4G             # sandbox: most memory its processes use togethe
 sandbox_procs = 512             # sandbox: most processes
 sandbox_disk = 10G              # sandbox: most disk its clone and private home use
 sandbox_wall = 4h               # sandbox: longest a command runs (also 30m, 90s)
+agent_skill = on                # `belay claude` gives the agent belay's skill, commands, and MCP tools
 sandbox_agent = on              # agents may run `belay sandbox run` and `task`
 sandbox_tasks_per_hour = 4      # most `belay sandbox task` runs an agent starts per hour
 sandbox_task_tokens = 2M        # a sandbox task is stopped past this many tokens
