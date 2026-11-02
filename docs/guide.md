@@ -12,11 +12,11 @@ This guide goes from install to fleets. Each section stands alone, so skip to wh
 
 - [Install](#install)
 - [Five minutes with belay](#five-minutes-with-belay)
-- [Features](#features)
 - [What belay does for one session](#what-belay-does-for-one-session)
-- [Reading the record](#reading-the-record)
+- [Seeing what belay does](#seeing-what-belay-does)
+- [Sandboxes](#sandboxes)
+- [Skills](#skills)
 - [Sessions that know about each other](#sessions-that-know-about-each-other)
-- [Learning across sessions](#learning-across-sessions)
 - [Fleets](#fleets)
 - [Repo policy](#repo-policy)
 - [Audit (experimental)](#audit-experimental)
@@ -138,7 +138,9 @@ Short aliases help:
 alias bl='belay claude'
 ```
 
-## Features
+## What belay does for one session
+
+### Features
 
 belay always acts within what the agent supports, and records every action with its reason. Each thing it does is a feature with its own [config](#config) key:
 
@@ -156,33 +158,11 @@ belay always acts within what the agent supports, and records every action with 
 
 A feature that is off takes no action. An action the agent cannot take is recorded as not applied.
 
-### Pause and resume
+#### Pause and resume
 
 `belay pause` is the kill switch for a live session. `belay pause guard` pauses one feature; `belay pause` with no feature pauses all of them. `belay resume [feature]` turns them back on. Each pause and resume is in the ledger, and `belay status` shows what is paused. Run these yourself, in another terminal or with `!` in Claude Code: belay denies the agent's own `belay pause` and `belay resume`.
 
 0.1 had a look mode and an optimize mode. They are gone: `belay mode` says so, and `--belay-mode` is ignored with a warning. Reports of 0.1 sessions say "recorded in look mode (0.1)" when belay acted on nothing.
-
-## What belay does for one session
-
-### Test output, summarized
-
-Agents run test suites again and again, and a suite with hundreds of passing tests floods the context. With `wrap_tests = true`, belay runs test commands through `belay run`, which keeps their exit code, so a failed run can be summarized too. Output above `shape_threshold_tokens` (default 2000) is replaced by a summary that keeps every failure line. The agent sees a footer like this:
-
-```text
-[… 242 lines omitted (242 passing) …]
-=================================== FAILURES ===================================
-________________________________ test_get_order ________________________________
->       assert resp["status_code"] == 200
-E       assert 500 == 200
-tests/test_api.py:11: AssertionError
-…
-======================== 2 failed, 300 passed in 0.28s =========================
-[belay: 334 lines → 93 lines · full output: belay show o-3]
-```
-
-That pytest run went from 6,407 to 1,576 tokens. belay uses a summary only when it is at most `max_summary_ratio` (default 0.7) of the original. When the agent never re-opens the full output with `belay show`, later summaries get tighter. Re-opens loosen them again.
-
-The full original is always kept: `belay show o-3` prints it, for you or for the agent.
 
 ### The test guard
 
@@ -207,16 +187,6 @@ Only you can lift a block: type `! belay allow` in Claude Code, or run `belay al
 
 If you allow blocks of the same rule twice in a session (say, two removed assertions), that rule only warns for the rest of the session: the agent still hears about it, but the edit goes through. `belay allow` tells you when this happens, and the ledger records it as a `feature_changed` entry on `guard:<rule>`. `belay resume guard` makes the rule deny again.
 
-### Verify before done
-
-When the agent ends its turn with files changed since the last passing run of its tests, belay keeps it going once:
-
-```text
-belay: files changed since the last passing run of `pytest`. Run it before you finish.
-```
-
-The command is the last test or check command the session ran. belay asks at most once per turn, and never twice for the same unchanged state, so it cannot loop with the agent. Changes to docs (`.md`, `.txt`, `.rst`) do not count. A fleet session is left alone: the hub runs its task's check. Turn it off with `verify = off`.
-
 ### Loops
 
 When the same failure comes back after `loop_threshold` (default 3) rounds of edit-then-run, belay says so once:
@@ -227,6 +197,141 @@ assert 500 == 200; … A different approach may be needed.
 ```
 
 It compares failures by a normalized signature, so line numbers, addresses, and timings do not hide a repeat. It also notices edit cycles (`edit, revert, edit`). With `notify = true` you also get a desktop notification when belay steers a loop or blocks an edit, which helps in long unattended runs.
+
+### Verify before done
+
+When the agent ends its turn with files changed since the last passing run of its tests, belay keeps it going once:
+
+```text
+belay: files changed since the last passing run of `pytest`. Run it before you finish.
+```
+
+The command is the last test or check command the session ran. belay asks at most once per turn, and never twice for the same unchanged state, so it cannot loop with the agent. Changes to docs (`.md`, `.txt`, `.rst`) do not count. A fleet session is left alone: the hub runs its task's check. Turn it off with `verify = off`.
+
+### Test output, summarized
+
+Agents run test suites again and again, and a suite with hundreds of passing tests floods the context. With `wrap_tests = true`, belay runs test commands through `belay run`, which keeps their exit code, so a failed run can be summarized too. Output above `shape_threshold_tokens` (default 2000) is replaced by a summary that keeps every failure line. The agent sees a footer like this:
+
+```text
+[… 242 lines omitted (242 passing) …]
+=================================== FAILURES ===================================
+________________________________ test_get_order ________________________________
+>       assert resp["status_code"] == 200
+E       assert 500 == 200
+tests/test_api.py:11: AssertionError
+…
+======================== 2 failed, 300 passed in 0.28s =========================
+[belay: 334 lines → 93 lines · full output: belay show o-3]
+```
+
+That pytest run went from 6,407 to 1,576 tokens. belay uses a summary only when it is at most `max_summary_ratio` (default 0.7) of the original. When the agent never re-opens the full output with `belay show`, later summaries get tighter. Re-opens loosen them again.
+
+The full original is always kept: `belay show o-3` prints it, for you or for the agent.
+
+### Memory
+
+Memory is one store for what sessions and you keep: facts, decisions, gotchas, fixes, handoffs, and notes. Each memory says where it came from: belay saw it, an agent said it, or you did. It lives in `<home>/memory/`: `user.jsonl` for yours across projects, and one `project-<key>.jsonl` per project.
+
+```sh
+belay memory                                  # this project's memories and yours, newest first
+belay memory search "pytest asyncio"          # the best matches
+belay memory add "the cache lives in tmp" --kind gotcha --tag cache --file src/cache.rs
+belay memory add "I review on Fridays" --scope user
+belay memory show m-3                         # every field
+belay memory approve m-3                      # vouch for an agent's memory (yours to run)
+belay memory drop m-3                         # retire one (yours to run)
+belay memory migrate                          # copy notes, fixes, findings, and handoffs in, once
+```
+
+Kinds are `fact`, `decision`, `gotcha`, `fix`, `handoff`, and `note` (the default). A memory you add in your terminal is yours. One added from an agent's shell is the agent's until you approve it. belay denies an agent's `belay memory approve` and `drop`.
+
+Search ranks a matching failure signature highest, then a word in a tag, a file path, and the text. This project and your approval add a little, and so does a recent memory. The same text twice in a project and kind keeps only the newer one. A project keeps at most 500 memories; past that, the least used are retired.
+
+#### Handoffs and recall
+
+When a session ends, and before each compaction, belay keeps a handoff in the project's memory. It says what belay saw: the task from `belay card --task`, the files changed, the last test and its result, the failure still open (its test and first line), and whether the session was looping or blocked. The agent's own `belay handoff` text comes last, labelled as its own. A session keeps one handoff: a later one replaces the earlier.
+
+When a session starts, the agent gets the newest handoff another session left in this project, and then the memories that rank best for the project (yours and approved ones first, then the newest). All of it fits in `recall_tokens` (600 by default). Fixes are left out here: a fix comes up when its failure does. The ledger records a `memory_recalled` action with the ids, so `belay why` can tell what the agent was given.
+
+A failure whose signature matches a `fix` memory gets that memory, once per failure, like a learned fix.
+
+After a compaction, the agent gets a carry pack: its task, the open failure, the guard's blocks and your decisions on them, and the memories it was given in this session. The carry pack only adds to the context; it changes nothing the agent already has. It also fits in `recall_tokens`.
+
+Notes, learned fixes, findings, and the handoffs of ended sessions show up in `belay memory` as they are, with ids `note-N`, `fix-…`, `f-N`, and `h-…`. `belay memory migrate` copies them into the store and backs up the old files first. Running it again copies nothing new. The old commands keep working.
+
+#### Learning across sessions
+
+With `memory = on` (the default), belay remembers fixes on this machine. A failure counts as fixed when it goes away after edits and a complete run passes. A complete run uses no `-x`, `-k`, or `--lf`; belay reads its exit code, or the runner's summary when the run is piped through `tail` or `tee`. The session then keeps the failure, the command, the files changed, and a short diff of the edits (at most 30 lines, secrets redacted).
+
+When another session of the same project hits that failure, belay tells it how it was fixed, with the diff, on the first hit. All worktrees of a repo are one project. A fix from another project is told only on a second hit, and without the diff: code does not leave its project.
+
+```sh
+belay fixes                 # this project's learned fixes
+belay fixes forget          # drop them (yours to run)
+```
+
+**Notes** are what you want every session of a project to know:
+
+```sh
+belay note "integration tests need DB_URL; use make test-int"
+belay notes                 # list; `belay notes approve n-2` or `drop n-2`
+```
+
+A note you type in your terminal is kept. A note an agent writes waits until you approve it.
+
+#### Memory over MCP
+
+`belay mcp` is an MCP server over stdio. The plugin declares it, so an agent in Claude Code gets these tools without a shell call:
+
+| Tool | Does |
+|---|---|
+| `memory_search {query, limit?}` | The best matches, as `belay memory search` shows them (10 by default, at most 50) |
+| `memory_add {text, kind?, tags?, files?}` | Keeps a project memory as the agent's, until you approve it |
+| `handoff_get {}` | The newest handoff for this project, as `belay handoff` shows it |
+| `output_show {id}` | The original of `o-N` in this session, as `belay show` |
+| `why {id}` | The cause chain of `a-N`, `o-N`, or an entry, as `belay why` |
+| `skill_preview {url}` | Fetches a skill and shows it, as `belay skill preview`. Installs nothing |
+| `skill_stage {url, scope?, name?}` | Stages a skill for you to approve, as an agent's `belay skill add` |
+
+| `sandbox_run {argv, id?}` | Runs a command in a sandbox, as `belay sandbox run` (see [Sandboxes](#sandboxes)) |
+| `sandbox_task {prompt, id?, resume?, model?}` | A headless follow-up in a sandbox, as `belay sandbox task`; its result |
+
+The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. The sandbox tools run as the agent: the same limits and refusals apply. The two skill tools fetch the URL they are given. Everything else stays on this machine. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
+
+### Resuming
+
+When you resume a conversation, belay goes on where it left off. Loop counts, the open failure, blocked edits, paused features, shape levels, and the card's task carry over. So the third failure of the same test is a loop, even when the first two were in the run before.
+
+```sh
+belay claude --resume <id>    # or -r <id>: that conversation
+belay claude --continue       # or -c: the newest conversation in this directory
+belay claude --resume         # Claude Code's picker: belay follows the one you pick
+belay claude --belay-fresh -c # resume the conversation, but start belay clean
+```
+
+`/resume` inside Claude Code works the same way. The plugin needs nothing: a plugin daemon that stops and starts again picks up its own record.
+
+A resumed run is a new belay session that names the one it continues. Ids go on from it, so `a-N`, `o-N`, and `t-N` each name one thing across the runs. `belay report` shows every run, with a header each. `belay why`, `belay show`, and `belay undo` find ids in earlier runs. The resumed agent does not get a fresh start's recall: it gets the carry pack (its task, open failure, guard history, memories), as after a compaction.
+
+belay finds the earlier run through `<home>/by-session/<conversation id>`, which every session writes. If that run was pruned, the resumed one starts clean. `resume = fresh` in the config makes every resume start clean.
+
+### Undo
+
+In a git repo, belay keeps the working tree as it is when the session starts (`t-0`) and at the end of each agent turn (`t-1`, `t-2`, …). A snapshot holds tracked and untracked files. Ignored files are left out. Each one is a private ref, `refs/belay/<session>/t-N`, so it is not on any branch and `git log` does not show it. belay takes it after the agent has its reply, so the agent does not wait.
+
+To roll the files back, run `belay undo` in your own terminal:
+
+```sh
+belay undo                 # list the snapshots, and how many files differ from now
+belay undo t-2             # show the files that would change, ask, then write them back
+belay undo t-2 --yes       # the same, without asking
+```
+
+Files the snapshot does not have are deleted. Your index, HEAD, stash, and branches are not touched: what you staged stays staged. Before it writes, belay keeps the files as they were as `u-N`, so `belay undo u-1` brings them back. `--session` picks the session, as for `belay report`. Each snapshot and each undo is in the ledger.
+
+Claude Code's `/rewind` restores only what its own edit tools wrote. `belay undo` restores files changed in any way: by a shell command, a formatter, or a code generator. It works the same for any agent belay runs.
+
+Only you can undo. belay refuses `belay undo` from an agent's shell, and denies it when the agent tries. `belay purge` and the cleanup of old sessions delete their refs.
 
 ## Seeing what belay does
 
@@ -248,7 +353,7 @@ belay: session 1793507424-19739 ended.
 
 Every note is in the ledger, shown or not. `belay report` says "blocked" or "steered" for what belay did, and "would have" only for what the agent could not take, and for `belay retro`.
 
-## Reading the record
+### Reading the record
 
 Each session is a ledger: numbered entries, outputs `o-N`, and actions `a-N`. Every action has a reason and the entries that caused it.
 
@@ -274,6 +379,72 @@ belay review                     # every flag, with what it points at
 ```
 
 To report a bug, `belay export --session -1 > s.json` writes one session with paths, your user name, and secrets replaced.
+
+## Sandboxes
+
+A sandbox runs a command, a whole agent session, or a headless follow-up where it cannot reach your other files. It works on its own clone of the repo, on branch `belay/sandbox/<id>`, with a private home and limits. git works inside. At the end, belay commits what changed and brings the branch into your repo. You review and merge it.
+
+```sh
+belay sandbox run -- make test       # a command; the clone goes, the branch stays
+belay sandbox run --id fix --keep -- cargo build   # name it, keep it for the next run
+belay sandbox claude                 # a whole Claude Code session in a sandbox
+belay sandbox claude --id fix --resume <conversation>   # go on with it, in the same sandbox
+belay sandbox task "add tests for parse_size"   # a headless follow-up; prints its result
+belay sandbox task "try the other fix" --resume <conversation> --model haiku
+belay sandbox list                   # every sandbox: running, kept, or removed
+belay sandbox show fix               # branch, commits, the audit of the branch, limit stops
+belay sandbox diff fix               # what the branch changed since it started
+belay sandbox stop fix               # stop a running one
+belay sandbox rm fix [--branch]      # remove its clone and home (yours to run)
+belay sandbox doctor                 # try to escape a fresh sandbox; exit 1 if one gets out
+git merge belay/sandbox/fix          # take the work, once you have read it
+```
+
+The command starts in the same subdirectory of the clone as yours in the repo. Its output streams, and belay returns its exit code. The sandbox starts from your HEAD commit: uncommitted changes are not in it. A sandbox whose branch is already there (from an earlier run with the same id) starts from that branch.
+
+**A whole session.** `belay sandbox claude [--id S] [claude args…]` runs Claude Code inside a sandbox. belay's daemon runs outside and supervises it: the agent's hooks reach it through the session socket, so the guard, loops, and the ledger work as in `belay claude`. The agent cannot see or signal belay. The card shows `sandbox: <id>`. At the end belay prints the session's summary and the branch. The sandbox is kept, so `--id S --resume <conversation>` goes on in it, with belay's state (see [Resuming](#resuming)). Only you start one. Claude Code's own files inside the sandbox (`~/.claude.json`, settings, credentials) are read-only copies.
+
+**A follow-up task.** `belay sandbox task "<prompt>" [--id S] [--resume <conversation>] [--model m] [--keep]` runs the agent headless (`claude -p`) in a sandbox, supervised by a belay session of its own, and prints a short result: the agent's final message, the branch and the files changed, the audit, the tokens used, and any limit that stopped it. The agent runs without permission prompts there: the sandbox is the boundary, and belay's guard still applies. `--resume` gives it a copy of that conversation, so it starts with its context; the original is not changed. You or an agent may start one. An agent may start at most `sandbox_tasks_per_hour` (4) per session. A task that uses more than `sandbox_task_tokens` (2M: input, output, and cache writes) is stopped.
+
+Inside, the command sees the system dirs read-only, your toolchains read-only (`sandbox_ro`), the repo's object store read-only (so git finds the history), the clone, and a private home. It does not see the rest of your home (`~/.ssh`, cloud credentials, other repos), `/mnt`, the Docker socket, your ssh agent, or your display. On WSL it cannot run Windows programs. The network is the host's. The environment is cleared, then a short list is passed: `PATH`, locale, `TERM`, `USER`, `SHELL`, `TZ`, `BELAY_*`, and the agent's API keys. `BELAY_SANDBOX` is set to the sandbox id, and `belay sandbox` refuses to nest.
+
+The sandbox owns its clone's `.git`, hooks and config included, so belay runs nothing of it on your machine: it commits inside the sandbox, and fetches the branch with git's sending side also inside. belay's undo snapshots and audits skip a sandbox's clone. How, and why, is in [sandbox.md](sandbox.md#getting-the-work-out).
+
+belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`sandbox_procs`), disk use of the clone and home (`sandbox_disk`), and wall time (`sandbox_wall`). When one is passed, belay stops the sandbox and records why. `belay sandbox show` lists these stops. Run from a belay session, the start and stop are also in the session's ledger, and the card shows the sandbox.
+
+There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
+
+## Skills
+
+A skill is a folder of instructions (`SKILL.md` and its files) that the agent loads in every session. That makes it a lasting way into the agent's instructions. belay makes installing one deliberate: it fetches, checks, pins, and records it, and only you approve it.
+
+```sh
+belay skill preview https://github.com/o/r/tree/main/skills/pdf   # look; installs nothing
+belay skill add https://github.com/o/r/tree/main/skills/pdf      # preview, confirm, install
+belay skill add ./my-skill --scope project --name pdf --yes
+belay skill list                                                 # installed, waiting, drift
+belay skill update [name]                                        # fetch again; a change waits for approval
+belay skill approve pdf | reject pdf | remove pdf                # yours to run
+```
+
+Sources:
+
+- A GitHub tree or blob URL (`github.com/<owner>/<repo>/tree/<ref>/<path>`). belay makes a shallow, sparse clone of that directory and pins the commit. A ref with a `/` in it is not supported: use a commit or a tag.
+- A raw URL to a `SKILL.md` (a skill of one file). The server's ETag is kept.
+- A `.zip` or `.tar.gz` archive. belay lists it first and refuses absolute paths, `..`, symlinks, and links before anything is extracted.
+- A local path or a `file://` URL.
+
+belay uses `git`, `curl`, `tar`, and `unzip`, with a 60 s limit for each download. A skill has at most 200 files and 1 MB. It needs a `SKILL.md` whose frontmatter has `name` and `description`; the name is cut to `a-z`, `0-9`, and `-`.
+
+Preview shows the name, the description, the files, the warnings, and a digest (SHA-256 over the files). Warnings do not block. belay warns about a download piped to a shell (`curl … | sh`), a base64 blob over 200 characters, an executable script, text that asks to disable belay, hooks, permissions, or a sandbox, "ignore previous instructions", and hidden Unicode (bidi controls, zero-width characters).
+
+Where skills go (Claude Code): `--scope user` (the default) is `~/.claude/skills/<name>` (under `CLAUDE_CONFIG_DIR` if set). `--scope project` is `<repo>/.claude/skills/<name>`. Each of these dirs has a `.belay-skills.lock`: for each skill, its URL, commit or ETag, digest, who approved it, and when. Commit the project's lock with the skills. `belay skill list` and `belay doctor` say when a skill's files no longer match the digest you approved (drift).
+
+**Agents stage; you approve.** From your terminal, `add` previews, asks, and installs. From an agent (a shell in a belay session, or the `skill_stage` MCP tool), `add` only stages the skill and tells the agent to ask you. `belay skill approve <name>` shows it again (with what changed, for an update) and installs it. `approve`, `reject`, and `remove` refuse to run outside your own terminal, and belay denies the agent's run of them. `update` stages a change the same way.
+
+belay keeps a record of each stage, approval, install, rejection, and removal in `<data dir>/skills/log.jsonl`, with the session when there is one.
+
+A skill added while Claude Code runs may not be seen until the session restarts. [Verify]
 
 ## Sessions that know about each other
 
@@ -350,109 +521,6 @@ Each daemon reads the other live sessions' ledgers once a second and notices fou
 - **Worktree overlap.** In another worktree of the same repo, both sessions edited one file, so a merge will conflict there. Not once the other session's version of the file is in your HEAD (its branch was merged), and not once that session has ended and its worktree is removed. For a session that has ended, the notice says so, once per file.
 
 With `awareness = on` (the default), the agent gets these at its next hook. For example: "belay: shop-1 edited shop/payments.py after you did. Read it again before you change it." They are also shown in `belay report`.
-
-## Learning across sessions
-
-With `memory = on` (the default), belay remembers fixes on this machine. A failure counts as fixed when it goes away after edits and a complete run passes. A complete run uses no `-x`, `-k`, or `--lf`; belay reads its exit code, or the runner's summary when the run is piped through `tail` or `tee`. The session then keeps the failure, the command, the files changed, and a short diff of the edits (at most 30 lines, secrets redacted).
-
-When another session of the same project hits that failure, belay tells it how it was fixed, with the diff, on the first hit. All worktrees of a repo are one project. A fix from another project is told only on a second hit, and without the diff: code does not leave its project.
-
-```sh
-belay fixes                 # this project's learned fixes
-belay fixes forget          # drop them (yours to run)
-```
-
-**Notes** are what you want every session of a project to know:
-
-```sh
-belay note "integration tests need DB_URL; use make test-int"
-belay notes                 # list; `belay notes approve n-2` or `drop n-2`
-```
-
-A note you type in your terminal is kept. A note an agent writes waits until you approve it.
-
-## Memory
-
-Memory is one store for what sessions and you keep: facts, decisions, gotchas, fixes, handoffs, and notes. Each memory says where it came from: belay saw it, an agent said it, or you did. It lives in `<home>/memory/`: `user.jsonl` for yours across projects, and one `project-<key>.jsonl` per project.
-
-```sh
-belay memory                                  # this project's memories and yours, newest first
-belay memory search "pytest asyncio"          # the best matches
-belay memory add "the cache lives in tmp" --kind gotcha --tag cache --file src/cache.rs
-belay memory add "I review on Fridays" --scope user
-belay memory show m-3                         # every field
-belay memory approve m-3                      # vouch for an agent's memory (yours to run)
-belay memory drop m-3                         # retire one (yours to run)
-belay memory migrate                          # copy notes, fixes, findings, and handoffs in, once
-```
-
-Kinds are `fact`, `decision`, `gotcha`, `fix`, `handoff`, and `note` (the default). A memory you add in your terminal is yours. One added from an agent's shell is the agent's until you approve it. belay denies an agent's `belay memory approve` and `drop`.
-
-Search ranks a matching failure signature highest, then a word in a tag, a file path, and the text. This project and your approval add a little, and so does a recent memory. The same text twice in a project and kind keeps only the newer one. A project keeps at most 500 memories; past that, the least used are retired.
-
-### Handoffs and recall
-
-When a session ends, and before each compaction, belay keeps a handoff in the project's memory. It says what belay saw: the task from `belay card --task`, the files changed, the last test and its result, the failure still open (its test and first line), and whether the session was looping or blocked. The agent's own `belay handoff` text comes last, labelled as its own. A session keeps one handoff: a later one replaces the earlier.
-
-When a session starts, the agent gets the newest handoff another session left in this project, and then the memories that rank best for the project (yours and approved ones first, then the newest). All of it fits in `recall_tokens` (600 by default). Fixes are left out here: a fix comes up when its failure does. The ledger records a `memory_recalled` action with the ids, so `belay why` can tell what the agent was given.
-
-A failure whose signature matches a `fix` memory gets that memory, once per failure, like a learned fix.
-
-After a compaction, the agent gets a carry pack: its task, the open failure, the guard's blocks and your decisions on them, and the memories it was given in this session. The carry pack only adds to the context; it changes nothing the agent already has. It also fits in `recall_tokens`.
-
-Notes, learned fixes, findings, and the handoffs of ended sessions show up in `belay memory` as they are, with ids `note-N`, `fix-…`, `f-N`, and `h-…`. `belay memory migrate` copies them into the store and backs up the old files first. Running it again copies nothing new. The old commands keep working.
-
-### Memory over MCP
-
-`belay mcp` is an MCP server over stdio. The plugin declares it, so an agent in Claude Code gets these tools without a shell call:
-
-| Tool | Does |
-|---|---|
-| `memory_search {query, limit?}` | The best matches, as `belay memory search` shows them (10 by default, at most 50) |
-| `memory_add {text, kind?, tags?, files?}` | Keeps a project memory as the agent's, until you approve it |
-| `handoff_get {}` | The newest handoff for this project, as `belay handoff` shows it |
-| `output_show {id}` | The original of `o-N` in this session, as `belay show` |
-| `why {id}` | The cause chain of `a-N`, `o-N`, or an entry, as `belay why` |
-| `skill_preview {url}` | Fetches a skill and shows it, as `belay skill preview`. Installs nothing |
-| `skill_stage {url, scope?, name?}` | Stages a skill for you to approve, as an agent's `belay skill add` |
-
-The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. Everything stays on this machine, except that the two skill tools fetch the URL they are given. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
-
-## Skills
-
-A skill is a folder of instructions (`SKILL.md` and its files) that the agent loads in every session. That makes it a lasting way into the agent's instructions. belay makes installing one deliberate: it fetches, checks, pins, and records it, and only you approve it.
-
-```sh
-belay skill preview https://github.com/o/r/tree/main/skills/pdf   # look; installs nothing
-belay skill add https://github.com/o/r/tree/main/skills/pdf      # preview, confirm, install
-belay skill add ./my-skill --scope project --name pdf --yes
-belay skill list                                                 # installed, waiting, drift
-belay skill update [name]                                        # fetch again; a change waits for approval
-belay skill approve pdf | reject pdf | remove pdf                # yours to run
-```
-
-Sources:
-
-- A GitHub tree or blob URL (`github.com/<owner>/<repo>/tree/<ref>/<path>`). belay makes a shallow, sparse clone of that directory and pins the commit. A ref with a `/` in it is not supported: use a commit or a tag.
-- A raw URL to a `SKILL.md` (a skill of one file). The server's ETag is kept.
-- A `.zip` or `.tar.gz` archive. belay lists it first and refuses absolute paths, `..`, symlinks, and links before anything is extracted.
-- A local path or a `file://` URL.
-
-belay uses `git`, `curl`, `tar`, and `unzip`, with a 60 s limit for each download. A skill has at most 200 files and 1 MB. It needs a `SKILL.md` whose frontmatter has `name` and `description`; the name is cut to `a-z`, `0-9`, and `-`.
-
-Preview shows the name, the description, the files, the warnings, and a digest (SHA-256 over the files). Warnings do not block. belay warns about a download piped to a shell (`curl … | sh`), a base64 blob over 200 characters, an executable script, text that asks to disable belay, hooks, permissions, or a sandbox, "ignore previous instructions", and hidden Unicode (bidi controls, zero-width characters).
-
-Where skills go (Claude Code): `--scope user` (the default) is `~/.claude/skills/<name>` (under `CLAUDE_CONFIG_DIR` if set). `--scope project` is `<repo>/.claude/skills/<name>`. Each of these dirs has a `.belay-skills.lock`: for each skill, its URL, commit or ETag, digest, who approved it, and when. Commit the project's lock with the skills. `belay skill list` and `belay doctor` say when a skill's files no longer match the digest you approved (drift).
-
-**Agents stage; you approve.** From your terminal, `add` previews, asks, and installs. From an agent (a shell in a belay session, or the `skill_stage` MCP tool), `add` only stages the skill and tells the agent to ask you. `belay skill approve <name>` shows it again (with what changed, for an update) and installs it. `approve`, `reject`, and `remove` refuse to run outside your own terminal, and belay denies the agent's run of them. `update` stages a change the same way.
-
-belay keeps a record of each stage, approval, install, rejection, and removal in `<data dir>/skills/log.jsonl`, with the session when there is one.
-
-A skill added while Claude Code runs may not be seen until the session restarts. [Verify]
-| `sandbox_run {argv, id?}` | Runs a command in a sandbox, as `belay sandbox run` (see [Sandboxes](#sandboxes)) |
-| `sandbox_task {prompt, id?, resume?, model?}` | A headless follow-up in a sandbox, as `belay sandbox task`; its result |
-
-The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. The sandbox tools run as the agent: the same limits and refusals apply. Everything else stays on this machine. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
 
 ## Fleets
 
@@ -544,75 +612,6 @@ audit_ignore = ["vendor/**"]                      # left out of `belay audit`
 
 An edit of a protected path is denied (with `guard = deny`) until you run `! belay allow`. Globs are relative to the repo root. `*` stays within a directory, `**` crosses them, and a pattern without `/` matches a file name anywhere. When `belay claude` starts, it skips a bad line with a warning; the other lines still apply.
 
-## Resuming
-
-When you resume a conversation, belay goes on where it left off. Loop counts, the open failure, blocked edits, paused features, shape levels, and the card's task carry over. So the third failure of the same test is a loop, even when the first two were in the run before.
-
-```sh
-belay claude --resume <id>    # or -r <id>: that conversation
-belay claude --continue       # or -c: the newest conversation in this directory
-belay claude --resume         # Claude Code's picker: belay follows the one you pick
-belay claude --belay-fresh -c # resume the conversation, but start belay clean
-```
-
-`/resume` inside Claude Code works the same way. The plugin needs nothing: a plugin daemon that stops and starts again picks up its own record.
-
-A resumed run is a new belay session that names the one it continues. Ids go on from it, so `a-N`, `o-N`, and `t-N` each name one thing across the runs. `belay report` shows every run, with a header each. `belay why`, `belay show`, and `belay undo` find ids in earlier runs. The resumed agent does not get a fresh start's recall: it gets the carry pack (its task, open failure, guard history, memories), as after a compaction.
-
-belay finds the earlier run through `<home>/by-session/<conversation id>`, which every session writes. If that run was pruned, the resumed one starts clean. `resume = fresh` in the config makes every resume start clean.
-
-## Undo
-
-In a git repo, belay keeps the working tree as it is when the session starts (`t-0`) and at the end of each agent turn (`t-1`, `t-2`, …). A snapshot holds tracked and untracked files. Ignored files are left out. Each one is a private ref, `refs/belay/<session>/t-N`, so it is not on any branch and `git log` does not show it. belay takes it after the agent has its reply, so the agent does not wait.
-
-To roll the files back, run `belay undo` in your own terminal:
-
-```sh
-belay undo                 # list the snapshots, and how many files differ from now
-belay undo t-2             # show the files that would change, ask, then write them back
-belay undo t-2 --yes       # the same, without asking
-```
-
-Files the snapshot does not have are deleted. Your index, HEAD, stash, and branches are not touched: what you staged stays staged. Before it writes, belay keeps the files as they were as `u-N`, so `belay undo u-1` brings them back. `--session` picks the session, as for `belay report`. Each snapshot and each undo is in the ledger.
-
-Claude Code's `/rewind` restores only what its own edit tools wrote. `belay undo` restores files changed in any way: by a shell command, a formatter, or a code generator. It works the same for any agent belay runs.
-
-Only you can undo. belay refuses `belay undo` from an agent's shell, and denies it when the agent tries. `belay purge` and the cleanup of old sessions delete their refs.
-
-## Sandboxes
-
-A sandbox runs a command, a whole agent session, or a headless follow-up where it cannot reach your other files. It works on its own clone of the repo, on branch `belay/sandbox/<id>`, with a private home and limits. git works inside. At the end, belay commits what changed and brings the branch into your repo. You review and merge it.
-
-```sh
-belay sandbox run -- make test       # a command; the clone goes, the branch stays
-belay sandbox run --id fix --keep -- cargo build   # name it, keep it for the next run
-belay sandbox claude                 # a whole Claude Code session in a sandbox
-belay sandbox claude --id fix --resume <conversation>   # go on with it, in the same sandbox
-belay sandbox task "add tests for parse_size"   # a headless follow-up; prints its result
-belay sandbox task "try the other fix" --resume <conversation> --model haiku
-belay sandbox list                   # every sandbox: running, kept, or removed
-belay sandbox show fix               # branch, commits, the audit of the branch, limit stops
-belay sandbox diff fix               # what the branch changed since it started
-belay sandbox stop fix               # stop a running one
-belay sandbox rm fix [--branch]      # remove its clone and home (yours to run)
-belay sandbox doctor                 # try to escape a fresh sandbox; exit 1 if one gets out
-git merge belay/sandbox/fix          # take the work, once you have read it
-```
-
-The command starts in the same subdirectory of the clone as yours in the repo. Its output streams, and belay returns its exit code. The sandbox starts from your HEAD commit: uncommitted changes are not in it. A sandbox whose branch is already there (from an earlier run with the same id) starts from that branch.
-
-**A whole session.** `belay sandbox claude [--id S] [claude args…]` runs Claude Code inside a sandbox. belay's daemon runs outside and supervises it: the agent's hooks reach it through the session socket, so the guard, loops, and the ledger work as in `belay claude`. The agent cannot see or signal belay. The card shows `sandbox: <id>`. At the end belay prints the session's summary and the branch. The sandbox is kept, so `--id S --resume <conversation>` goes on in it, with belay's state (see [Resuming](#resuming)). Only you start one. Claude Code's own files inside the sandbox (`~/.claude.json`, settings, credentials) are read-only copies.
-
-**A follow-up task.** `belay sandbox task "<prompt>" [--id S] [--resume <conversation>] [--model m] [--keep]` runs the agent headless (`claude -p`) in a sandbox, supervised by a belay session of its own, and prints a short result: the agent's final message, the branch and the files changed, the audit, the tokens used, and any limit that stopped it. The agent runs without permission prompts there: the sandbox is the boundary, and belay's guard still applies. `--resume` gives it a copy of that conversation, so it starts with its context; the original is not changed. You or an agent may start one. An agent may start at most `sandbox_tasks_per_hour` (4) per session. A task that uses more than `sandbox_task_tokens` (2M: input, output, and cache writes) is stopped.
-
-Inside, the command sees the system dirs read-only, your toolchains read-only (`sandbox_ro`), the repo's object store read-only (so git finds the history), the clone, and a private home. It does not see the rest of your home (`~/.ssh`, cloud credentials, other repos), `/mnt`, the Docker socket, your ssh agent, or your display. On WSL it cannot run Windows programs. The network is the host's. The environment is cleared, then a short list is passed: `PATH`, locale, `TERM`, `USER`, `SHELL`, `TZ`, `BELAY_*`, and the agent's API keys. `BELAY_SANDBOX` is set to the sandbox id, and `belay sandbox` refuses to nest.
-
-The sandbox owns its clone's `.git`, hooks and config included, so belay runs nothing of it on your machine: it commits inside the sandbox, and fetches the branch with git's sending side also inside. belay's undo snapshots and audits skip a sandbox's clone. How, and why, is in [sandbox.md](sandbox.md#getting-the-work-out).
-
-belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`sandbox_procs`), disk use of the clone and home (`sandbox_disk`), and wall time (`sandbox_wall`). When one is passed, belay stops the sandbox and records why. `belay sandbox show` lists these stops. Run from a belay session, the start and stop are also in the session's ledger, and the card shows the sandbox.
-
-There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
-
 ## Audit (experimental)
 
 `belay audit` reads a git diff and lists what changed in the project's checks:
@@ -686,7 +685,7 @@ sandbox_ro = ~/.cargo, ~/.rustup, ~/.nvm, ~/.pyenv, ~/.local/bin   # read-only i
 
 ## Data and privacy
 
-Everything stays on your machine. belay makes no network calls and no model calls.
+Everything stays on your machine. belay makes no model calls. It goes to the network only when you ask it to fetch a skill (`belay skill`, or the agent's `skill_preview` and `skill_stage` MCP tools).
 
 - Session data lives in `~/.local/share/belay/sessions/<id>/`: the ledger, stored outputs, and the card.
 - Stored outputs keep a copy of what tools printed. Before it writes, belay replaces secrets it recognizes with `[redacted]`: API keys and tokens, private keys, passwords in URLs, and values of variables named like secrets.
@@ -736,8 +735,11 @@ Everything stays on your machine. belay makes no network calls and no model call
 | `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
 | `belay skill [preview\|add\|list\|update\|approve\|reject\|remove]` | Skills from URLs: checked, pinned, approved by you |
 | `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, and why |
-| `belay fleet up\|status\|report\|merge\|down\|…` | Fleets |
-| `belay task add\|list\|show\|claim\|done\|blocked\|drop` | A fleet's task board |
+| `belay fleet up\|status\|report\|merge\|down` | Start a fleet, watch it, merge its work, stop it |
+| `belay fleet pause\|resume\|restart\|replay` | Hold or go on handing out work; start a stopped hub again; replay its records |
+| `belay fleet stop\|spawn\|scale\|prune` | Stop or add sessions; remove worktrees of fleets that are down |
+| `belay task add\|list\|show\|assign\|claim` | Put tasks on a fleet's board, read them, give them out |
+| `belay task done\|blocked\|reject\|drop` | Finish a task, say it is blocked, send it back, or withdraw it |
 | `belay audit [range]` | (Experimental) what a diff did to tests and checks |
 | `belay install [--plugin] [--statusline] [--launcher]` · `belay uninstall` | Set belay up in Claude Code, or remove it |
 | `belay doctor` · `belay export` · `belay purge` | Install check, bug bundle, cleanup |
