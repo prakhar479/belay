@@ -29,6 +29,7 @@
 - **Tokens kept out** in `belay report` (new line), `belay status`, and the exit summary is the sum of original − summary over summaries that reached the agent. Summaries whose reply came too late no longer count.
 - **Undo:** belay keeps the working tree at the start and at the end of each agent turn, as private git refs. `belay undo t-N` rolls the files back to one, also what shell commands changed, without touching your index, HEAD, stash, or branches.
 - **`belay fleet prune --branches`** also deletes the merged `belay/<fleet>/*` branches of fleets that are down (`git branch -d`, never `-D`). Unmerged branches are listed with how many commits HEAD lacks, and kept. Sandbox branches are not touched. `prune --yes` is now the user's: refused outside your own terminal and denied to agents. `belay fleet` no longer lists fleets that are down and pruned; `belay fleet --all` does.
+- **The guide follows the CLI.** A test (`crates/belay-cli/tests/guide.rs`) fails when a visible command or subcommand is missing from the guide's command reference, or a config key from § Config. The guide's sections are in a new order: what belay does for one session (guard, loops, verify, summaries, memory, resume, undo) comes first, then seeing it, sandboxes, skills, sessions, and fleets.
 
 ## 0.1.0
 
