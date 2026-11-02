@@ -2875,6 +2875,25 @@ fn changes_in_head(repo: &Path, wt: &Path, base: &str) -> bool {
         .all(|p| crate::audit::same_as_head(repo, wt, p))
 }
 
+/// Whether merging the worktree as it is now (its commits and uncommitted changes) into
+/// the repo's HEAD would change nothing. That is so when the work was taken another way
+/// (cherry-picked, applied as a patch) and HEAD has moved on since, which a file-by-file
+/// comparison with HEAD misses. The snapshot commit is on no ref; git collects it later.
+fn merges_to_nothing(repo: &Path, wt: &Path) -> bool {
+    let scratch = paths::home();
+    let Ok(snap) = crate::audit::worktree_commit(wt, &scratch, "belay prune check", Some("HEAD"))
+    else {
+        return false;
+    };
+    let (Some(merged), Some(head)) = (
+        git_out(repo, &["merge-tree", "--write-tree", "HEAD", &snap]),
+        git_out(repo, &["rev-parse", "HEAD^{tree}"]),
+    ) else {
+        return false;
+    };
+    merged.lines().next() == Some(head.as_str())
+}
+
 /// `belay fleet prune`: worktrees of fleets that are down, with no uncommitted changes
 /// and no commits beyond the fleet's base. Lists them; removes them with `yes`. With
 /// `branches`, also their fleets' merged branches.
@@ -2961,7 +2980,8 @@ fn prune_fleet(
             let ahead =
                 count(format!("{base}..{branch}"), repo).max(count(format!("{base}..HEAD"), &wt));
             // Work the user already took (a patch applied, a merge) is not lost.
-            let taken = (dirty || ahead > 0) && changes_in_head(repo, &wt, base);
+            let taken = (dirty || ahead > 0)
+                && (changes_in_head(repo, &wt, base) || merges_to_nothing(repo, &wt));
             let why = if taken {
                 None
             } else if dirty {
@@ -4199,9 +4219,14 @@ tokens   = "20M"
         git(&repo, &["add", "."]);
         git(&repo, &["commit", "-qm", "taken"]);
         assert!(changes_in_head(&repo, &wt, &base));
-        // One more change in the worktree: not taken.
-        fs::write(wt.join("a.txt"), "a\nb\nc\n").unwrap();
+        // HEAD moves on past the taken change: the files differ, but a merge adds nothing.
+        fs::write(repo.join("a.txt"), "first\na\nb\n").unwrap();
+        git(&repo, &["commit", "-qam", "later"]);
         assert!(!changes_in_head(&repo, &wt, &base));
+        assert!(merges_to_nothing(&repo, &wt));
+        // One more change in the worktree: not taken.
+        fs::write(wt.join("new.txt"), "n\nmore\n").unwrap();
+        assert!(!merges_to_nothing(&repo, &wt));
         let _ = fs::remove_dir_all(&d);
     }
 
