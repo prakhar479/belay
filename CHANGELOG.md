@@ -66,6 +66,7 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - **Sandbox doctor:** the fork bomb probe counts a refusal by the systemd scope's task limit as contained, as well as a watchdog stop. A bomb that runs to the end is still reported as escaped.
 - **Upgrading belay during a live session no longer breaks test runs.** A session started before the upgrade wrapped test commands through its own binary, which the upgrade had replaced, so every wrapped command failed to start. belay now wraps only through a binary that is still on disk, and otherwise lets the command run as written.
 - `belay doctor` points to `belay config migrate` for 0.1 config names.
+- **A session could hang on exit and lose its handoff.** When belay wrote the session card at the same moment the session ended (you quit Claude Code, the agent stopped, or an idle session timed out), the two could wait on each other forever. The next session then saw the old one as still running and got no handoff. Every exit path now takes the locks in one order.
 
 ## 0.1.0
 
