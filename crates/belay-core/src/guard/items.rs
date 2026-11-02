@@ -4,7 +4,7 @@
 //! Items are found on the raw text, so a span can be cut out of it; a definition counts
 //! only when it is still there once comments and strings are gone.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
 use super::code_only;
@@ -185,6 +185,43 @@ pub fn strip(text: &str, keys: &BTreeSet<(String, String)>) -> String {
         at = at.max(s.end);
     }
     out.push_str(&text[at.min(text.len())..]);
+    out
+}
+
+/// `old` without the extra copies of definitions that `new` still has (an identical
+/// name and body). Removing one of two identical tests (a merge left a duplicate) takes
+/// nothing away: the copy that stays still runs. A definition with no copy left in `new`
+/// is untouched here; the removal rules judge it.
+pub fn without_removed_duplicates(old: &str, new: &str) -> String {
+    let mut left: BTreeMap<(String, String), usize> = BTreeMap::new();
+    for it in items(new) {
+        *left.entry(it.key()).or_default() += 1;
+    }
+    let mut seen: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let mut cut: Vec<Range<usize>> = Vec::new();
+    for it in items(old) {
+        let key = it.key();
+        let n = seen.entry(key.clone()).or_default();
+        *n += 1;
+        if let Some(&keep) = left.get(&key) {
+            if keep > 0 && *n > keep {
+                cut.push(it.span);
+            }
+        }
+    }
+    if cut.is_empty() {
+        return old.to_string();
+    }
+    cut.sort_by_key(|s| s.start);
+    let mut out = String::with_capacity(old.len());
+    let mut at = 0;
+    for s in cut {
+        if s.start >= at {
+            out.push_str(&old[at..s.start]);
+        }
+        at = at.max(s.end);
+    }
+    out.push_str(&old[at.min(old.len())..]);
     out
 }
 

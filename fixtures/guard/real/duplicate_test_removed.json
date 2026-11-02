@@ -1,0 +1,14 @@
+{
+  "pattern": "One of two identical copies of a test is removed (a merge left a duplicate); the other copy stays in the same file.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "shell",
+      "tool_use_id": "b1",
+      "path": "/work/proj/tests/e2e.rs",
+      "old": "#[test]\nfn flags_work() {\n    assert!(flag(1));\n    assert_eq!(review(), 2);\n}\n\n#[test]\nfn other() {\n    assert!(true_thing());\n}\n\n#[test]\nfn flags_work() {\n    assert!(flag(1));\n    assert_eq!(review(), 2);\n}\n",
+      "new": "#[test]\nfn flags_work() {\n    assert!(flag(1));\n    assert_eq!(review(), 2);\n}\n\n#[test]\nfn other() {\n    assert!(true_thing());\n}\n"
+    }
+  ]
+}

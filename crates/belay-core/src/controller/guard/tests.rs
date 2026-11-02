@@ -12,11 +12,12 @@ macro_rules! corpus {
 }
 
 /// Every file in fixtures/guard/real. A new case goes in this list too.
-const CORPUS: [(&str, &str); 27] = corpus![
+const CORPUS: [(&str, &str); 28] = corpus![
     "assert_removed",
     "conditional_skip_except",
     "conditional_skip_if_missing",
     "conditional_skip_module_level",
+    "duplicate_test_removed",
     "expected_to_actual",
     "focus_added_js",
     "heredoc_rewrites_existing",

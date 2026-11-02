@@ -286,6 +286,9 @@ impl Controller {
         if !is_test && protected.is_none() {
             return None;
         }
+        // A removed extra copy of a test that stays (a duplicate) takes nothing away.
+        let old = items::without_removed_duplicates(old, new);
+        let old = old.as_str();
         // Definitions this edit removes and adds. A removed one that an earlier edit of
         // this turn added elsewhere moved: cut it from the old text.
         // A test whose name stays in the file, changed, did not move.
