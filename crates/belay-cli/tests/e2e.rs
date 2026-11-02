@@ -141,7 +141,10 @@ fn short_socket(name: &str) -> PathBuf {
 }
 
 fn socket_gone(session: &Path) -> bool {
-    for _ in 0..50 {
+    // Up to 15 s: a stopping daemon first finishes the last turn's snapshot and the
+    // handoff, which took over 1 s while four fleet workers ran `make check` here.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
         if !socket_of(session).exists() {
             return true;
         }
