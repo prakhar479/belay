@@ -200,7 +200,7 @@ belay: 2 failures are unchanged after 3 fix attempts (edit, then run): tests/tes
 assert 500 == 200; … A different approach may be needed.
 ```
 
-It compares failures by a normalized signature, so line numbers, addresses, and timings do not hide a repeat. It also notices edit cycles (`edit, revert, edit`). With `notify = true` you also get a desktop notification when belay steers a loop or blocks an edit, which helps in long unattended runs.
+It compares failures by a normalized signature, so line numbers, addresses, and timings do not hide a repeat. It also notices edit cycles (`edit, revert, edit`). You also get a notification when belay steers a loop (see [Getting told when you are needed](#getting-told-when-you-are-needed)).
 
 ### Verify before done
 
@@ -357,6 +357,35 @@ belay: session 1793507424-19739 ended.
 ```
 
 Every note is in the ledger, shown or not. `belay report` says "blocked" or "steered" for what belay did, and "would have" only for what the agent could not take, and for `belay retro`.
+
+### Getting told when you are needed
+
+In a long run it is easy to miss the moment the agent needs you. belay knows these moments and tells you:
+
+- **blocked**: belay blocked an edit, and it waits for `belay allow`.
+- **loop**: belay told the agent it is in a loop.
+- **verify unmet**: the agent stopped, and its tests have not passed since its last edits. belay asked it once to run them.
+- **done**: the agent ended its turn, and no new prompt came for a minute.
+- **waiting**: Claude Code shows a permission prompt or asks you a question (its `Notification` hook).
+- **message**: a session wrote to you with `belay msg user`.
+
+Each moment goes to a desktop notification (`notify-send` on Linux, `osascript` on macOS), a terminal bell under `belay claude`, and your own command, if you set one. You get at most one notification of each kind per session every 2 minutes.
+
+```toml
+notify = attention              # off, attention (the default), or all (adds every warning)
+notify_command = ~/bin/ping-me  # run with each notification as JSON on stdin
+notify_quiet = 22:00-07:00      # no notifications in this window, local time
+```
+
+`notify_command` runs with `sh -c`. It reads one JSON line on stdin:
+
+```json
+{"session":"1793507424-19739","repo":"/home/me/shop","kind":"blocked","text":"Blocked an edit of tests/test_api.py. If it is intended, run `! belay allow`.","action":"a-3","ts_ms":1793507500000}
+```
+
+`kind` is `blocked`, `loop`, `verify_unmet`, `done`, `waiting`, `message`, or `warning`. `action` names the action, or is `null`. belay stops the command after 5 seconds. It never delays the agent: the command runs on its own thread. belay itself makes no network call here. Your command may, for example to send a phone push.
+
+The agent never sees these notifications. The old `notify = true` reads as `all`, and `notify = false` as `off`.
 
 ### Reading the record
 
@@ -688,7 +717,9 @@ loop_threshold = 3              # fix attempts before an unchanged failure is a 
 tighten_after = 5               # summaries without a re-open before belay summarizes harder
 idle_gap_minutes = 10           # loop time leaves out gaps longer than this
 keep_days = 30                  # 0 keeps every session
-notify = false                  # desktop notification when belay steers a loop or blocks an edit
+notify = attention              # tell you when you are needed: off, attention, all
+notify_command = ~/bin/ping-me  # also run this with each notification as JSON on stdin (unset by default)
+notify_quiet = 22:00-07:00      # no notifications in this window, local time (unset by default)
 guard = deny                    # test guard: deny, warn, off
 loops = on                      # tell the agent about loops and edit cycles
 shape = on                      # summarize large test output
@@ -717,7 +748,7 @@ sandbox_build_cache = off       # sandbox cargo builds: shared binds one cache p
 
 ### Keys from 0.1
 
-0.2 renamed some keys: `fleet` is now `awareness`, and `learn` is now `memory`. `plugin_mode` is ignored, and a `look` value reads as `on`. Old files still load. belay says so in one line, at most once a day per config file, and again when the file changes. It never says it from a hook or the status line.
+0.2 renamed some keys: `fleet` is now `awareness`, and `learn` is now `memory`. `plugin_mode` is ignored, a `look` value reads as `on`, and `notify = true|false` reads as `notify = all|off`. Old files still load. belay says so in one line, at most once a day per config file, and again when the file changes. It never says it from a hook or the status line.
 
 `belay config migrate` rewrites the file for you. It changes only those lines, and keeps comments, order, and keys it does not know. If the file sets both the old and the new name, the new one stays and the old line goes (it already won). It shows the diff and asks first (`--yes` skips the question). The old file is kept as `config.toml.bak-<unix time>`. A file with a line that is not `key = value` is refused, and nothing changes. Running it again changes nothing.
 

@@ -9,7 +9,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
 
-use super::{line_key, LOOK_KEYS, RENAMED};
+use super::{line_key, LOOK_KEYS, OLD_VALUES, RENAMED};
 
 /// One changed line: 1-based, its text before, and after (`None`: dropped).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +135,20 @@ fn rewrite(
             }
         }
     }
+    let code_end = code_end + out.len() - content.len();
+    if let Some(eq) = out[..code_end].find('=') {
+        let raw = out[eq + 1..code_end].trim();
+        let value = raw.trim_matches('"');
+        if let Some((_, _, new)) = OLD_VALUES
+            .iter()
+            .find(|(k, v, _)| *k == new_key && *v == value)
+        {
+            let at = eq + 1 + out[eq + 1..].find(raw).unwrap_or(0);
+            let notes_new = format!("`{new_key} = {value}` is now `{new_key} = {new}`");
+            out.replace_range(at..at + raw.len(), new);
+            notes.push(notes_new);
+        }
+    }
     let note = (!notes.is_empty()).then(|| notes.join("; "));
     (Some(out), note)
 }
@@ -240,6 +254,18 @@ mod tests {
             "\u{feff}future_key = 1\r\nloop_threshold = many\r\nmemory = on",
             &[],
         ),
+        // V3: the 0.1 `notify` booleans become levels; a level stays.
+        (
+            "notify = true # pings\n",
+            "notify = all # pings\n",
+            &["`notify = true` is now `notify = all`"],
+        ),
+        (
+            "notify = \"false\"\n",
+            "notify = off\n",
+            &["`notify = false`"],
+        ),
+        ("notify = attention\n", "notify = attention\n", &[]),
         // A `look` key whose value is not look, and `look` text in a comment.
         (
             "guard = deny # look here\nawareness = off # not look\n",
