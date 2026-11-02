@@ -6,6 +6,7 @@
 compile_error!("belay supports Unix (Linux, macOS) only for now");
 
 mod audit;
+mod brief;
 mod commons;
 mod config;
 mod connector;
@@ -125,6 +126,19 @@ enum Cmd {
         /// Every section, including empty ones.
         #[arg(long)]
         full: bool,
+    },
+    /// What a session changed, what it checked, and what to look at before a commit or
+    /// merge. From the ledger and git, never the agent's own summary.
+    Brief {
+        /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
+        #[arg(long, allow_hyphen_values = true)]
+        session: Option<String>,
+        /// A pull request section (## Summary by belay).
+        #[arg(long, conflicts_with = "json")]
+        markdown: bool,
+        /// Stable keys, for scripts.
+        #[arg(long)]
+        json: bool,
     },
     /// Print the full original of a summarized output (o-N).
     Show {
@@ -929,6 +943,18 @@ fn run(cli: Cli) -> Result<i32> {
                 flags::report_lines(&entries, &store::read_flags(&dir), full)
             );
             Ok(0)
+        }
+        Cmd::Brief {
+            session,
+            markdown,
+            json,
+        } => {
+            let format = match (markdown, json) {
+                (true, _) => brief::Format::Markdown,
+                (_, true) => brief::Format::Json,
+                _ => brief::Format::Text,
+            };
+            brief::run(session.as_deref(), format)
         }
         Cmd::Show { id, session } => {
             let dir = sessions::resolve(session.as_deref(), false)?;

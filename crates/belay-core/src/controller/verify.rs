@@ -9,9 +9,33 @@ use crate::record::ActionKind;
 /// Files whose change does not call for a test run.
 const NOT_SOURCE: [&str; 6] = [".md", ".markdown", ".rst", ".txt", ".adoc", ".org"];
 
-/// What verify before done tracks in a session.
+/// Whether a change to `path` calls for a test run (docs do not).
+pub(crate) fn is_source(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    !NOT_SOURCE.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// Whether a test or check run passed: failures in its output or a failed exit say no;
+/// a clean exit or the runner's own pass summary say yes; else it is not known.
+/// `exit_failed`: None when the exit code is not known.
+pub(crate) fn run_passed(
+    has_failures: bool,
+    exit_failed: Option<bool>,
+    summary_pass: bool,
+) -> Option<bool> {
+    if has_failures || exit_failed == Some(true) {
+        Some(false)
+    } else if exit_failed == Some(false) || summary_pass {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+/// What verify before done tracks in a session. The session brief keeps one per
+/// command, so "passed after the last edit" means the same in both.
 #[derive(Debug, Clone, Default)]
-pub(super) struct VerifyState {
+pub(crate) struct VerifyState {
     /// Source-file changes seen: a clock that only edits move.
     edits: u64,
     /// The edit clock at the last passing test or check run.
@@ -26,16 +50,15 @@ pub(super) struct VerifyState {
 
 impl VerifyState {
     /// A file changed (an edit tool, or a shell command).
-    pub(super) fn on_edit(&mut self, path: &str) {
-        let lower = path.to_ascii_lowercase();
-        if !NOT_SOURCE.iter().any(|ext| lower.ends_with(ext)) {
+    pub(crate) fn on_edit(&mut self, path: &str) {
+        if is_source(path) {
             self.edits += 1;
         }
     }
 
     /// A test or check run of `command` (its output entry `out`). `passed`: None when
     /// the run's result is not known, which proves nothing.
-    pub(super) fn on_run(&mut self, command: &str, passed: Option<bool>, out: u64) {
+    pub(crate) fn on_run(&mut self, command: &str, passed: Option<bool>, out: u64) {
         self.command = Some((command.to_string(), out));
         if passed == Some(true) {
             self.passed_at = Some(self.edits);
@@ -47,9 +70,14 @@ impl VerifyState {
         self.this_turn = false;
     }
 
+    /// Source files changed since the last passing run (or with no pass yet).
+    pub(crate) fn changed_since_pass(&self) -> bool {
+        self.edits > 0 && self.passed_at.is_none_or(|p| self.edits > p)
+    }
+
     /// The command to ask for, and the seq of its last output, if the turn should go on.
     fn wanted(&self) -> Option<(String, u64)> {
-        let changed = self.edits > 0 && self.passed_at.is_none_or(|p| self.edits > p);
+        let changed = self.changed_since_pass();
         let again = self.this_turn || self.nudged_at == Some(self.edits);
         if !changed || again {
             return None;

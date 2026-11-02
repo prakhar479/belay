@@ -1530,13 +1530,7 @@ impl Controller {
         }
         // The card (C1): how the last run went.
         if matches!(kind, OutputKind::Test | OutputKind::Build) {
-            let passed = if !failures.is_empty() || self.run_failed == Some(true) {
-                Some(false)
-            } else if self.run_failed == Some(false) || summary_pass {
-                Some(true)
-            } else {
-                None
-            };
+            let passed = verify::run_passed(!failures.is_empty(), self.run_failed, summary_pass);
             match passed {
                 Some(true) => {
                     self.facts.last_pass_ms = Some(now);
@@ -2234,7 +2228,7 @@ mod notice;
 mod reads;
 mod restore;
 mod snapshot;
-mod verify;
+pub(crate) mod verify;
 
 pub use features::{Feature, GuardSetting, ReportLevel, ALL_FEATURES};
 pub use notice::notice_for;

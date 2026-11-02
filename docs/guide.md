@@ -77,7 +77,7 @@ belay install --launcher       # prints an alias so `claude` starts under belay
 
 `belay uninstall` removes the plugin and belay's status line. A status line that is not belay's stays. `belay doctor` says whether the plugin is installed and whether the status line is belay's.
 
-The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and four slash commands: `/belay:report`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
+The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
 
@@ -363,12 +363,16 @@ belay tells you what it does. It never tells the model: these notes go only to y
 
 ```text
 belay: session 1793507424-19739 ended.
-  did: 3 summaries · 1 blocked edit · 1 loop warning
+  Changed: 3 files (+48 −6)
+  Checked: ⚠ pytest (not run since the last edit)
+  Look at: 2 items
   kept out: 14.2k tokens of tool output
   handoff: done: the order API; next: the cart tests
   2 warnings · flag any that were wrong: `belay flag a-7`
-  `belay report` for more
+  `belay brief` for the rest · `belay report` for more
 ```
+
+The first three lines are the session brief's (see [The session brief](#the-session-brief)).
 
 Every note is in the ledger, shown or not. `belay report` says "blocked" or "steered" for what belay did, and "would have" only for what the agent could not take, and for `belay retro`.
 
@@ -400,6 +404,46 @@ notify_quiet = 22:00-07:00      # no notifications in this window, local time
 `kind` is `blocked`, `loop`, `verify_unmet`, `done`, `waiting`, `message`, or `warning`. `action` names the action, or is `null`. belay stops the command after 5 seconds. It never delays the agent: the command runs on its own thread. belay itself makes no network call here. Your command may, for example to send a phone push.
 
 The agent never sees these notifications. The old `notify = true` reads as `all`, and `notify = false` as `off`.
+
+### The session brief
+
+After a session, the question is what the agent actually did, and whether you can trust it before you commit or merge. The agent's own summary can be wrong. `belay brief` answers from belay's ledger and git only:
+
+```sh
+belay brief                      # the newest session started here
+belay brief --session -2         # the one before it
+belay brief --markdown           # a "## Summary by belay" section for a pull request
+belay brief --json               # stable keys, for scripts
+```
+
+```text
+Session 1793507424-19739 · 12 min · 340.0k prompt tokens, 12.0k output
+Changed: 3 files (+48 −6)
+Checked: ⚠ pytest (not run since the last edit) · ✓ ruff check .
+Look at: 2 items
+
+Changed
+  Cargo.toml  +1 −0
+  src/app.py  +40 −5
+  tests/test_app.py  +7 −1
+
+Checked
+  ⚠ pytest: not run since the last edit (3 runs, o-7)
+  ✓ ruff check .: passed after the last edit (1 run, o-9)
+
+Look at
+  1. dependency manifest changed: Cargo.toml (added leftpad) [41]
+  2. src/app.py changed after the last passing run [44]
+
+belay: 2 summaries (9.2k tokens kept out) · 0 guard blocks · 0 loop nudges · 1 memory recalled
+```
+
+- **Changed:** the files the session edited, by tool or by shell, and, in a git repo, the diff from the session's start snapshot (`t-0`, see [Undo](#undo)) to the working tree, with lines added and removed. That diff includes any change you made yourself meanwhile.
+- **Checked:** each test or check command the session ran, with its last result. ✓ passed after the last edit. ⚠ passed once, but source files changed after it. ✗ its last run failed. `?` its result is not known. "After the last edit" means what it means for [verify before done](#verify-before-done): a docs edit does not count. With more than three commands, the first lines count them by state.
+- **Look at**, most important first, each with its evidence: an action `a-N`, an entry number, or `git` (`belay why <id>` follows it). Guard actions, and whether you allowed them; verify-before-done nudges; test changes that may weaken tests; CI and check config changed; dependency manifests changed, with the names added (Cargo.toml, package.json, pyproject.toml, requirements*.txt, go.mod, Gemfile); suppressions added (`# noqa`, `#[allow]`, …); and source files changed after the last passing run. These are the [audit](#audit-experimental)'s rules, over the session's changes.
+- **belay:** what belay did: summaries and the tokens they kept out, guard blocks, loop nudges, and memories recalled.
+
+The exit summary shows the first three lines. The agent can ask for the brief through the MCP tool `brief`, and the plugin's `/belay:brief` asks it to summarize the session for review.
 
 ### Reading the record
 
@@ -827,6 +871,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay sandbox rm S [--branch]` | Remove a sandbox's clone and home (yours to run) |
 | `belay sandbox doctor` | Try to escape a fresh sandbox; exit 1 if a probe gets out |
 | `belay report [--session S] [--full]` | What happened in a session |
+| `belay brief [--session S] [--markdown\|--json]` | What a session changed, checked, and what to look at |
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |
 | `belay status` | One line for the status line |
@@ -842,7 +887,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay note "…"` · `belay notes` · `belay fixes` | Project notes and learned fixes |
 | `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
 | `belay skill [preview\|add\|list\|update\|approve\|reject\|remove]` | Skills from URLs: checked, pinned, approved by you |
-| `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, and why |
+| `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, why, and the brief |
 | `belay fleet up\|status\|report\|merge\|down` | Start a fleet, watch it, merge its work, stop it |
 | `belay fleet pause\|resume\|restart\|replay` | Hold or go on handing out work; start a stopped hub again; replay its records |
 | `belay fleet stop\|spawn\|scale\|prune` | Stop or add sessions; remove worktrees of fleets that are down (`--branches`: also their merged branches) |

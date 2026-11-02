@@ -237,7 +237,7 @@ fn a_default_session_shapes_and_guards() {
     assert!(why.contains("caused by"), "{why}");
 }
 
-/// U2b: the exit summary says what belay did, in a few lines.
+/// U2b, V1: the exit summary says what the session did, in a few lines.
 #[test]
 fn launcher_prints_an_exit_summary() {
     let (dir, _session) = run_session("exitsum", "", &[]);
@@ -245,15 +245,18 @@ fn launcher_prints_an_exit_summary() {
     let start = err.find("belay: session ").expect(&err);
     let summary: Vec<&str> = err[start..].lines().take_while(|l| !l.is_empty()).collect();
     assert!(summary[0].ends_with(" ended."), "{err}");
-    assert!(
-        summary[1].starts_with("  did: ") && summary[1].contains("1 blocked edit"),
-        "{err}"
-    );
+    // V1: the brief's three lines in place of the counts.
+    assert!(summary[1].starts_with("  Changed: "), "{err}");
+    assert!(summary[2].starts_with("  Checked: "), "{err}");
+    assert!(summary[3].starts_with("  Look at: "), "{err}");
     assert!(
         summary.iter().any(|l| l.starts_with("  kept out: ")),
         "{err}"
     );
-    assert!(summary.contains(&"  `belay report` for more"), "{err}");
+    assert!(
+        summary.contains(&"  `belay brief` for the rest · `belay report` for more"),
+        "{err}"
+    );
 }
 
 /// P0.2: a warning says how to flag it; `belay flag` alone takes the newest warning;
@@ -1066,6 +1069,54 @@ fn alive(pid: i32) -> bool {
         .stderr(std::process::Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+}
+
+/// V1: the session brief. Edit, a passing run, then another edit: the brief says the
+/// tests were not run since the last edit, and names the file changed after the pass.
+#[test]
+fn brief_says_tests_were_not_run_since_the_last_edit() {
+    let dir = tmp("brief");
+    let session = dir.join("session");
+    let (_daemon, sock) = start_daemon(&session, "shape = off\n");
+    let repo = dir.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/app.py"), "def f():\n    return 2\n").unwrap();
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
+    };
+    let mut pytest = read("post_tool_use_bash.json");
+    pytest["cwd"] = repo.display().to_string().into();
+    pytest["tool_input"]["command"] = "pytest".into();
+    pytest["tool_response"]["stdout"] = "===== 3 passed in 0.10s =====\n".into();
+    pytest["tool_response"]["stderr"] = "".into();
+    let mut edit = read("post_tool_use_edit.json");
+    edit["cwd"] = repo.display().to_string().into();
+    edit["tool_input"]["file_path"] = repo.join("src/app.py").display().to_string().into();
+
+    edit["tool_use_id"] = "toolu_e1".into();
+    hook(&sock, "PostToolUse", &edit);
+    hook(&sock, "PostToolUse", &pytest);
+    let brief = belay(&["brief"], &session);
+    assert!(brief.contains("Checked: ✓ pytest\n"), "{brief}");
+
+    fs::write(repo.join("src/app.py"), "def f():\n    return 3\n").unwrap();
+    edit["tool_use_id"] = "toolu_e2".into();
+    hook(&sock, "PostToolUse", &edit);
+    let brief = belay(&["brief"], &session);
+    assert!(
+        brief.contains("Checked: ⚠ pytest (not run since the last edit)"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("changed after the last passing run"),
+        "{brief}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&belay(&["brief", "--json"], &session)).unwrap();
+    assert_eq!(json["checked"][0]["status"], "not_run_since_last_edit");
+    assert_eq!(json["checked"][0]["runs"], 1);
+    let md = belay(&["brief", "--markdown"], &session);
+    assert!(md.starts_with("## Summary by belay"), "{md}");
 }
 
 /// R3.7: auto mode denies a wrapped call; belay says the agent may retry, and the retry
@@ -3472,7 +3523,8 @@ fn a_handoff_reaches_the_next_session_in_the_repo() {
         let mut line = String::new();
         let _ = BufReader::new(&s).read_line(&mut line);
     }
-    for _ in 0..100 {
+    // Up to 15 s: the ended card comes after end-of-session work, slow under load.
+    for _ in 0..300 {
         if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| card_ended(&c)) {
             break;
         }
@@ -3862,7 +3914,7 @@ fn session_cards_and_the_board() {
         s
     };
     let wait_card = |session: &Path, want: &str| {
-        for _ in 0..100 {
+        for _ in 0..300 {
             if fs::read_to_string(session.join("card.json")).is_ok_and(|c| c.contains(want)) {
                 return;
             }

@@ -103,6 +103,7 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
             "skill_preview",
             "skill_stage",
             "why",
+            "brief",
             "sandbox_run",
             "sandbox_task"
         ]
@@ -136,6 +137,11 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
     assert!(!err, "{chain}");
     assert!(chain.contains("action a-1 (shape, applied)"), "{chain}");
     assert!(chain.contains("caused by #2 output o-1"), "{chain}");
+
+    let (brief, err) = s.tool("brief", json!({"format": "markdown"}));
+    assert!(!err && brief.starts_with("## Summary by belay"), "{brief}");
+    let (bad, err) = s.tool("brief", json!({"format": "pdf"}));
+    assert!(err && bad.contains("unknown format pdf"), "{bad}");
 
     let (handoff, err) = s.tool("handoff_get", json!({}));
     assert!(!err && handoff.starts_with("No handoff"), "{handoff}");
