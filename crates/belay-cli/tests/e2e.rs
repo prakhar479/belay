@@ -24,8 +24,12 @@ fn hermetic() {
                 std::env::remove_var(k);
             }
         }
-        // The user's own config must not change what a test sees.
-        std::env::set_var("BELAY_CONFIG", "/nonexistent/belay-e2e/config.toml");
+        // The user's own config must not change what a test sees. `agent_skill = off`:
+        // the start line it adds would show in every test that checks for silence.
+        let config =
+            std::env::temp_dir().join(format!("belay-e2e-{}.config.toml", std::process::id()));
+        std::fs::write(&config, "agent_skill = off\n").unwrap();
+        std::env::set_var("BELAY_CONFIG", config);
         // No belay plugin "installed" from the developer's own Claude config.
         std::env::set_var("CLAUDE_CONFIG_DIR", "/nonexistent/belay-e2e/claude");
         // A killed test run runs no `Drop`: hubs it started go down on their own.
@@ -37,6 +41,14 @@ fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures/claude_code")
         .join(name)
+}
+
+/// A config file that only turns the start line off (see `hermetic`), for tests that
+/// point `BELAY_CONFIG` at their own dir.
+fn no_routine_config(dir: &Path) -> PathBuf {
+    let f = dir.join("no-routine.config.toml");
+    fs::write(&f, "agent_skill = off\n").unwrap();
+    f
 }
 
 fn tmp(name: &str) -> PathBuf {
@@ -75,7 +87,15 @@ fn run_session(name: &str, config: &str, flags: &[&str]) -> (PathBuf, PathBuf) {
     let dir = tmp(name);
     let home = dir.join("home");
     let file = dir.join("config.toml");
-    fs::write(&file, format!("loop_threshold = 4\n{config}")).unwrap();
+    fs::write(
+        &file,
+        if config.contains("agent_skill") {
+            format!("loop_threshold = 4\n{config}")
+        } else {
+            format!("loop_threshold = 4\nagent_skill = off\n{config}")
+        },
+    )
+    .unwrap();
     let status = Command::new(bin())
         .arg("claude")
         .args(flags)
@@ -170,7 +190,7 @@ fn features_off_change_nothing() {
     let report = belay(&["report"], &session);
     assert!(!report.contains("look mode"), "{report}");
     assert!(
-        report.contains("Config: guard = off (default deny) · loop_threshold = 4 (default 3) · shape = off (default on)"),
+        report.contains("Config: agent_skill = off (default on) · guard = off (default deny) · loop_threshold = 4 (default 3) · shape = off (default on)"),
         "{report}"
     );
     assert!(!report.contains("[would"), "{report}");
@@ -183,7 +203,7 @@ fn features_off_change_nothing() {
 /// The belay plugin reaches the agent through `--plugin-dir`, hooks left out; `agent_skill = off` stops it.
 #[test]
 fn the_launcher_hands_the_agent_the_skill() {
-    let (dir, _s) = run_session("skill-on", "", &[]);
+    let (dir, _s) = run_session("skill-on", "agent_skill = on\n", &[]);
     let args = fs::read_to_string(dir.join("args.txt")).unwrap();
     let words: Vec<&str> = args.split_whitespace().collect();
     let at = words
@@ -565,7 +585,7 @@ const QUIET: &str = "shape = off\nguard = off\n";
 fn start_daemon(session: &Path, config: &str) -> (Daemon, PathBuf) {
     fs::create_dir_all(session).unwrap();
     let file = session.with_extension("config.toml");
-    fs::write(&file, config).unwrap();
+    fs::write(&file, format!("agent_skill = off\n{config}")).unwrap();
     let child = Command::new(bin())
         .args(["daemon", "--session-dir"])
         .arg(session)
@@ -1916,7 +1936,12 @@ fn plugin_hooks_run_a_session_without_the_launcher() {
     );
     assert!(!home.join("by-session").exists());
 
-    assert_eq!(plugin_hook("SessionStart", None), "");
+    // A fresh session gets the one routine line, as context for the agent.
+    let start = plugin_hook("SessionStart", None);
+    assert!(
+        start.contains("additionalContext") && start.contains("belay brief"),
+        "{start}"
+    );
     let out = plugin_hook("PreToolUse", None);
     assert!(out.contains("\"deny\""), "the guard acts by default: {out}");
     let session = fs::read_dir(home.join("sessions"))
@@ -2052,7 +2077,7 @@ fn fleet_sessions_notice_each_other() {
     let wt = dir.join("wt");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "awareness = on\n").unwrap();
+    fs::write(&config, "awareness = on\nagent_skill = off\n").unwrap();
 
     let (_a, sock_a, sess_a) = start_fleet_daemon(&home, "1000000001-1", &config);
     let (_b, sock_b, sess_b) = start_fleet_daemon(&home, "1000000002-2", &config);
@@ -2188,7 +2213,7 @@ fn belay_in(dir: &Path, home: &Path, agent: &Path, args: &[&str]) -> String {
         .current_dir(dir)
         .env("BELAY_HOME", home)
         .env("BELAY_CLAUDE_BIN", agent)
-        .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        .env("BELAY_CONFIG", no_routine_config(dir))
         // A fleet hub started here gives its sessions a build dir unless one is set.
         .env_remove("CARGO_TARGET_DIR")
         .env_remove("RUSTC_WRAPPER")
@@ -2244,7 +2269,7 @@ fn a_hub_whose_test_is_gone_goes_down() {
         .current_dir(&repo)
         .env("BELAY_HOME", &home)
         .env("BELAY_CLAUDE_BIN", &agent)
-        .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        .env("BELAY_CONFIG", no_routine_config(&dir))
         .env("BELAY_TEST_PARENT", parent.id().to_string())
         .output()
         .unwrap();
@@ -2419,7 +2444,7 @@ fn fleet_hub_starts_restarts_and_stops_sessions() {
         c.args(["fleet", "prune", "--yes"])
             .current_dir(&repo)
             .env("BELAY_HOME", &home)
-            .env("BELAY_CONFIG", repo.join("no-config.toml"));
+            .env("BELAY_CONFIG", no_routine_config(&repo));
         if terminal {
             c.env("BELAY_TEST_TERMINAL", "1"); // the user typing in their terminal
         }
@@ -2830,7 +2855,7 @@ fn a_fleet_hub_outlives_the_shell_that_started_it() {
         .current_dir(&repo)
         .env("BELAY_HOME", &home)
         .env("BELAY_CLAUDE_BIN", &agent)
-        .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        .env("BELAY_CONFIG", no_routine_config(&dir))
         .env_remove("CARGO_TARGET_DIR")
         .env_remove("RUSTC_WRAPPER")
         .process_group(0)
@@ -3183,7 +3208,7 @@ echo "$BELAY_FLEET_SLOT" > "$D/rev-slot.txt"
         .current_dir(&repo)
         .env("BELAY_HOME", &home)
         .env("BELAY_CLAUDE_BIN", &terminal)
-        .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        .env("BELAY_CONFIG", no_routine_config(&dir))
         .env("BELAY_HOOK_TIMEOUT_MS", "2000")
         .output()
         .unwrap();
@@ -3343,7 +3368,7 @@ fn fleet_down_leaves_a_terminal_session_running() {
         .current_dir(&repo)
         .env("BELAY_HOME", &home)
         .env("BELAY_CLAUDE_BIN", &terminal)
-        .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        .env("BELAY_CONFIG", no_routine_config(&dir))
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
@@ -4220,7 +4245,7 @@ fn a_session_starts_with_the_last_sessions_handoff_memory() {
     let dir = tmp("memory-handoff");
     let home = dir.join("home");
     let config = dir.join("config.toml");
-    fs::write(&config, "").unwrap();
+    fs::write(&config, "agent_skill = off\n").unwrap();
     let load = |name: &str| -> serde_json::Value {
         serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
     };
@@ -4832,6 +4857,7 @@ fn retro_output_matches_golden() {
             .arg(root.join("loop_session.jsonl"))
             .env("BELAY_HOME", dir.join("home"))
             .env("HOME", &dir)
+            .env("BELAY_CONFIG", dir.join("no-config.toml"))
             .output()
             .unwrap();
         assert!(

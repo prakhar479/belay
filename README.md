@@ -78,7 +78,7 @@ You also get a notification when you're needed, `belay usage` for where your tok
 
 ### It works together. *Sessions that know about each other.*
 
-Run two or three agents at once and they stop tripping over each other. Each session says what it's working on, and `belay sessions` shows them all on one board. When one session edits a file another is using, the other hears about it before it acts on a stale copy. Sessions can message each other (`belay msg repo "hold off on parser.rs"`), ask what others have already found (`belay ask`), and message you. For bigger jobs, a fleet file runs a team of agents, each on its own branch, and a task counts as done only when its check passes.
+Run two or three agents at once and they stop tripping over each other. Each session says what it's working on, and `belay sessions` shows them all on one board. When one session edits a file another is using, the other hears about it before it acts on a stale copy. Sessions can message each other (`belay msg repo "hold off on parser.rs"`), ask what others have already found (`belay ask`), and message you. Set `commons = on` in belay's config so agents hear each other; your own messages always reach them. For bigger jobs, a fleet file runs a team of agents, each on its own branch, and a task counts as done only when its check passes.
 
 ### Your agent uses it on its own
 

@@ -112,8 +112,7 @@ pub fn run_claude(args: Vec<String>) -> Result<i32> {
     // The belay plugin's skill, commands, and MCP tools, when the plugin is not installed
     // (`claude plugin` would load them a second time). Only with a session: without belay
     // there are no `belay` tools to call.
-    if session.is_some() && crate::config::load().agent_skill && !crate::doctor::plugin_installed()
-    {
+    if session.is_some() && crate::config::load().routine && !crate::doctor::plugin_installed() {
         if let Some(d) = claude_code::package::prepare() {
             cmd.arg("--plugin-dir").arg(d);
         }

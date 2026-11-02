@@ -114,7 +114,7 @@ belay install --permissions    # lets the agent run belay's everyday commands wi
 
 `belay uninstall` removes the plugin, belay's status line, and belay's permission rules. A status line that is not belay's stays, and so does every other rule. `belay doctor` says whether the plugin is installed, whether the status line is belay's, and whether the permission rules are in place.
 
-The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
+The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`. A fresh session also gets one line at its start that points the agent at that routine (`agent_skill = off` leaves it out).
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
 
@@ -197,6 +197,7 @@ belay always acts within what the agent supports, and records every action with 
 | `memory` | `on` | Handoffs between sessions, recall at the start and after a compaction, learned fixes, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
 | `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
+| `agent_skill` | `on` | `belay claude` gives the agent belay's skill, slash commands, and MCP tools when the plugin is not installed. Also, at the start of a fresh session (not a resume or a compaction), adds one line to the agent's context that points it at the belay skill's routine: read the last handoff, say what it works on, run `belay brief` before it is done, leave a handoff before it stops. `off` leaves the line out |
 | `report` | `quiet` | How much belay tells you about what it did: `quiet` (warnings), `normal` (+ what it did), `verbose` (+ minor notes). See "Seeing what belay does" |
 
 A feature that is off takes no action. An action the agent cannot take is recorded as not applied.
@@ -922,6 +923,7 @@ memory = on                     # handoffs, recall at start, learned fixes, proj
 recall_tokens = 600             # most tokens the start recall and the carry pack take
 awareness = on                  # what other belay sessions here did
 commons = off                   # other sessions' messages and handoffs reach the agent
+agent_skill = on                # the agent gets belay's skill and tools, and one line at a fresh start
 report = quiet                  # how much belay tells you: quiet, normal, verbose
 resume = continue               # a resumed conversation keeps belay's state; fresh starts clean
 experimental_audit = false      # audit each session's changes to tests and checks
@@ -929,7 +931,6 @@ sandbox_memory = 4G             # sandbox: most memory its processes use togethe
 sandbox_procs = 512             # sandbox: most processes
 sandbox_disk = 10G              # sandbox: most disk its clone and private home use
 sandbox_wall = 4h               # sandbox: longest a command runs (also 30m, 90s)
-agent_skill = on                # `belay claude` gives the agent belay's skill, commands, and MCP tools
 sandbox_agent = on              # agents may run `belay sandbox run` and `task`
 sandbox_tasks_per_hour = 4      # most `belay sandbox task` runs an agent starts per hour
 sandbox_task_tokens = 2M        # a sandbox task is stopped past this many tokens

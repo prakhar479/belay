@@ -1604,6 +1604,7 @@ mod tests {
         // Not the machine's live sessions, fixes or notes: only the deadline is tested.
         let cfg = Config {
             commons: false,
+            routine: false,
             memory: false,
             ..Config::default()
         };

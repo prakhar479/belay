@@ -776,6 +776,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
                     status(*applied, "told"),
                     text.trim_start_matches("belay: ")
                 )),
+                ActionKind::Routine { .. } => {}
                 ActionKind::Fleet { text, .. } => fleet.push(format!(
                     "{} {}",
                     status(*applied, "told"),
@@ -1095,6 +1096,7 @@ fn describe(e: &Entry) -> String {
                 ActionKind::Recall { .. } => "recall",
                 ActionKind::Notes { .. } => "notes",
                 ActionKind::Commons { .. } => "commons",
+                ActionKind::Routine { .. } => "routine",
                 ActionKind::Handoff { .. } => "handoff",
                 ActionKind::MemoryRecalled { .. } => "memory",
             };

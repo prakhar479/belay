@@ -212,6 +212,10 @@ pub enum ActionKind {
         findings: usize,
         text: String,
     },
+    /// Point the agent at belay's routine at a fresh start (handoff, task, brief).
+    Routine {
+        text: String,
+    },
     /// Tell the agent at its start what the last session in this repo left (C4).
     Handoff {
         from: String,

@@ -2456,3 +2456,64 @@ fn sandbox_events_are_recorded_and_shown_on_the_card() {
     ));
     assert_eq!(c.card(2).sandbox, None);
 }
+
+fn routine_actions(d: &Decision) -> Vec<(bool, bool)> {
+    d.entries
+        .iter()
+        .filter_map(|e| match &e.body {
+            Body::Action {
+                action: ActionKind::Routine { .. },
+                applied,
+                unsupported,
+                ..
+            } => Some((*applied, *unsupported)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_fresh_start_points_the_agent_at_the_routine() {
+    let mut c = ctl();
+    let d = c.handle(start("/"), 0);
+    assert_eq!(routine_actions(&d), [(true, false)]);
+    let line = d
+        .response
+        .add_context
+        .iter()
+        .find(|t| t.contains("belay brief"))
+        .expect("the routine line");
+    assert!(
+        line.starts_with("belay: ") && line.contains("belay handoff"),
+        "{line}"
+    );
+    assert!(line.split_whitespace().count() < 80, "{line}");
+}
+
+#[test]
+fn a_resumed_start_or_config_off_has_no_routine_line() {
+    let mut c = ctl();
+    c.restored = true;
+    let d = c.handle(start("/"), 0);
+    assert!(routine_actions(&d).is_empty());
+    assert!(!d
+        .response
+        .add_context
+        .iter()
+        .any(|t| t.contains("belay brief")));
+
+    let cfg = Config {
+        routine: false,
+        ..Config::default()
+    };
+    let d = Controller::new(cfg, Capabilities::CLAUDE_CODE).handle(start("/"), 0);
+    assert!(routine_actions(&d).is_empty());
+    assert!(d.response.add_context.is_empty());
+}
+
+#[test]
+fn without_context_injection_the_routine_is_recorded_unapplied() {
+    let d = observer().handle(start("/"), 0);
+    assert_eq!(routine_actions(&d), [(false, true)]);
+    assert!(d.response.add_context.is_empty());
+}
