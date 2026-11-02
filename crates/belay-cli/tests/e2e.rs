@@ -3688,12 +3688,19 @@ fn a_handoff_reaches_the_next_session_in_the_repo() {
         let _ = BufReader::new(&s).read_line(&mut line);
     }
     // Up to 15 s: the ended card comes after end-of-session work, slow under load.
+    let mut ended = false;
     for _ in 0..300 {
         if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| card_ended(&c)) {
+            ended = true;
             break;
         }
         thread::sleep(Duration::from_millis(50));
     }
+    assert!(
+        ended,
+        "A's card never ended within 15 s (its daemon's shutdown stalled): {:?}",
+        fs::read_to_string(sess_a.join("card.json"))
+    );
 
     // The next session in x starts with it.
     let (_b, sock_b, _) = start_fleet_daemon(&home, "1000000002-2", &on);

@@ -1500,8 +1500,12 @@ fn serve(
             thread::sleep(Duration::from_millis(20));
         }
         // Wait for any request that is writing the ledger, then exit (R0.6).
-        let done = state.lock().unwrap_or_else(|e| e.into_inner());
-        keep_handoff(&done);
+        {
+            let done = state.lock().unwrap_or_else(|e| e.into_inner());
+            keep_handoff(&done);
+        }
+        // Not under the state lock: `write_card` takes CARD_LAST, then the state, so the
+        // reverse order here could deadlock and leave the card live with no handoff.
         card_ended();
         let _ = fs::remove_file(sock);
         std::process::exit(0);
