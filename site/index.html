@@ -970,6 +970,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <a href="#features">Honest</a>
       <a href="#sandbox">Safe</a>
       <a href="#how">Clear</a>
+      <a href="#sessions">Together</a>
       <a href="#status">Status</a>
     </nav>
     <div class="nav-right">
@@ -1520,8 +1521,8 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule" id="sessions" aria-labelledby="sessions-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">06</span> It remembers, together</p>
-      <h2 class="h2" id="sessions-title">Many sessions. <span class="mute">One rope.</span></h2>
+      <p class="eyebrow"><span class="n">06</span> It works together</p>
+      <h2 class="h2" id="sessions-title">Many agents. <span class="mute">One team.</span></h2>
       <p class="sec-lede">Running a few agents at once? belay lets them see each other and talk to each other, so they don't trip over the same files.</p>
     </div>
 
@@ -1535,6 +1536,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
           <li><code>belay inbox</code><span>Read what other sessions sent.</span></li>
           <li><code>belay share · ask</code><span>Share findings, and search them.</span></li>
           <li><code>belay handoff</code><span>Leave a note for the next session.</span></li>
+          <li><code>commons = on</code><span>In belay's config: agents hear each other's messages. Yours always reach them.</span></li>
         </ul>
       </div>
       <div class="r7 reveal" style="--rd:.08s">
@@ -1553,6 +1555,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         </div>
         <div class="toasts">
           <div class="toast"><p class="when"><i></i> When another session edits your file</p><p>belay: shop-1 edited shop/payments.py after you did. Read it again before you change it.</p></div>
+          <div class="toast"><p class="when"><i></i> shop-1 asks, shop-2 answers</p><p><code>belay msg shop-2 "will refund() keep its signature?"</code><br>shop-2: yes, I only add a reason argument with a default.</p></div>
         </div>
       </div>
     </div>
@@ -1560,7 +1563,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="g12 split rev fleet-block">
       <div class="l5 reveal">
         <h3>Or run a fleet.</h3>
-        <p class="t">For bigger jobs, <code class="inline-code">belay fleet up</code> runs a small team of agents, each in its own copy of the project. It works today, though it's not where new features are going for now.</p>
+        <p class="t">For bigger jobs, <code class="inline-code">belay fleet up</code> runs a team of agents for you, each in its own copy of the project. You add tasks to a board; agents pick them up, message each other and you, and a task counts as done only when its check passes. When the fleet is down, <code class="inline-code">belay fleet merge</code> brings the work back as branches.</p>
         <ul class="facts">
           <li><b>Worktrees</b><span>Each agent gets its own copy of the project.</span></li>
           <li><b>Task board</b><span>Tasks come from a board.</span></li>
@@ -1777,6 +1780,7 @@ Loops (13 s in loops): 1
           <li><a href="#features">It's honest</a></li>
           <li><a href="#sandbox">It's safe</a></li>
           <li><a href="#how">It's clear</a></li>
+          <li><a href="#sessions">It works together</a></li>
           <li><a href="#status">Status</a></li>
         </ul>
       </div>

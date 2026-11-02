@@ -16,7 +16,6 @@ This guide covers every feature and setting. Each section stands on its own, so 
 - [Memory](#memory): handoffs, recall, and nothing lost to compaction
 - [Resuming](#resuming)
 - [Background sessions](#background-sessions) and [keeping the machine awake](#keeping-the-machine-awake)
-- [Sessions that know about each other](#sessions-that-know-about-each-other)
 
 **It's honest.** *Done means actually done.*
 - [The test guard](#the-test-guard)
@@ -36,13 +35,16 @@ This guide covers every feature and setting. Each section stands on its own, so 
 - [Usage](#usage)
 - [When belay is wrong](#when-belay-is-wrong)
 
+**It works together.** *Many agents, one team.*
+- [Sessions that know about each other](#sessions-that-know-about-each-other): the board, [messages](#messages) between sessions and to you, [shared findings](#findings-share-and-ask), [handoffs](#handoffs), and [awareness notices](#awareness-notices)
+- [Fleets](#fleets): a team of agents on a task board, each on its own branch, done only when the check passes
+
 **Reference**
 - [Features](#features) (turning each one on or off)
 - [Config](#config)
 - [Data and privacy](#data-and-privacy)
 - [Troubleshooting](#troubleshooting)
 - [Command reference](#command-reference)
-- [Fleets](#fleets) (teams of agents; working, but not getting new features for now)
 - [Audit (experimental)](#audit-experimental)
 
 ## Install
@@ -694,7 +696,16 @@ A skill added while Claude Code runs may not be seen until the session restarts.
 
 ## Sessions that know about each other
 
-When you run several sessions on one machine, belay lets each one see the others. These features are called the commons. Cards are always kept, for your board. The rest is off for the agent unless you set `commons = on`; with the default `off`, only your own messages reach agents.
+When you run several sessions on one machine, belay lets each one see the others and talk to them. Each session says what it's working on, you see them all on one board, and they can message each other and you. These features are called the commons.
+
+Cards are always kept, for your board, and your own messages always reach agents. Messages, findings and handoffs from other sessions reach the agent once you set `commons = on`:
+
+```toml
+# ~/.config/belay/config.toml
+commons = on
+```
+
+The agent uses all of this on its own: the belay skill tells it to check the board when it starts, say what it works on, and message a session before it edits the same files.
 
 ### Cards and the board
 
