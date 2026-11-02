@@ -6,6 +6,7 @@
 compile_error!("belay supports Unix (Linux, macOS) only for now");
 
 mod audit;
+mod bg;
 mod brief;
 mod commons;
 mod config;
@@ -462,6 +463,12 @@ enum Cmd {
         #[command(subcommand)]
         cmd: sandbox::SandboxCmd,
     },
+    /// Background sessions: an agent keeps working on a prompt after you leave, in a
+    /// sandbox when it can, and tells you when it is done or needs you.
+    Bg {
+        #[command(subcommand)]
+        cmd: bg::BgCmd,
+    },
     /// What belay would have done in an existing Claude Code transcript, or in all of them.
     Retro {
         #[arg(required_unless_present = "all")]
@@ -917,6 +924,7 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Codex { .. } => bail!("`belay codex` is not built yet"),
         Cmd::Init { agent } => bail!("`belay init {agent}` is not built yet"),
         Cmd::Sandbox { cmd } => sandbox::cli(cmd),
+        Cmd::Bg { cmd } => bg::cli(cmd),
         Cmd::Undo { id, session, yes } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
             undo::run(&dir, id.as_deref(), yes)

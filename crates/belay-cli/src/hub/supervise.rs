@@ -1,6 +1,7 @@
 //! The hub as a supervisor that outlives its terminal (BG0): a detached start, and the
 //! reset time a usage-limit message gives.
 
+use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -8,23 +9,29 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
-/// Start `belay fleet hub` for `dir`, detached from the caller: a double fork and
-/// `setsid`, so it leads no session and has no controlling terminal. The caller's
-/// shell exiting, a SIGHUP to its group, or its terminal closing do not reach it.
-/// stdin is /dev/null, stdout and stderr go to hub.log; cwd and umask are kept.
+/// Start `belay fleet hub` for `dir`, detached from the caller (see `detached`).
 pub(super) fn start_hub(dir: &Path, resume: bool) -> Result<()> {
-    let exe = std::env::current_exe().context("find belay executable")?;
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("hub.log"))?;
-    let mut cmd = Command::new(exe);
-    cmd.args(["fleet", "hub"]);
+    let mut args: Vec<&OsStr> = vec!["fleet".as_ref(), "hub".as_ref()];
     if resume {
-        cmd.arg("--resume");
+        args.push("--resume".as_ref());
     }
-    cmd.arg("--dir")
-        .arg(dir)
+    args.extend(["--dir".as_ref(), dir.as_os_str()]);
+    detached(&args, &dir.join("hub.log"), &[]).context("start the fleet hub")
+}
+
+/// Run `belay <args>` detached from the caller: a double fork and `setsid`, so it leads
+/// no session and has no controlling terminal. The caller's shell exiting, a SIGHUP to
+/// its group, or its terminal closing do not reach it. stdin is /dev/null, stdout and
+/// stderr go to `log`; cwd, umask and the environment are kept, but for `unset`.
+/// `belay bg` uses it too.
+pub(crate) fn detached(args: &[&OsStr], log: &Path, unset: &[&str]) -> Result<()> {
+    let exe = std::env::current_exe().context("find belay executable")?;
+    let log = OpenOptions::new().create(true).append(true).open(log)?;
+    let mut cmd = Command::new(exe);
+    for k in unset {
+        cmd.env_remove(k);
+    }
+    cmd.args(args)
         .stdin(Stdio::null())
         .stdout(log.try_clone()?)
         .stderr(log);
@@ -44,8 +51,8 @@ pub(super) fn start_hub(dir: &Path, resume: bool) -> Result<()> {
             }
         });
     }
-    let mut first = cmd.spawn().context("start the fleet hub")?;
-    // Reap the first child; the hub itself is init's (or a subreaper's) now.
+    let mut first = cmd.spawn()?;
+    // Reap the first child; the process itself is init's (or a subreaper's) now.
     let _ = first.wait();
     Ok(())
 }
@@ -60,7 +67,7 @@ const LATE_MS: u64 = 10 * 60_000;
 /// "resets Nov 3, 5pm (UTC)", and the older "…limit reached|<unix seconds>". None for
 /// anything else, a zone other than UTC (belay has no zone data), or no time at all:
 /// the user resumes then.
-pub(super) fn reset_at(text: &str, now: u64) -> Option<u64> {
+pub(crate) fn reset_at(text: &str, now: u64) -> Option<u64> {
     let lower = text.to_lowercase();
     if let Some((_, secs)) = lower.split_once("limit reached|") {
         let digits: String = secs.chars().take_while(char::is_ascii_digit).collect();

@@ -567,3 +567,74 @@ fn a_whole_session_in_a_sandbox_reaches_the_daemon_outside() {
     assert!(!o.status.success());
     let _ = fs::remove_dir_all(&w.dir);
 }
+
+/// `belay bg start --sandbox`: the detached run works in a sandbox, its work lands on
+/// the sandbox's branch, and the user's checkout is untouched.
+#[test]
+fn a_background_session_in_a_sandbox_lands_its_branch() {
+    need_sandbox!();
+    let w = world("bg", "");
+    let agent = w.dir.join("fake-bg.sh");
+    script(
+        &agent,
+        r#"#!/bin/sh
+[ "$1" = --version ] && echo '2.1.316 (Claude Code)' && exit 0
+echo changed > sub/a.txt
+echo '{"type":"system","subtype":"init","session_id":"conv-bg"}'
+echo '{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":30,"output_tokens":20}}}'
+echo '{"type":"result","result":"edited sub/a.txt","session_id":"conv-bg"}'
+"#,
+    );
+    let out = Command::new(bin())
+        .args([
+            "bg",
+            "start",
+            "--sandbox",
+            "--no-keep-awake",
+            "change a.txt",
+        ])
+        .current_dir(&w.repo)
+        .env("HOME", &w.home)
+        .env("BELAY_HOME", &w.belay_home)
+        .env("BELAY_CONFIG", &w.config)
+        .env("BELAY_CLAUDE_BIN", &agent)
+        .env("BELAY_TEST_TERMINAL", "1")
+        .env("BELAY_TEST_PARENT", std::process::id().to_string())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = stdout
+        .split_whitespace()
+        .nth(2)
+        .unwrap()
+        .trim_end_matches(':')
+        .to_string();
+    assert!(stdout.contains(&format!("in sandbox {id}")), "{stdout}");
+    let state = w.belay_home.join("bg").join(&id).join("state.json");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let s = loop {
+        let s: serde_json::Value = fs::read_to_string(&state)
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default();
+        if s["runner"].is_null() && s["phase"] != "starting" && s["phase"] != "working" {
+            break s;
+        }
+        assert!(std::time::Instant::now() < deadline, "never ended: {s}");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    };
+    assert_eq!(s["phase"], "done", "{s}");
+    assert_eq!(s["conversation"], "conv-bg");
+    assert_eq!(s["tokens"], 50);
+    let branch = format!("belay/sandbox/{id}");
+    assert_eq!(
+        git(&w.repo, &["show", &format!("{branch}:sub/a.txt")]),
+        "changed\n"
+    );
+    assert_eq!(fs::read_to_string(w.repo.join("sub/a.txt")).unwrap(), "a\n");
+}

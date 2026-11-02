@@ -2373,6 +2373,33 @@ fn the_agent_may_run_a_sandbox_but_not_remove_one() {
 }
 
 #[test]
+fn the_agent_may_start_a_background_session_but_not_stop_or_take_one_over() {
+    let mut c = ctl();
+    for (i, cmd) in [
+        "belay bg stop bg-1a2b3c",
+        "cd x && belay bg attach -1 --now",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let d = c.handle(requested(&format!("b{i}"), cmd, false), i as u64 + 1);
+        assert!(
+            matches!(&d.response.permission, Some(Permission::Deny(m)) if m.contains("belay bg stop")),
+            "{cmd}: {:?}",
+            d.response
+        );
+    }
+    for cmd in [
+        "belay bg status bg-1",
+        "belay bg start \"keep going\"",
+        "git commit -m 'belay bg stop'",
+    ] {
+        let d = c.handle(requested("s", cmd, false), 9);
+        assert!(d.response.permission.is_none(), "{cmd}");
+    }
+}
+
+#[test]
 fn the_agent_may_list_a_fleet_prune_but_not_run_it() {
     let mut c = ctl();
     let d = c.handle(

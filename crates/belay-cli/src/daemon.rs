@@ -17,7 +17,7 @@ use crate::ipc::{Reply, Request};
 use crate::paths::{now_ms, socket_path};
 use crate::store::Store;
 
-mod attention;
+pub(crate) mod attention;
 
 /// Time to encode and send a reply. A hook later than its deadline minus this is late.
 const REPLY_MARGIN_MS: u64 = 10;

@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::ipc::Reply;
 use crate::paths::{self, now_ms, socket_path};
 
-mod supervise;
+pub(crate) mod supervise;
 
 /// The hub sends the model a Tick this often.
 const TICK: Duration = Duration::from_secs(2);
@@ -466,7 +466,7 @@ fn end_torn_line(path: &Path, file: &File) {
 
 /// Debug builds only: the e2e tests set `BELAY_TEST_PARENT` to their own pid. A test run
 /// that is killed runs no `Drop`, so its hubs (and their sessions) would run on for hours.
-fn test_parent_gone() -> bool {
+pub(crate) fn test_parent_gone() -> bool {
     if !cfg!(debug_assertions) {
         return false;
     }
@@ -2216,7 +2216,7 @@ fn usage_of(line: &str, slot: &str) -> Option<FleetEvent> {
 
 /// A result that says the plan's usage limit was hit (the bench runner's signal), and
 /// when it resets if it says so, read at `now`.
-fn limit_of(line: &str, slot: &str, now: u64) -> Option<FleetEvent> {
+pub(crate) fn limit_of(line: &str, slot: &str, now: u64) -> Option<FleetEvent> {
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
     let text = v.get("result").and_then(|r| r.as_str()).unwrap_or("");
     let lower = text.to_lowercase();

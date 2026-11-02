@@ -430,7 +430,7 @@ notify_quiet = 22:00-07:00      # no notifications in this window, local time
 
 `kind` is `blocked`, `loop`, `verify_unmet`, `done`, `waiting`, `message`, or `warning`. `action` names the action, or is `null`. belay stops the command after 5 seconds. It never delays the agent: the command runs on its own thread. belay itself makes no network call here. Your command may, for example to send a phone push.
 
-The agent never sees these notifications. The old `notify = true` reads as `all`, and `notify = false` as `off`.
+The agent never sees these notifications. The old `notify = true` reads as `all`, and `notify = false` as `off`. Background sessions add their own kinds (see [Background sessions](#background-sessions)).
 
 ### The session brief
 
@@ -603,6 +603,41 @@ It needs no session and records nothing. belay never runs `sudo` and never chang
 | macOS | `caffeinate -ims -w <pid>` | held | not held on battery (fix: `sudo pmset -b disablesleep 1`, `0` to undo); on AC only with an external display |
 | WSL | `SetThreadExecutionState` through `powershell.exe` | held | Windows' lid action decides: held when it is "do nothing" on AC and battery. Fix: `powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0`, the same with `/setdcvalueindex`, then `powercfg /setactive SCHEME_CURRENT` |
 | Linux without logind, other OSes | none | not held | not held |
+
+## Background sessions
+
+When you leave, `belay bg` keeps the work going. It runs the agent headless on one prompt, detached from your terminal, and tells you when it is done or needs you. You pick it up where it is.
+
+```sh
+belay bg start "finish the parser and make the tests pass"   # prints its id, e.g. bg-3f9a1c
+belay bg start "go on with it" --resume <conversation>        # from a copy of a conversation
+belay bg start "…" --budget 2M --until 18:30                  # stop past 2M tokens, or at 18:30
+belay bg list                       # every background session
+belay bg status bg-3f9a1c           # phase, tokens and cost, the last notice
+belay bg watch bg-3f9a1c            # its notices as they happen (`belay watch`)
+belay bg attach bg-3f9a1c           # stop it and open its conversation here
+belay bg stop bg-3f9a1c [--now]     # stop it at the next step (or now)
+```
+
+An id takes a unique prefix, or `-1` for the newest.
+
+**Where it runs.** In a sandbox when one can be built here (see [Sandboxes](#sandboxes)): the work lands on `belay/sandbox/<id>` for you to merge. Otherwise it runs in this checkout, with the guard on, and `bg start` says so in one line. `--sandbox` or `--here` chooses. In the checkout the agent runs with `--permission-mode auto`; in a sandbox without prompts, as a sandbox task does. Either way it is a belay session, so the guard, loops, verify before done, and the ledger work as in `belay claude`.
+
+**It keeps going.** The supervisor is detached (as a fleet hub is): closing the terminal or a SIGHUP to its shell does not stop it. When the agent hits the plan's usage limit, it waits, and goes on by itself 2 minutes after the reset the limit message gives, in the same conversation. `status` shows `waiting for the usage limit to reset, until 23:02`. A limit message with no reset time stops it, and it needs you.
+
+**It stops cleanly.** `--budget` takes tokens (`2M`, `500K`: input, output, and cache writes) or dollars (`$5`). `--until` takes a local time (`18:30`) or a duration (`2h`). Past either, belay stops the agent at the next step: after the tool call it is in returns, so the conversation resumes cleanly. Claude Code reports the cost at the end of a run, so a dollar budget stops a long run late; a token budget is checked at every step. `belay bg stop` stops at the next step as well; `--now` at once.
+
+**`status`** shows the phase: `working`, `waiting for the usage limit to reset, until HH:MM`, `done`, `needs you: <reason>`, or `stopped: <reason>`. It also shows the tokens and cost so far, where it runs, its conversation and belay session, the last notice, and the agent's last message. When the agent ends with an edit belay blocked and you did not allow, or with a test command failing or not run since its last edit (from its [brief](#the-session-brief)), the phase is `needs you`, not `done`.
+
+**Attach.** `belay bg attach <id>` stops the run at the next step (`--now`: at once), then runs `belay claude --resume <conversation>` here, so belay goes on tracking the conversation (see [Resuming](#resuming)). A sandboxed one opens in the same sandbox: `belay sandbox claude --id <sandbox> --resume <conversation>`. With `--resume`, the background session works on a fork of your conversation (`--fork-session`), so the original stays yours; each run after a usage limit forks the last one, and attach opens the newest.
+
+**Notifications** go where [attention](#getting-told-when-you-are-needed) sends them: the desktop and `notify_command`, never the agent. The kinds are `done` (with the brief's first lines), `needs_you`, `usage_limit` (with the time it goes on), `budget`, and `deadline`. The JSON has a `bg` field with the id. Blocks, loops, and verify unmet come from the session itself, as in any belay session. `notify = off` and `notify_quiet` apply.
+
+**Keeping awake.** By default the run holds the machine awake for as long as it lives (`belay keep-awake`'s mechanism; `--no-keep-awake` to not). `bg start` prints what a closed lid does here: `lid closed: held`, or `lid closed: not held.` with the reason and the fix to run. What belay can hold off, per platform, is in the table under [Keeping the machine awake](#keeping-the-machine-awake). A machine that sleeps anyway pauses the run; one that shuts down ends it, and `status` then says its supervisor is gone.
+
+**Agents.** An agent may start one, through the MCP tool `bg_start` or `belay bg start`, when you say you are leaving. Its background session always runs in a sandbox, never past `sandbox_task_tokens`, and counts toward `sandbox_tasks_per_hour`. `belay bg stop` and `attach` are yours: belay refuses them outside your terminal, and denies them to the agent.
+
+Its files are in `<belay home>/bg/<id>/`: `meta.json` (what was asked), `state.json` (where it is), `log.jsonl` (what the supervisor did and why), `out.jsonl` (the agent's headless output), and `runner.log`.
 
 ## Skills
 
@@ -984,5 +1019,8 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay config [migrate]` | Show each setting and where it comes from; rewrite 0.1 keys |
 | `belay doctor` · `belay export` · `belay purge` | Install check, bug bundle, cleanup |
 | `belay keep-awake [--for D \| --pid P] [-- <cmd…>]` | Keep the machine awake; says what it can hold off here |
+| `belay bg start "<prompt>" [--resume C] [--sandbox \| --here] [--budget N\|$N] [--until T] [--no-keep-awake] [--model M]` | A background session: works detached, tells you when it is done or needs you |
+| `belay bg list \| status ID \| watch ID` | The background sessions; one's phase, tokens, last notice; its notices live |
+| `belay bg stop ID [--now] \| attach ID [--now]` | Stop one at the next step; or stop it and open its conversation here (yours to run) |
 
 Every command has `--help`.

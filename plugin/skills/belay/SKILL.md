@@ -7,7 +7,7 @@ description: How to work with belay, the local supervisor that records this sess
 
 belay records what you do in this session. It may summarize long outputs, warn you about loops, and deny edits that weaken tests. Every action it takes has a reason you can look up. Run the commands below with your shell tool.
 
-belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `brief`, `skill_preview`, `skill_stage`, `sandbox_run`, and `sandbox_task`. When they are present, use them instead of the matching commands.
+belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `brief`, `skill_preview`, `skill_stage`, `sandbox_run`, `sandbox_task`, and `bg_start`. When they are present, use them instead of the matching commands.
 
 ## When you start
 
@@ -64,6 +64,11 @@ A sandbox is a clone of this repo with a private home and limits. Nothing in it 
 - for a follow-up the user wants contained: `sandbox_task` with a prompt, or `belay sandbox task "<prompt>"`. It returns the result, the branch, and the files changed.
 
 Tasks are limited per hour and by tokens. Never merge a sandbox branch yourself; tell the user its name and `belay sandbox show <id>`.
+
+## When the user leaves
+
+- If the user says they are leaving, or asks you to keep going without them, offer `bg_start` with a short prompt that restates the task in full. It runs in a sandbox, with a budget, and tells the user when it is done or needs them.
+- Tell the user its id. Stopping it or taking it over is theirs: `belay bg status <id>`, `belay bg attach <id>`.
 
 ## Before you stop
 

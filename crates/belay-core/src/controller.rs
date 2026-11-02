@@ -355,6 +355,18 @@ fn runs_belay_sandbox_rm(command: &str) -> bool {
     })
 }
 
+/// A simple command runs `belay bg stop` or `belay bg attach`: a background session is
+/// the user's to end or take over (rule 12).
+fn runs_belay_bg_user(command: &str) -> bool {
+    shell::parse(command).segments.iter().any(|seg| {
+        let w = shell::program_words(seg);
+        w.len() >= 3
+            && shell::program_name(&w[0]) == "belay"
+            && w[1] == "bg"
+            && (w[2] == "stop" || w[2] == "attach")
+    })
+}
+
 /// A simple command runs `belay fleet prune --yes`: it deletes worktrees and branches
 /// (rule 12). The listing without `--yes` is the agent's to run.
 fn runs_belay_fleet_prune(command: &str) -> bool {
@@ -1935,6 +1947,8 @@ impl Controller {
             "belay: only the user rolls files back. Ask the user to run `belay undo` in their own terminal.".to_string()
         } else if runs_belay_sandbox_rm(&command) {
             "belay: only the user removes a sandbox. Ask the user to run `belay sandbox rm` in their own terminal.".to_string()
+        } else if runs_belay_bg_user(&command) {
+            "belay: only the user stops or takes over a background session. Ask the user to run `belay bg stop` or `belay bg attach` in their own terminal.".to_string()
         } else if runs_belay_fleet_prune(&command) {
             "belay: only the user prunes fleet worktrees and branches. Ask the user to run `belay fleet prune --yes` in their own terminal.".to_string()
         } else if runs_belay(&command, "pause") || runs_belay(&command, "resume") {

@@ -152,7 +152,7 @@ fn tasks_file() -> PathBuf {
     root().join("tasks.jsonl")
 }
 
-fn record_start(by: &str, id: &str) -> Result<()> {
+pub(crate) fn record_start(by: &str, id: &str) -> Result<()> {
     paths::ensure_private_dir(&root())?;
     let line = serde_json::to_string(&Started {
         at_ms: paths::now_ms(),
@@ -165,6 +165,76 @@ fn record_start(by: &str, id: &str) -> Result<()> {
         .open(tasks_file())?;
     writeln!(f, "{line}")?;
     Ok(())
+}
+
+/// Who starts a headless sandbox run, if they may: an agent only with `sandbox_agent`
+/// on, and at most `sandbox_tasks_per_hour` an hour (`belay bg` counts here too).
+pub(crate) fn admit(cfg: &config::Config, by_agent: bool) -> Result<String> {
+    if by_agent && !cfg.sandbox_agent {
+        bail!("belay: refused: `sandbox_agent = off` in belay's config: only the user starts a sandbox");
+    }
+    let by = caller(by_agent);
+    if by_agent {
+        let log = fs::read_to_string(tasks_file()).unwrap_or_default();
+        let n = started_within_hour(&log, &by, paths::now_ms());
+        if n as u64 >= cfg.sandbox_tasks_per_hour {
+            bail!(
+                "belay: refused: this session started {n} sandbox tasks in the last hour, the most `sandbox_tasks_per_hour` allows"
+            );
+        }
+    }
+    Ok(by)
+}
+
+/// What a headless run in a sandbox for `belay bg` did.
+pub(crate) struct Headless {
+    /// The belay session that supervised it.
+    pub session: String,
+    pub outcome: Outcome,
+    /// The files that landed on the sandbox's branch, or why they could not.
+    pub landed: Result<Vec<String>>,
+}
+
+/// One headless run of the agent (`args` from `Connector::headless_argv`) in sandbox
+/// `id` of the current directory's repo, made if it does not exist and kept after.
+/// `copy`: the user's conversation it starts from, copied in first. `each` sees every
+/// stdout line and stops the run by giving a reason; `started` gets the belay session
+/// id as soon as there is one. The work lands on the sandbox's branch. Admission
+/// (`admit`) is the caller's.
+pub(crate) fn headless(
+    id: &str,
+    args: Vec<String>,
+    copy: Option<&str>,
+    message: &str,
+    started: &mut dyn FnMut(&str),
+    each: &mut dyn FnMut(&str) -> Option<String>,
+) -> Result<Headless> {
+    let cfg = config::load();
+    let backend = backend()?;
+    let connector = connector::for_agent(connector::DEFAULT_AGENT)?;
+    let (repo, rel) = here()?;
+    let (meta, _) = open_or_create(&repo, Some(id.to_string()))?;
+    if let Some(c) = copy {
+        copy_conversation(&meta, &*connector, c, &rel)?;
+    }
+    log(&meta, "task", message);
+    let (sup, spec) = start(&meta, &cfg, &rel, &*connector, args)?;
+    let session = sup.id().to_string();
+    started(&session);
+    let out = exec(
+        &meta,
+        &*backend,
+        &spec,
+        Limits::from_config(&cfg),
+        Io::Lines(each),
+    );
+    stop(&meta, sup, &out);
+    let landed = git::land(&meta, &*backend, &format!("sandbox {}: {message}", meta.id));
+    Ok(Headless {
+        session,
+        outcome: out?,
+        landed,
+    })
 }
 
 /// Counts an agent's tokens from its headless output and stops it past the budget.
@@ -222,20 +292,7 @@ fn copy_conversation(
 /// `belay sandbox task`: a headless follow-up in a sandbox, for the user or an agent.
 pub fn task(a: TaskArgs) -> Result<i32> {
     let cfg = config::load();
-    let by_agent = !paths::users_terminal();
-    if by_agent && !cfg.sandbox_agent {
-        bail!("belay: refused: `sandbox_agent = off` in belay's config: only the user starts a sandbox");
-    }
-    let by = caller(by_agent);
-    if by_agent {
-        let log = fs::read_to_string(tasks_file()).unwrap_or_default();
-        let n = started_within_hour(&log, &by, paths::now_ms());
-        if n as u64 >= cfg.sandbox_tasks_per_hour {
-            bail!(
-                "belay: refused: this session started {n} sandbox tasks in the last hour, the most `sandbox_tasks_per_hour` allows"
-            );
-        }
-    }
+    let by = admit(&cfg, !paths::users_terminal())?;
     let backend = backend()?;
     let connector = connector::for_agent(connector::DEFAULT_AGENT)?;
     let args = connector.headless_argv(&a.prompt, a.resume.as_deref(), a.model.as_deref())?;

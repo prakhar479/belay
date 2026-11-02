@@ -4,7 +4,8 @@
 //! `initialize`, `ping`, `tools/list`, `tools/call`. Written by hand on serde_json: the
 //! protocol surface is small, and an SDK would add an async runtime to the binary.
 //! Everything is read from and written to this machine; nothing calls out. The two
-//! sandbox tools run `belay sandbox run|task` as the agent, under the same rules.
+//! sandbox tools and `bg_start` run `belay sandbox run|task` and `belay bg start` as the
+//! agent, under the same rules.
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -171,6 +172,17 @@ fn tools() -> Value {
                 "model": { "type": "string" },
             }), &["prompt"]),
         },
+        {
+            "name": "bg_start",
+            "description": "Start a background session for the user who is leaving: an agent keeps working on the prompt alone, in a sandbox, and the user is told when it is done or needs them. The prompt must restate the whole task. Budgeted, and limited per hour like sandbox tasks. Stopping or attaching to it is the user's.",
+            "inputSchema": schema(json!({
+                "prompt": { "type": "string", "description": "The task, restated in full: the agent starts without this conversation unless `resume` is given." },
+                "resume": { "type": "string", "description": "Start from a copy of this conversation's context." },
+                "budget": { "type": "string", "description": "Tokens (2M) or dollars ($5); never past `sandbox_task_tokens`." },
+                "until": { "type": "string", "description": "Stop at this local time (HH:MM) or after this long (2h)." },
+                "model": { "type": "string" },
+            }), &["prompt"]),
+        },
     ])
 }
 
@@ -197,6 +209,7 @@ fn call(params: &Value) -> Result<Value, (i64, String)> {
         "brief" => brief(&args),
         "sandbox_run" => sandbox_run(&args),
         "sandbox_task" => sandbox_task(&args),
+        "bg_start" => bg_start(&args),
         _ => return Err((INVALID_PARAMS, format!("no tool {name}"))),
     };
     let (text, is_error) = match said {
@@ -318,9 +331,15 @@ const MAX_SANDBOX_OUTPUT: usize = 20_000;
 /// `belay sandbox …` as a child with no terminal: the agent's rules apply (agents may
 /// be refused, task limits count), as when it runs the command itself.
 fn belay_sandbox(args: &[String]) -> Result<String> {
+    let mut a = vec!["sandbox".to_string()];
+    a.extend_from_slice(args);
+    belay_cmd(&a)
+}
+
+/// `belay <args>` as a child with no terminal, its output for the model.
+fn belay_cmd(args: &[String]) -> Result<String> {
     let exe = std::env::current_exe()?;
     let out = std::process::Command::new(exe)
-        .arg("sandbox")
         .args(args)
         .stdin(std::process::Stdio::null())
         .output()?;
@@ -366,6 +385,18 @@ fn sandbox_task(args: &Value) -> Result<String> {
     }
     a.extend(["--".into(), prompt.into()]);
     belay_sandbox(&a)
+}
+
+/// `belay bg start --sandbox` as a child with no terminal: an agent's background
+/// session is always contained, budgeted, and counted with sandbox tasks.
+fn bg_start(args: &Value) -> Result<String> {
+    let prompt = str_arg(args, "prompt")?;
+    let mut a = vec!["bg".to_string(), "start".into(), "--sandbox".into()];
+    for k in ["resume", "budget", "until", "model"] {
+        opt_flag(args, k, &mut a);
+    }
+    a.extend(["--".into(), prompt.into()]);
+    belay_cmd(&a)
 }
 
 fn output_show(dir: &Path, id: &str) -> Result<String> {
@@ -449,7 +480,8 @@ mod tests {
                 "why",
                 "brief",
                 "sandbox_run",
-                "sandbox_task"
+                "sandbox_task",
+                "bg_start"
             ]
         );
         assert_eq!(

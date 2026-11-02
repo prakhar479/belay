@@ -105,7 +105,8 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
             "why",
             "brief",
             "sandbox_run",
-            "sandbox_task"
+            "sandbox_task",
+            "bg_start"
         ]
     );
 
@@ -142,6 +143,10 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
     assert!(!err && brief.starts_with("## Summary by belay"), "{brief}");
     let (bad, err) = s.tool("brief", json!({"format": "pdf"}));
     assert!(err && bad.contains("unknown format pdf"), "{bad}");
+
+    // An agent's background session is contained: never in a plain directory.
+    let (bg, err) = s.tool("bg_start", json!({"prompt": "keep going"}));
+    assert!(err && bg.contains("belay: refused"), "{bg}");
 
     let (handoff, err) = s.tool("handoff_get", json!({}));
     assert!(!err && handoff.starts_with("No handoff"), "{handoff}");

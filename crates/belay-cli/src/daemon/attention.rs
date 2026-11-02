@@ -298,7 +298,7 @@ pub fn deliver(c: Channels, alerts: Vec<Alert>, now: u64) {
 
 /// A desktop notification: `notify-send` (Linux) or `osascript` (macOS). A missing tool
 /// is ignored.
-fn desktop(msg: &str) {
+pub(crate) fn desktop(msg: &str) {
     let mut cmd = if cfg!(target_os = "macos") {
         let quoted = msg.replace('\\', "\\\\").replace('"', "\\\"");
         let mut c = Command::new("osascript");
