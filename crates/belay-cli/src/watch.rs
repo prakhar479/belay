@@ -100,30 +100,28 @@ fn name(dir: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// The newest session whose daemon runs, waiting for one if there is none.
-fn newest_live() -> PathBuf {
-    let mut said = false;
-    loop {
-        if let Some(d) = crate::paths::list_sessions()
-            .into_iter()
-            .rev()
-            .find(|d| is_live(d))
-        {
-            return d;
-        }
-        if !said {
-            println!("belay: no live session yet; waiting for one. Ctrl-C to stop.");
-            said = true;
-        }
-        thread::sleep(Duration::from_secs(1));
-    }
+/// The newest session whose daemon runs.
+fn newest_live() -> Option<PathBuf> {
+    crate::paths::list_sessions()
+        .into_iter()
+        .rev()
+        .find(|d| is_live(d))
 }
 
+pub const NONE_LIVE: &str = "No live belay session to watch. Start one with `belay claude`.";
+
 /// Follow `session` (or the newest live one) until it ends or the user presses Ctrl-C.
-pub fn run(session: Option<&str>, verbose: bool) -> Result<()> {
+/// Exit code 1 when there is no live session to follow (it does not wait for one).
+pub fn run(session: Option<&str>, verbose: bool) -> Result<i32> {
     let dir = match session {
         Some(s) => crate::sessions::resolve(Some(s), false)?,
-        None => newest_live(),
+        None => match newest_live() {
+            Some(d) => d,
+            None => {
+                println!("{NONE_LIVE}");
+                return Ok(1);
+            }
+        },
     };
     println!("belay: watching session {}. Ctrl-C to stop.", name(&dir));
     let mut tail = Tail::new(dir.join("ledger.jsonl"));
@@ -140,7 +138,7 @@ pub fn run(session: Option<&str>, verbose: bool) -> Result<()> {
                 "belay: session {} ended. `belay report` for more.",
                 name(&dir)
             );
-            return Ok(());
+            return Ok(0);
         }
         thread::sleep(POLL);
         if checked.elapsed() >= LIVE_CHECK {

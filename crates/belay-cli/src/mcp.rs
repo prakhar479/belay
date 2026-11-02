@@ -276,7 +276,7 @@ fn memory_add(args: &Value) -> Result<String> {
         )
     })?;
     Ok(format!(
-        "Kept {} as the agent's. The user can `belay memory approve {}`.",
+        "Kept {}. It waits for your OK: `belay memory approve {}`.",
         m.id, m.id
     ))
 }

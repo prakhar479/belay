@@ -561,13 +561,13 @@ pub fn precision(t: &Totals, live: bool) -> String {
     if t.guard_flags > 0 && !live {
         let _ = writeln!(
             out,
-            "Guard flags: {} (a retro cannot tell which ones the user would allow)",
+            "Test guard: {} edits blocked (a replay cannot tell which ones you would let through)",
             t.guard_flags
         );
     } else if t.guard_flags > 0 {
         let _ = writeln!(
             out,
-            "Guard precision: {} flagged · {} allowed by the user ({}%, likely false positives)",
+            "Test guard: {} edits blocked · {} let through by you ({}%, so those were probably fine)",
             t.guard_flags,
             t.guard_allowed,
             pct(t.guard_allowed, t.guard_flags)
@@ -911,11 +911,11 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
             })
             .collect();
         if undelivered > 0 {
-            parts.push(format!("{undelivered} not delivered"));
+            parts.push(format!("{undelivered} not delivered to you"));
         }
         let _ = writeln!(
             out,
-            "Needs attention: {}",
+            "For you to look at: {}",
             if parts.is_empty() {
                 "nothing".to_string()
             } else {
@@ -992,7 +992,7 @@ pub fn render(label: &str, entries: &[Entry], live: bool, full: bool) -> String 
         // R3.7: auto mode sometimes denies a wrapped call; each denial is a Retry action.
         let _ = writeln!(
             out,
-            "Wrapped test runs: {wrapped} (summarized even when they fail) · denied by auto mode: {denied} ({}%)",
+            "Test runs belay watched: {wrapped} (shortened even when they fail) · refused by Claude Code's auto mode: {denied} ({}%)",
             pct(denied, wrapped)
         );
     }
@@ -1631,7 +1631,7 @@ mod tests {
         assert_eq!((t.loops, t.loops_stopped), (2, 1));
         let p = precision(&t, true);
         assert!(
-            p.contains("Guard precision: 3 flagged · 1 allowed by the user (33%"),
+            p.contains("Test guard: 3 edits blocked · 1 let through by you (33%"),
             "{p}"
         );
         assert!(
