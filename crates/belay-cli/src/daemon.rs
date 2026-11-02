@@ -1115,6 +1115,14 @@ fn snapshot_due(st: &State, decisions: &[belay_core::Decision]) -> Option<Snapsh
 /// Take and record a snapshot (U6.2). Git runs outside the state lock, after the hook
 /// has its reply: the shim never waits for it (rule 7). Outside git, nothing happens.
 fn take_snapshot(state: &Mutex<State>, due: SnapshotDue) {
+    // Dropped on a panic too, so shutdown never waits out its cap for a run that is gone.
+    struct Pending;
+    impl Drop for Pending {
+        fn drop(&mut self) {
+            SNAPSHOTS_PENDING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let _pending = Pending;
     {
         let _one = SNAPSHOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((id, commit, files)) = crate::undo::take(&due.dir, &due.cwd, due.at, due.floor)
@@ -1128,7 +1136,6 @@ fn take_snapshot(state: &Mutex<State>, due: SnapshotDue) {
             }
         }
     }
-    SNAPSHOTS_PENDING.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
 }
 
 /// The earlier runs of the conversation the agent's picker chose, at the first hook of a

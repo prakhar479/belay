@@ -1023,6 +1023,19 @@ fn agent_cannot_allow_itself() {
     assert!(matches!(d.response.permission, Some(Permission::Deny(_))));
     let d = c.handle(req("/home/u/.cargo/bin/belay allow"), 0);
     assert!(matches!(d.response.permission, Some(Permission::Deny(_))));
+    // A global flag before the verb does not hide it (rule 12).
+    for cmd in [
+        "belay --x allow a-1",
+        "belay --x=1 allow",
+        "belay --x --y allow",
+        "belay -q sandbox rm s",
+    ] {
+        let d = c.handle(req(cmd), 0);
+        assert!(
+            matches!(d.response.permission, Some(Permission::Deny(_))),
+            "{cmd}"
+        );
+    }
     // R0.8: a commit message that mentions it is not running it.
     let d = c.handle(req("git commit -m 'document belay allow'"), 1);
     assert!(d.response.is_empty());

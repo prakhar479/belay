@@ -500,6 +500,7 @@ fn write_state(id: &str, s: &mut State) {
 
 /// What the supervisor did, with its reason (rule 4).
 fn record(id: &str, what: &str, reason: &str) {
+    let reason = belay_core::text::redact(reason);
     let line = serde_json::json!({"ts_ms": paths::now_ms(), "what": what, "reason": reason});
     if let Ok(mut f) = OpenOptions::new()
         .create(true)
@@ -1150,7 +1151,10 @@ fn absorb(st: &mut State, t: &Tracker) {
         st.conversation = t.conversation.clone();
     }
     if t.result.is_some() {
-        st.result = t.result.clone();
+        st.result = t
+            .result
+            .as_deref()
+            .map(|r| belay_core::text::redact(r).into_owned());
     }
 }
 

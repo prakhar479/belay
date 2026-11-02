@@ -244,3 +244,18 @@ fn a_hung_command_is_killed_and_delivery_does_not_wait() {
         "{took:?}"
     );
 }
+
+#[test]
+fn notify_command_gets_redacted_text() {
+    let dir = std::env::temp_dir().join(format!("belay-redact-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("got.json");
+    let alert = Alert::new(Kind::Blocked, "key AKIAABCDEFGHIJKLMNOP leaked", None);
+    let cmd = format!("cat > {}", crate::run::sh_quote(&out.to_string_lossy()));
+    let p = payload(&Channels::default(), &alert, 1);
+    assert!(run_command(&cmd, &p, COMMAND_TIMEOUT));
+    let got = std::fs::read_to_string(&out).unwrap();
+    assert!(!got.contains("AKIAABCDEFGHIJKLMNOP"), "{got}");
+    assert!(serde_json::from_str::<serde_json::Value>(&got).is_ok());
+    let _ = std::fs::remove_dir_all(&dir);
+}
