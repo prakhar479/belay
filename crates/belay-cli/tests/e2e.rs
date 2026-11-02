@@ -3470,7 +3470,7 @@ fn a_handoff_reaches_the_next_session_in_the_repo() {
         let _ = BufReader::new(&s).read_line(&mut line);
     }
     for _ in 0..100 {
-        if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| c.contains("\"ended\"")) {
+        if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| card_ended(&c)) {
             break;
         }
         thread::sleep(Duration::from_millis(50));
@@ -4003,7 +4003,7 @@ fn a_session_starts_with_the_last_sessions_handoff_memory() {
     shutdown(&sock_a);
     // The handoff is kept before the card is marked ended.
     for _ in 0..100 {
-        if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| c.contains("\"ended\"")) {
+        if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| card_ended(&c)) {
             break;
         }
         thread::sleep(Duration::from_millis(50));
@@ -5172,4 +5172,11 @@ fn resume_in_process_takes_up_the_earlier_conversation() {
             .trim(),
         "s2"
     );
+}
+
+/// A card says its session ended. `"ended"` alone would match the field on a live card
+/// too (`"ended": false`), so a wait on it did not wait (a flaky handoff test).
+fn card_ended(card: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(card)
+        .is_ok_and(|v| v["ended"].as_bool() == Some(true))
 }
