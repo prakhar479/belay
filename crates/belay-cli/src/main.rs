@@ -322,6 +322,12 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// The effective config: each key, its value, and where it came from (the file or
+    /// the default). `belay config migrate` rewrites 0.1 keys in the file.
+    Config {
+        #[command(subcommand)]
+        action: Option<ConfigCmd>,
+    },
     /// Memories for this project and you: list, search, add, show; approve or drop
     /// (yours to run); migrate copies notes, fixes, findings, and handoffs in once.
     Memory {
@@ -658,6 +664,18 @@ fn fleet_cmd(c: FleetCmd) -> Result<i32> {
     Ok(0)
 }
 
+/// `belay config` actions.
+#[derive(Subcommand)]
+enum ConfigCmd {
+    /// Rewrite 0.1 keys and values in the config file (`fleet`, `learn`, `plugin_mode`,
+    /// `look`), keeping comments and order. Shows the diff and keeps a backup.
+    Migrate {
+        /// Write without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
 /// `belay memory` actions.
 #[derive(Subcommand)]
 enum MemoryCmd {
@@ -743,6 +761,7 @@ fn main() {
         let event = argv.get(2).cloned().unwrap_or_default();
         // `--plugin`: called by the Claude Code plugin, with no launcher (plugin.rs).
         let from_plugin = argv.iter().skip(3).any(|a| a == "--plugin");
+        config::quiet();
         // Exit 0 even if something panics.
         let _ = std::panic::catch_unwind(|| {
             if from_plugin {
@@ -966,6 +985,7 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Cmd::Status => {
+            config::quiet();
             // A status line must never show an error: print nothing instead. Under the
             // launcher the session is in the environment; under the plugin, Claude Code
             // passes the session id on stdin.
@@ -1395,6 +1415,16 @@ fn run(cli: Cli) -> Result<i32> {
                 SkillCmd::Update { name } => skillstore::update(name.as_deref())?,
             };
             println!("{}", said.trim_end());
+            Ok(0)
+        }
+        Cmd::Config { action: None } => {
+            config::show()?;
+            Ok(0)
+        }
+        Cmd::Config {
+            action: Some(ConfigCmd::Migrate { yes }),
+        } => {
+            config::migrate::run(yes)?;
             Ok(0)
         }
         Cmd::Memory { action } => {

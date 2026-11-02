@@ -672,7 +672,15 @@ sandbox_task_tokens = 2M        # a sandbox task is stopped past this many token
 sandbox_ro = ~/.cargo, ~/.rustup, ~/.nvm, ~/.pyenv, ~/.local/bin   # read-only in a sandbox, when they exist
 ```
 
-0.1 config files still load, with a warning for each old key: `look` reads as `on`, `fleet` is now `awareness`, `learn` is now `memory`, and `plugin_mode` is ignored. Fleet sessions always run with `guard = deny` and `commons = on`.
+`belay config` prints the config belay runs with: every key, its value, and where it came from (`file, line N`, or `default`). It also lists any line belay could not use.
+
+### Keys from 0.1
+
+0.2 renamed some keys: `fleet` is now `awareness`, and `learn` is now `memory`. `plugin_mode` is ignored, and a `look` value reads as `on`. Old files still load. belay says so in one line, at most once a day per config file, and again when the file changes. It never says it from a hook or the status line.
+
+`belay config migrate` rewrites the file for you. It changes only those lines, and keeps comments, order, and keys it does not know. If the file sets both the old and the new name, the new one stays and the old line goes (it already won). It shows the diff and asks first (`--yes` skips the question). The old file is kept as `config.toml.bak-<unix time>`. A file with a line that is not `key = value` is refused, and nothing changes. Running it again changes nothing.
+
+Fleet sessions always run with `guard = deny` and `commons = on`.
 
 | Variable | Effect |
 |---|---|
