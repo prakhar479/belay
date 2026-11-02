@@ -289,7 +289,7 @@ fn a_usage_limit_waits_for_the_reset_and_says_until_when() {
         .output()
         .unwrap();
     assert!(!ok(&out));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("is the user's"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("is yours to run"));
     let said = e.belay(&["bg", "stop", &id]);
     assert!(said.contains("stops at the next step"), "{said}");
     let s = e.wait(&id, "stopped", |s| {

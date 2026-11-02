@@ -255,9 +255,7 @@ pub fn users_terminal() -> bool {
 /// Refuse what only the user may do, from anywhere but their own terminal.
 pub fn users_only(what: &str) -> anyhow::Result<()> {
     if !users_terminal() {
-        anyhow::bail!(
-            "{what} is the user's: run it yourself in your own terminal, outside a belay session"
-        );
+        anyhow::bail!("{what} is yours to run: use your own terminal, not a belay session");
     }
     Ok(())
 }
