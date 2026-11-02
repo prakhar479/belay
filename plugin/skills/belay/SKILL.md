@@ -28,6 +28,11 @@ belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_
 - Fix the code under test instead. If you think the test itself is wrong, explain why to the user.
 - If the user agrees, ask them to run `! belay allow`. Then retry the same edit.
 
+## When a belay warning is wrong
+
+- belay can be wrong. If you think a warning or a block is wrong, say so in one line: `belay flag a-N "why"`, with the id from the warning.
+- This only records your view for the user to review. It does not lift the block or allow the edit. Do not retry the edit because you flagged it.
+
 ## When an output is summarized
 
 - belay keeps every failure line, but may cut passing lines. The summary names an id like `o-3`.

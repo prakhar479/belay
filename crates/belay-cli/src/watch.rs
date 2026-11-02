@@ -71,6 +71,9 @@ pub fn line(e: &Entry, verbose: bool) -> Option<String> {
     if notice.level == NoticeLevel::Info && !verbose {
         return None;
     }
+    // Ledgers from before 0.2 have no flag hint in the text; newer ones keep theirs.
+    let mut notice = notice.clone();
+    notice.add_flag_hint();
     Some(format!(
         "{} {:<4} {}",
         clock(e.ts_ms),
@@ -212,5 +215,18 @@ mod tests {
         assert_eq!(line(&got[1], false), None, "info only with --verbose");
         assert!(line(&got[1], true).is_some());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn warnings_about_an_action_end_with_the_flag_hint() {
+        let mut e = notice(1, NoticeLevel::Warn, "blocked an edit.");
+        if let Body::Notice { notice, .. } = &mut e.body {
+            notice.action = Some("a-3".into());
+        }
+        let l = line(&e, false).unwrap();
+        assert!(
+            l.ends_with(" warn blocked an edit. Wrong? `belay flag a-3`"),
+            "{l}"
+        );
     }
 }
