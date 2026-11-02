@@ -748,6 +748,12 @@ impl Connector for ClaudeCode {
             "PreCompact" => evs.push(Event::Compacted {
                 trigger: s(p, "trigger").to_string(),
             }),
+            // The payload's shape (`message`, `notification_type`) is read from Claude
+            // Code 2.1.316's hook input schema; no live capture yet. [Verify] conformance.
+            "Notification" => evs.push(Event::AgentWaiting {
+                reason: s(p, "notification_type").to_string(),
+                text: s(p, "message").to_string(),
+            }),
             // [Verify] hook docs: SubagentStop carries `agent_type` (no capture yet).
             "SubagentStop" => evs.push(Event::SubagentEnded {
                 agent_type: p
@@ -907,6 +913,8 @@ pub fn settings(exe: &Path) -> Value {
             "Stop": entry("Stop", None),
             "PreCompact": entry("PreCompact", None),
             "SubagentStop": entry("SubagentStop", None),
+            // V3: a permission prompt or a question waits for the user.
+            "Notification": entry("Notification", None),
         }
     })
 }
@@ -1026,6 +1034,26 @@ mod tests {
                 e => panic!("{name}: {e:?}"),
             }
         }
+    }
+
+    #[test]
+    fn maps_a_notification_to_agent_waiting_and_answers_nothing() {
+        let mut c = ClaudeCode {
+            started: true,
+            session_id: "9b1d6f2e-0000-4000-8000-000000000001".into(),
+            ..Default::default()
+        };
+        let p = fixture("notification_permission.json");
+        assert_eq!(
+            c.map("Notification", &p),
+            vec![Event::AgentWaiting {
+                reason: "permission_prompt".into(),
+                text: "Claude needs your permission to use Bash".into(),
+            }]
+        );
+        assert_eq!(c.encode("Notification", &p, &Response::default()), None);
+        let hooks = settings(Path::new("/bin/belay"));
+        assert!(hooks["hooks"]["Notification"].is_array());
     }
 
     #[test]

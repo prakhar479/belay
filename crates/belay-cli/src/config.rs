@@ -10,7 +10,9 @@
 //! idle_gap_minutes = 10
 //! keep_days = 30            # belay claude deletes older sessions; 0 keeps all
 //! experimental_audit = false  # audit what each session changed in tests and checks
-//! notify = false             # desktop notification on a loop or a blocked edit
+//! notify = attention         # tell the user when they are needed: off, attention, all
+//! notify_command = ~/bin/ping  # also run this with each notification as JSON on stdin
+//! notify_quiet = 22:00-07:00  # no notifications in this window (local time)
 //! guard = deny               # test guard: deny, warn, or off
 //! loops = on                 # tell the agent when a failure loops
 //! shape = on                 # summarize large test output
@@ -34,7 +36,7 @@
 //! ```
 //!
 //! 0.1 keys still load: `look` reads as `on`; `fleet` is `awareness`, `learn` is
-//! `memory`; `plugin_mode` is ignored. One line says so, at most once a day per file;
+//! `memory`; `plugin_mode` is ignored; `notify = true|false` reads as `all|off`. One line says so, at most once a day per file;
 //! `belay config migrate` (config/migrate.rs) rewrites them.
 
 use std::env;
@@ -67,8 +69,14 @@ pub struct Config {
     pub keep_days: u64,
     /// `belay claude` audits what the session changed in tests and checks (experimental).
     pub experimental_audit: bool,
-    /// A desktop notification when belay steers a loop or blocks an edit (unattended runs).
-    pub notify: bool,
+    /// When belay tells the user they are needed (V3): a block, a loop, a stop with
+    /// tests unmet, a finished turn, a prompt that waits.
+    pub notify: Notify,
+    /// A command run with each notification as JSON on its stdin (`sh -c`).
+    pub notify_command: Option<String>,
+    /// No notifications from the first minute of the day to the second (local time;
+    /// it wraps past midnight when the start is later).
+    pub notify_quiet: Option<(u32, u32)>,
     /// Sandbox limits (`belay sandbox`): memory and disk in bytes, wall time in seconds.
     pub sandbox_memory: u64,
     pub sandbox_procs: u64,
@@ -93,7 +101,9 @@ impl Default for Config {
             core: belay_core::Config::default(),
             keep_days: 30,
             experimental_audit: false,
-            notify: false,
+            notify: Notify::Attention,
+            notify_command: None,
+            notify_quiet: None,
             sandbox_memory: 4 << 30,
             sandbox_procs: 512,
             sandbox_disk: 10 << 30,
@@ -127,7 +137,23 @@ impl Config {
         [
             ("experimental_audit", self.experimental_audit.to_string()),
             ("keep_days", self.keep_days.to_string()),
-            ("notify", self.notify.to_string()),
+            ("notify", self.notify.name().to_string()),
+            // Only whether it is set: a command may hold a token, and this reaches the ledger.
+            (
+                "notify_command",
+                if self.notify_command.is_some() {
+                    "set"
+                } else {
+                    ""
+                }
+                .to_string(),
+            ),
+            (
+                "notify_quiet",
+                self.notify_quiet
+                    .map(|(a, b)| format!("{}-{}", fmt_minute(a), fmt_minute(b)))
+                    .unwrap_or_default(),
+            ),
             ("sandbox_memory", limits::fmt_size(self.sandbox_memory)),
             ("sandbox_procs", self.sandbox_procs.to_string()),
             ("sandbox_disk", limits::fmt_size(self.sandbox_disk)),
@@ -182,6 +208,46 @@ impl Config {
             .collect();
         core
     }
+}
+
+/// How much belay tells the user it needs them (`notify`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Notify {
+    Off,
+    /// Blocks, loops, verify unmet, a finished turn, a prompt that waits.
+    Attention,
+    /// Those, and every warning belay has for the user.
+    All,
+}
+
+impl Notify {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "off" => Self::Off,
+            "attention" => Self::Attention,
+            "all" => Self::All,
+            _ => return None,
+        })
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Attention => "attention",
+            Self::All => "all",
+        }
+    }
+}
+
+/// `HH:MM` → minute of the day.
+fn parse_minute(s: &str) -> Option<u32> {
+    let (h, m) = s.trim().split_once(':')?;
+    let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
+    (h < 24 && m < 60 && s.trim().len() == 5).then_some(h * 60 + m)
+}
+
+fn fmt_minute(m: u32) -> String {
+    format!("{:02}:{:02}", m / 60, m % 60)
 }
 
 /// $BELAY_CONFIG, then $XDG_CONFIG_HOME/belay/config.toml, then ~/.config/belay/config.toml.
@@ -377,7 +443,7 @@ fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
 }
 
 /// Every key of 0.2. The 0.1 names are in `RENAMED`.
-const KEYS: [&str; 27] = [
+const KEYS: [&str; 29] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -386,6 +452,8 @@ const KEYS: [&str; 27] = [
     "keep_days",
     "experimental_audit",
     "notify",
+    "notify_command",
+    "notify_quiet",
     "guard",
     "loops",
     "shape",
@@ -413,6 +481,10 @@ pub(crate) const RENAMED: [(&str, Option<&str>); 3] = [
     ("learn", Some("memory")),
     ("plugin_mode", None),
 ];
+
+/// 0.1 values with a 0.2 word: key, old value, new value.
+pub(crate) const OLD_VALUES: [(&str, &str, &str); 2] =
+    [("notify", "true", "all"), ("notify", "false", "off")];
 
 /// Keys that took `look` in 0.1; it reads as `on` now.
 pub(crate) const LOOK_KEYS: [&str; 3] = ["awareness", "memory", "commons"];
@@ -510,6 +582,12 @@ fn apply(
             *old = Some(format!("{key} = look"));
         }
         "on"
+    } else if let Some((_, _, new)) = OLD_VALUES.iter().find(|(k, v, _)| *k == key && *v == value) {
+        notes.push(format!("`{key} = {value}` reads as `{key} = {new}`"));
+        if old.is_none() {
+            *old = Some(format!("{key} = {value}"));
+        }
+        new
     } else {
         value
     };
@@ -573,7 +651,18 @@ fn apply(
         "awareness" => c.core.awareness = on_off()?,
         "commons" => c.core.commons = on_off()?,
         "wrap_tests" => c.core.wrap_tests = boolean()?,
-        "notify" => c.notify = boolean()?,
+        "notify" => {
+            c.notify = Notify::parse(value)
+                .ok_or_else(|| anyhow!("{key} must be off, attention, or all, got {value}"))?
+        }
+        "notify_command" => c.notify_command = Some(value.to_string()).filter(|v| !v.is_empty()),
+        "notify_quiet" => {
+            let window = value
+                .split_once('-')
+                .and_then(|(a, b)| Some((parse_minute(a)?, parse_minute(b)?)))
+                .ok_or_else(|| anyhow!("{key} must be HH:MM-HH:MM, got {value}"))?;
+            c.notify_quiet = Some(window);
+        }
         "experimental_audit" => c.experimental_audit = boolean()?,
         "sandbox_memory" => c.sandbox_memory = size(16 << 20)?,
         "sandbox_disk" => c.sandbox_disk = size(16 << 20)?,
@@ -761,23 +850,58 @@ mod tests {
     #[test]
     fn rejected_first_value_is_not_the_first() {
         let (c, w) =
-            parse("loop_threshold = 0\nloop_threshold = 4\ncommons = \"on\"\nnotify = \"true\"\n");
+            parse("loop_threshold = 0\nloop_threshold = 4\ncommons = \"on\"\nnotify = \"off\"\n");
         assert_eq!(c.loop_threshold, 4);
         assert!(c.commons);
-        assert!(c.notify);
+        assert_eq!(c.notify, Notify::Off);
         assert_eq!(w.len(), 1, "{w:?}");
+    }
+
+    /// V3: `notify` takes a level, the 0.1 booleans still read, and the quiet window
+    /// is two times of day.
+    #[test]
+    fn notify_keys() {
+        assert_eq!(Config::default().notify, Notify::Attention);
+        let (c, w) = parse("notify = true\n");
+        assert_eq!(c.notify, Notify::All);
+        assert!(
+            w[0].contains("`notify = true` reads as `notify = all`"),
+            "{w:?}"
+        );
+        assert_eq!(parse("notify = false\n").0.notify, Notify::Off);
+        let (c, w) = parse(
+            "notify = attention\nnotify_command = ~/bin/ping --json\nnotify_quiet = 22:30-07:05\n",
+        );
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(c.notify_command.as_deref(), Some("~/bin/ping --json"));
+        assert_eq!(c.notify_quiet, Some((22 * 60 + 30, 7 * 60 + 5)));
+        assert_eq!(c.fields()["notify_quiet"], "22:30-07:05");
+        assert_eq!(
+            c.fields()["notify_command"],
+            "set",
+            "never the command itself"
+        );
+        for bad in [
+            "notify = yes",
+            "notify_quiet = 22-7",
+            "notify_quiet = 24:00-01:00",
+        ] {
+            let (c, w) = parse(&format!("{bad}\n"));
+            assert_eq!(w.len(), 1, "{bad}: {w:?}");
+            assert_eq!(c.notify_quiet, None);
+        }
     }
 
     /// Keys the core does not read are still recorded at session start (U1b split).
     #[test]
     fn launcher_keys_reach_the_session_record() {
-        let (c, w) = parse("keep_days = 7\nloop_threshold = 4\nnotify = true\n");
+        let (c, w) = parse("keep_days = 7\nloop_threshold = 4\nnotify = all\n");
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(c.keep_days, 7);
         let want: BTreeMap<String, String> = [
             ("keep_days", "7"),
             ("loop_threshold", "4"),
-            ("notify", "true"),
+            ("notify", "all"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))

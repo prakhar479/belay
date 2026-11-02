@@ -180,6 +180,13 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         agent_type: Option<String>,
     },
+    /// The agent waits for the user outside a turn's end: a permission prompt, a
+    /// question dialog (V3). `reason` is the agent's own kind word; `text` its message.
+    AgentWaiting {
+        reason: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        text: String,
+    },
     /// The sandbox's command ended, or belay stopped it (a limit, the user): why.
     SandboxStopped {
         id: String,

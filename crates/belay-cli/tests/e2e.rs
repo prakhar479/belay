@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn bin() -> &'static str {
     hermetic();
@@ -906,6 +906,65 @@ fn verify_before_done_blocks_stop_until_the_tests_pass() {
     assert!(!out.contains("block"), "{out}");
     let report = belay(&["report"], &session);
     assert!(report.contains("Verify before done: 1"), "{report}");
+}
+
+/// V3: a blocked edit reaches `notify_command` as JSON, and a command that hangs is
+/// killed after 5 s without delaying the hook. The same kind again is rate-limited.
+#[test]
+fn a_blocked_edit_runs_notify_command_without_delaying_the_hook() {
+    let dir = tmp("attention");
+    let session = dir.join("session");
+    let got = dir.join("got.jsonl");
+    let pid = dir.join("pid");
+    // Appends what it read, notes its pid, then hangs.
+    let cmd = format!(
+        "notify_command = cat >> '{}'; echo $$ > '{}'; sleep 60\n",
+        got.display(),
+        pid.display()
+    );
+    let (_daemon, sock) = start_daemon(&session, &cmd);
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
+    };
+    let t = Instant::now();
+    let out = hook(&sock, "PreToolUse", &read("pre_tool_use_edit_test.json"));
+    let took = t.elapsed();
+    assert!(out.contains("deny"), "{out}");
+    // The whole hook, a process start included, well under the 5 s the command hangs.
+    assert!(took < Duration::from_secs(2), "hook took {took:?}");
+    let mut second = read("pre_tool_use_edit_test.json");
+    second["tool_use_id"] = "toolu_again".into();
+    hook(&sock, "PreToolUse", &second);
+    // The command ran with the event on stdin, once.
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while !fs::read_to_string(&pid).is_ok_and(|p| !p.trim().is_empty()) {
+        assert!(Instant::now() < deadline, "notify_command never ran");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let lines = fs::read_to_string(&got).unwrap();
+    assert_eq!(lines.lines().count(), 1, "rate-limited: {lines}");
+    let v: serde_json::Value = serde_json::from_str(lines.trim()).unwrap();
+    assert_eq!(v["kind"], "blocked");
+    assert_eq!(v["session"], "session");
+    assert!(v["action"].as_str().unwrap().starts_with("a-"), "{v}");
+    assert!(v["text"].as_str().unwrap().contains("belay allow"), "{v}");
+    // Killed after 5 s: its shell is gone well before its sleep would end.
+    let shell: i32 = fs::read_to_string(&pid).unwrap().trim().parse().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while alive(shell) {
+        assert!(Instant::now() < deadline, "notify_command still runs");
+        thread::sleep(Duration::from_millis(100));
+    }
+    assert!(t.elapsed() >= Duration::from_secs(5), "not before 5 s");
+}
+
+/// Whether a process exists (its killer reaps it, so no zombie stays).
+fn alive(pid: i32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// R3.7: auto mode denies a wrapped call; belay says the agent may retry, and the retry

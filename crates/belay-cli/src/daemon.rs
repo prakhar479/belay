@@ -17,6 +17,8 @@ use crate::ipc::{Reply, Request};
 use crate::paths::{now_ms, socket_path};
 use crate::store::Store;
 
+mod attention;
+
 /// Time to encode and send a reply. A hook later than its deadline minus this is late.
 const REPLY_MARGIN_MS: u64 = 10;
 /// A client gets this long to send its request line.
@@ -30,8 +32,9 @@ struct State {
     store: Store,
     /// Where this project's learned shape levels live (E9), once the session started.
     memory: Option<PathBuf>,
-    /// Desktop notifications are on (`notify = true`).
-    notify: bool,
+    /// When to tell the user they are needed, and where (V3).
+    attention: attention::Attention,
+    channels: attention::Channels,
     /// The session's working directory, once it started (for the fleet watcher).
     cwd: Option<String>,
     /// The fleet's claims file, and when it was last read (F5c).
@@ -272,12 +275,26 @@ pub fn run(
     }
     // Without a token file (a daemon started by hand), control requests are open.
     let token: Arc<Option<String>> = Arc::new(crate::paths::read_token(&dir));
+    let cfg = crate::config::load();
     let state = Arc::new(Mutex::new(State {
         controller,
         connector,
         store,
         memory: None,
-        notify: crate::config::load().notify,
+        attention: attention::Attention::new(cfg.notify, cfg.notify_quiet),
+        channels: attention::Channels {
+            session: dir
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            repo: String::new(),
+            // The launcher passes its pid; its terminal is the user's.
+            bell: parent_pid.is_some() && std::env::var_os("BELAY_TEST_PARENT").is_none(),
+            // A test run (e2e sets BELAY_TEST_PARENT) shows no desktop popups; the
+            // command channel stays, so tests can see what was sent.
+            desktop: std::env::var_os("BELAY_TEST_PARENT").is_none(),
+            command: cfg.notify_command.clone(),
+        },
         cwd: None,
         claims: rules
             .as_ref()
@@ -320,6 +337,10 @@ pub fn run(
     if crate::config::load().awareness {
         let state = Arc::clone(&state);
         thread::spawn(move || watch_fleet(dir, &state));
+    }
+    if lock(&state).attention.on() {
+        let state = Arc::clone(&state);
+        thread::spawn(move || watch_done(&state));
     }
     if let Some(minutes) = idle_exit_minutes {
         let sock = sock.clone();
@@ -386,69 +407,31 @@ fn remember(st: &mut State, decisions: &[belay_core::Decision]) -> Result<()> {
     Ok(())
 }
 
-/// What deserves a desktop notification (E11): a loop (steered or not) and an edit belay
-/// blocked, which waits for the user. Warnings do not: the agent sees them.
-fn notifications(decisions: &[belay_core::Decision]) -> Vec<String> {
-    use belay_core::{ActionKind, Body};
-    let mut out = Vec::new();
-    for e in decisions.iter().flat_map(|d| &d.entries) {
-        if let Body::Action {
-            action, applied, ..
-        } = &e.body
-        {
-            match action {
-                ActionKind::Steer { text, .. } => out.push(belay_core::text::truncate_chars(
-                    text.trim_start_matches("belay: "),
-                    180,
-                )),
-                ActionKind::Guard {
-                    path,
-                    decision:
-                        belay_core::guard::GuardDecision::Deny | belay_core::guard::GuardDecision::Ask,
-                } if *applied => out.push(format!(
-                    "Blocked an edit of {path}. If it is intended, run `! belay allow`."
-                )),
-                _ => {}
-            }
-        }
+/// Send the alerts the user may hear now (rate limit, quiet window), off this thread.
+fn alert(st: &mut State, alerts: Vec<attention::Alert>) {
+    let now = now_ms();
+    let minute = attention::local_minute(now);
+    let alerts: Vec<_> = alerts
+        .into_iter()
+        .filter(|a| st.attention.admit(a.kind, now, minute))
+        .collect();
+    if alerts.is_empty() {
+        return;
     }
-    out
+    if let Some(p) = &st.project {
+        st.channels.repo.clone_from(p);
+    }
+    attention::deliver(st.channels.clone(), alerts, now);
 }
 
-/// Show notifications without waiting: `notify-send` (Linux) or `osascript` (macOS).
-/// At most one a minute; a missing tool is ignored.
-fn notify(messages: &[String]) {
-    static LAST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let Some(msg) = messages.first() else {
-        return;
-    };
-    let now = now_ms();
-    if now.saturating_sub(LAST_MS.load(std::sync::atomic::Ordering::Relaxed)) < 60_000 {
-        return;
-    }
-    LAST_MS.store(now, std::sync::atomic::Ordering::Relaxed);
-    let mut cmd = if cfg!(target_os = "macos") {
-        let quoted = msg.replace('\\', "\\\\").replace('"', "\\\"");
-        let mut c = std::process::Command::new("osascript");
-        c.arg("-e").arg(format!(
-            "display notification \"{quoted}\" with title \"belay\""
-        ));
-        c
-    } else {
-        let mut c = std::process::Command::new("notify-send");
-        c.arg("belay").arg(msg);
-        c
-    };
-    if let Ok(mut child) = cmd
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
-        // Reap it, or each notification leaves a zombie behind.
-        thread::spawn(move || {
-            let _ = child.wait();
-        });
+/// A finished turn that stays idle is "done" (V3): checked each second.
+fn watch_done(state: &Mutex<State>) {
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        let mut st = lock(state);
+        if let Some(a) = st.attention.idle_due(now_ms()) {
+            alert(&mut st, vec![a]);
+        }
     }
 }
 
@@ -680,14 +663,13 @@ fn send_commons(
     text: &str,
 ) -> Result<String> {
     let now = now_ms();
-    let (me, on, gap, notify_on) = {
+    let (me, on, gap) = {
         let st = lock(state);
         let cfg = st.controller.config();
         (
             st.controller.card(now),
             cfg.commons,
             cfg.idle_gap_minutes * 60_000,
-            st.notify,
         )
     };
     let root = crate::paths::sessions_dir();
@@ -716,9 +698,12 @@ fn send_commons(
     let line = crate::commons::message_line(&me.name, &me.id, &me.repo, &kind, &text, now);
     if to_user {
         crate::commons::append_message(&crate::commons::user_inbox(), &line)?;
-        if notify_on {
-            notify(&[format!("belay: {kind} from {}: {text}", me.name)]);
-        }
+        let a = attention::Alert {
+            kind: attention::Kind::Message,
+            text: format!("{kind} from {}: {text}", me.name),
+            action: None,
+        };
+        alert(&mut lock(state), vec![a]);
         return Ok("Sent to the user (`belay inbox`).".into());
     }
     // Best effort: one inbox that cannot be written does not undo the others.
@@ -1385,9 +1370,10 @@ fn serve(
                     keep_handoff(st);
                 }
                 snapshot = snapshot_due(st, &decisions);
-                if st.notify {
-                    notify(&notifications(&decisions));
-                }
+                let alerts =
+                    st.attention
+                        .observe(&decisions, st.controller.verify_unmet(), now_ms());
+                alert(st, alerts);
                 Reply {
                     output: st.connector.encode(&event, &payload, &response),
                     message: None,
@@ -1640,10 +1626,13 @@ mod tests {
 
     #[test]
     fn blocked_edits_and_loops_are_worth_a_notification() {
+        let notifications = |ds: &[belay_core::Decision]| {
+            attention::Attention::new(crate::config::Notify::Attention, None).observe(ds, false, 0)
+        };
         let (ds, _) = decide(Some(1_000), &[100, 200]);
         let n = notifications(&ds);
         assert_eq!(n.len(), 1);
-        assert!(n[0].contains("belay allow"), "{n:?}");
+        assert!(n[0].text.contains("belay allow"), "{n:?}");
         // Late: nothing was blocked, nothing to say.
         let (ds, _) = decide(Some(1_000), &[2_000]);
         assert!(notifications(&ds).is_empty());

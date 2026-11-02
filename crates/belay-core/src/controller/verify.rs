@@ -64,6 +64,13 @@ impl VerifyState {
 }
 
 impl Controller {
+    /// belay asked the agent to run its tests, and files still changed since they last
+    /// passed: the agent stopped with verify before done unmet (V3 tells the user).
+    pub fn verify_unmet(&self) -> bool {
+        let v = &self.verify;
+        v.nudged_at.is_some() && v.edits > 0 && v.passed_at.is_none_or(|p| v.edits > p)
+    }
+
     /// At the end of a turn: keep the agent going if files changed since the last
     /// passing run of its tests. `ev` is the turn-end event.
     pub(super) fn verify_at_end(&mut self, d: &mut Decision, now: u64, ev: u64) {
@@ -175,7 +182,9 @@ mod tests {
         let mut c = ctl();
         pass(&mut c, 1);
         edit(&mut c, "src/app.py", 2);
+        assert!(!c.verify_unmet(), "belay has not asked yet");
         let why = stop(&mut c, 3).expect("continues");
+        assert!(c.verify_unmet(), "asked, and not met yet");
         assert_eq!(
             why,
             "belay: files changed since the last passing run of `pytest`. Run it before you finish."
@@ -191,6 +200,7 @@ mod tests {
         assert!(stop(&mut c, 9).is_some());
         // The agent ran it and it passed: the stop passes.
         pass(&mut c, 10);
+        assert!(!c.verify_unmet(), "met");
         prompt(&mut c, 11);
         assert_eq!(stop(&mut c, 12), None);
     }
