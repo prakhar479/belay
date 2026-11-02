@@ -16,7 +16,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::sandbox::{self, Backend as _};
-use crate::{config, disk, install, paths, sessions, skillstore};
+use crate::{config, disk, install, keepawake, paths, sessions, skillstore};
 
 #[cfg(test)]
 mod tests;
@@ -119,6 +119,8 @@ pub struct Facts {
     pub data: DataFacts,
     /// Disk use by part (fleets, sandboxes, sessions, cache), P0.4.
     pub disk: disk::Usage,
+    /// What `keepawake` can hold off here, for background sessions.
+    pub background: keepawake::Assessment,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -170,6 +172,7 @@ pub fn checks(f: &Facts) -> Vec<Check> {
     out.extend(skills(&f.skills));
     out.push(data(&f.data));
     out.push(disk_check(&f.disk));
+    out.push(background(&f.background));
     out
 }
 
@@ -579,6 +582,16 @@ fn disk_check(u: &disk::Usage) -> Check {
     }
 }
 
+// A background session needs the machine awake. belay never changes the setting itself,
+// so anything short of both held is a warning with the user's fix.
+fn background(a: &keepawake::Assessment) -> Check {
+    if a.all_held() {
+        check(Status::Ok, "background", a.summary(), None)
+    } else {
+        check(Status::Warn, "background", a.summary(), a.fix.as_deref())
+    }
+}
+
 /// What `belay claude` does with old sessions. `keep_days = 0` keeps them all.
 fn retention(keep_days: u64) -> String {
     if keep_days == 0 {
@@ -672,6 +685,7 @@ fn gather() -> Facts {
             keep_days: cfg.keep_days,
         },
         disk,
+        background: keepawake::assess(),
         home,
     }
 }
@@ -741,7 +755,7 @@ pub fn interop_hidden() -> bool {
     })
 }
 
-fn find_on_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn find_on_path(name: &str) -> Option<PathBuf> {
     env::split_paths(&env::var_os("PATH")?)
         .map(|d| d.join(name))
         .find(|p| p.is_file())
@@ -756,23 +770,8 @@ fn same_file(a: &Path, b: &Path) -> bool {
 
 /// `<bin> --version`, given at most 3 s: a stuck binary must not hang `belay doctor`.
 fn version_of(bin: &str) -> std::io::Result<std::process::Output> {
-    let mut child = Command::new(bin)
-        .arg("--version")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()?;
-    let start = std::time::Instant::now();
-    while child.try_wait()?.is_none() {
-        if start.elapsed() > std::time::Duration::from_secs(3) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "no answer in 3 s",
-            ));
-        }
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    child.wait_with_output()
+    keepawake::output_within(
+        Command::new(bin).arg("--version"),
+        std::time::Duration::from_secs(3),
+    )
 }

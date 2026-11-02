@@ -557,6 +557,26 @@ belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`
 
 There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
 
+## Keeping the machine awake
+
+A long session needs the machine awake, sometimes with the lid closed. `belay keep-awake` holds sleep off for as long as you ask. It says first what it can hold off on this machine:
+
+```sh
+belay keep-awake --for 2h          # for a time
+belay keep-awake --pid 4242        # while a process runs
+belay keep-awake -- make release   # while a command runs; exits with its code
+belay keep-awake                   # until Ctrl-C
+```
+
+It needs no session and records nothing. belay never runs `sudo` and never changes a system setting. When a setting stands in the way, it prints the command for you to run. `belay doctor` shows the same under `background`: `ok` when idle sleep and a closed lid are both held off, `warn` with the fix otherwise.
+
+| Platform | How | Idle sleep | Closed lid |
+|---|---|---|---|
+| Linux with logind | `systemd-inhibit --what=sleep:idle:handle-lid-switch` | held | held when polkit allows the lid-switch inhibitor; otherwise not, and belay holds idle and sleep alone. Fix: `HandleLidSwitch=ignore` in `/etc/systemd/logind.conf` |
+| macOS | `caffeinate -ims -w <pid>` | held | not held on battery (fix: `sudo pmset -b disablesleep 1`, `0` to undo); on AC only with an external display |
+| WSL | `SetThreadExecutionState` through `powershell.exe` | held | Windows' lid action decides: held when it is "do nothing" on AC and battery. Fix: `powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0`, the same with `/setdcvalueindex`, then `powercfg /setactive SCHEME_CURRENT` |
+| Linux without logind, other OSes | none | not held | not held |
+
 ## Skills
 
 A skill is a folder of instructions (`SKILL.md` and its files) that the agent loads in every session. That makes it a lasting way into the agent's instructions. belay makes installing one deliberate: it fetches, checks, pins, and records it, and only you approve it.
@@ -886,6 +906,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 - `skills`: skills whose files differ from the lock, and skills waiting for `belay skill approve`.
 - `data`: the size of belay's home, the sessions, and whether the oldest is past `keep_days`.
 - `disk`: what fleets, sandboxes, sessions, and the build cache take, and the largest item. It warns above 10 GB.
+- `background`: what belay can hold off for a background session here: idle sleep and a closed lid (see [Keeping the machine awake](#keeping-the-machine-awake)). Anything short of both warns, with the fix.
 
 **Something else.** Run `belay doctor`, then open an issue with `belay export --session -1`.
 
@@ -932,5 +953,6 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay install [--plugin] [--statusline] [--launcher]` · `belay uninstall` | Set belay up in Claude Code, or remove it |
 | `belay config [migrate]` | Show each setting and where it comes from; rewrite 0.1 keys |
 | `belay doctor` · `belay export` · `belay purge` | Install check, bug bundle, cleanup |
+| `belay keep-awake [--for D \| --pid P] [-- <cmd…>]` | Keep the machine awake; says what it can hold off here |
 
 Every command has `--help`.

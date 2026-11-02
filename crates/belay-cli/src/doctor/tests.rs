@@ -34,6 +34,13 @@ fn good() -> Facts {
             oldest_days: Some(4),
             keep_days: 30,
         },
+        background: keepawake::Assessment {
+            mechanism: "systemd-inhibit".into(),
+            idle_sleep: keepawake::Guarantee::Held,
+            lid_closed: keepawake::Guarantee::Held,
+            note: "logind accepts belay's inhibitor.".into(),
+            fix: None,
+        },
         ..Default::default()
     }
 }
@@ -371,4 +378,16 @@ fn disk_use_is_one_line_and_warns_past_10_gb() {
     assert_eq!(c.status, Status::Warn);
     assert!(c.text.contains("belay data 48.0 GB"), "{}", c.text);
     assert!(c.fix.unwrap().contains("belay fleet prune --yes"));
+}
+
+#[test]
+fn background_warns_with_the_fix_when_the_lid_is_not_held() {
+    let mut f = good();
+    f.background = keepawake::assess_wsl(true, Some((1, 1)));
+    let c = one(&f, "background");
+    assert_eq!(c.status, Status::Warn);
+    assert!(c.text.contains("closed lid not held off"), "{}", c.text);
+    assert!(c.fix.unwrap().contains("LIDACTION 0"));
+    f.background = keepawake::assess_wsl(true, Some((0, 0)));
+    assert_eq!(one(&f, "background").status, Status::Ok);
 }

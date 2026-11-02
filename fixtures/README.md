@@ -23,6 +23,9 @@
 | `transcripts/reads_session.jsonl` | Claude Code transcript: the same file read twice, a Grep, a Glob, a WebFetch, with `toolUseResult` | **Hand-made** (U5.1) in the shape of 2.1.316 transcripts |
 | `guard/real/*.json` | Guard precision corpus: one case per file (`steps` of edits, shell writes, and runs in one turn; `expect` `ok` or `flag`; `rule`). New-file, outside-project, conditional-skip, justified-tolerance, focus, and move patterns, plus true positives | **Synthetic**, minimal, from the patterns of a real project's false alarms (P0.1, 2026-11-02); no project code. A new case also goes in the list in `controller/guard/tests.rs` |
 | `sessions/mcp/` | A session dir: ledger with one test output `o-1` (and its blob) and the shape action `a-1` | **Hand-made** in ledger format 1, for `belay mcp` |
+| `keepawake/powercfg_qh_lidaction_wsl.txt`, `powercfg_q_lidaction_hidden.txt` | `powercfg /qh` and `/q SCHEME_CURRENT SUB_BUTTONS LIDACTION` from WSL2 on a laptop: `/q` leaves the hidden lid setting out | Captured 2026-11-02 (Windows, powercfg via WSL interop) |
+| `keepawake/systemd_inhibit_no_bus.txt` | `systemd-inhibit` with no logind (WSL without systemd) | Captured 2026-11-02 (systemd 255) |
+| `keepawake/systemd_inhibit_polkit_denied.txt`, `pmset_batt_*.txt` | polkit refusing an inhibitor; `pmset -g batt` on battery and on AC | **Hand-made**; [Verify] with captures on a logind desktop and a Mac |
 
 Rules:
 
