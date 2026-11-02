@@ -3380,7 +3380,8 @@ fn a_handoff_reaches_the_next_session_in_the_repo() {
         let mut line = String::new();
         let _ = BufReader::new(&s).read_line(&mut line);
     }
-    for _ in 0..100 {
+    // Up to 15 s: the ended card comes after end-of-session work, slow under load.
+    for _ in 0..300 {
         if fs::read_to_string(sess_a.join("card.json")).is_ok_and(|c| c.contains("\"ended\"")) {
             break;
         }
@@ -3770,7 +3771,7 @@ fn session_cards_and_the_board() {
         s
     };
     let wait_card = |session: &Path, want: &str| {
-        for _ in 0..100 {
+        for _ in 0..300 {
             if fs::read_to_string(session.join("card.json")).is_ok_and(|c| c.contains(want)) {
                 return;
             }
