@@ -1,0 +1,14 @@
+{
+  "pattern": "A Python one-liner writes a new test file.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "shell",
+      "tool_use_id": "b1",
+      "path": "/work/proj/tests/test_c.py",
+      "old": "",
+      "new": "def test_c():\n    pytest.skip('wip')\n"
+    }
+  ]
+}

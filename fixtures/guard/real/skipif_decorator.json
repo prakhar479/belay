@@ -1,0 +1,13 @@
+{
+  "pattern": "@pytest.mark.skipif(cond, ...) is a runtime condition.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_g.py",
+      "old": "def test_g():\n    assert gpu()\n",
+      "new": "@pytest.mark.skipif(not torch.cuda.is_available(), reason=\"needs a GPU\")\ndef test_g():\n    assert gpu()\n"
+    }
+  ]
+}

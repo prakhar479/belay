@@ -1,0 +1,13 @@
+{
+  "pattern": "A module-level skip guarded by a missing-input condition.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_f.py",
+      "old": "import pytest\n\ndef test_f():\n    assert check()\n",
+      "new": "import pytest\n\nif not INPUT.exists():\n    pytest.skip(\"input unavailable\", allow_module_level=True)\n\ndef test_f():\n    assert check()\n"
+    }
+  ]
+}

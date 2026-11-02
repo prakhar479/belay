@@ -21,6 +21,7 @@
 | `ledgers/v1_look_session.jsonl` | A 0.1 ledger (format 1): a look-mode session with a shape, a guard flag, and a mode change | **Hand-made** in the 0.1 format (U2a), to keep old ledgers readable |
 | `transcripts/loop_session.jsonl` | Claude Code transcript: 4 failing runs, 3 edits | Captured 2026-10-19 (docs/dev/TASKS.md S5). Only user/assistant lines and the fields belay reads |
 | `transcripts/reads_session.jsonl` | Claude Code transcript: the same file read twice, a Grep, a Glob, a WebFetch, with `toolUseResult` | **Hand-made** (U5.1) in the shape of 2.1.316 transcripts |
+| `guard/real/*.json` | Guard precision corpus: one case per file (`steps` of edits, shell writes, and runs in one turn; `expect` `ok` or `flag`; `rule`). New-file, outside-project, conditional-skip, justified-tolerance, focus, and move patterns, plus true positives | **Synthetic**, minimal, from the patterns of a real project's false alarms (P0.1, 2026-11-02); no project code. A new case also goes in the list in `controller/guard/tests.rs` |
 | `sessions/mcp/` | A session dir: ledger with one test output `o-1` (and its blob) and the shape action `a-1` | **Hand-made** in ledger format 1, for `belay mcp` |
 
 Rules:

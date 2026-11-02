@@ -1,0 +1,13 @@
+{
+  "pattern": "unittest.skipUnless is a runtime condition.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_h.py",
+      "old": "class T(unittest.TestCase):\n    def test_h(self):\n        self.assertTrue(gpu())\n",
+      "new": "class T(unittest.TestCase):\n    @unittest.skipUnless(HAVE_GPU, \"needs a GPU\")\n    def test_h(self):\n        self.assertTrue(gpu())\n"
+    }
+  ]
+}

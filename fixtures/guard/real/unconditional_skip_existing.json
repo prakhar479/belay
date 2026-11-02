@@ -1,0 +1,14 @@
+{
+  "pattern": "An unconditional skip added to an existing test.",
+  "top": "/work/proj",
+  "expect": "flag",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_api.py",
+      "old": "def test_api():\n    assert get().status == 200\n",
+      "new": "@pytest.mark.skip(reason=\"flaky\")\ndef test_api():\n    assert get().status == 200\n"
+    }
+  ],
+  "rule": "skip marker"
+}

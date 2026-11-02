@@ -306,7 +306,7 @@ impl Controller {
         put("failure_values", format!("{:?}", self.failure_values));
         put("rewrite_ignored", format!("{:?}", self.rewrite_ignored));
         put("no_wrap", format!("{:?}", self.no_wrap));
-        put("shell_baseline", format!("{:?}", self.shell_baseline));
+        put("guard", format!("{:?}", self.guard));
         put("last_summary", format!("{:?}", self.last_summary));
         put("clock", format!("{:?} {}", self.last_ms, self.active_ms));
         put("memory", self.mem.digest());

@@ -1,0 +1,21 @@
+{
+  "pattern": "Python tests moved from one module to another in one command.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "shell",
+      "tool_use_id": "b1",
+      "path": "/work/proj/tests/test_all.py",
+      "old": "def test_one():\n    assert one() == 1\n\n\ndef test_two():\n    assert two() == 2\n",
+      "new": "def test_one():\n    assert one() == 1\n"
+    },
+    {
+      "via": "shell",
+      "tool_use_id": "b1",
+      "path": "/work/proj/tests/test_two.py",
+      "old": "",
+      "new": "import pytest\n\n\ndef test_two():\n    assert two() == 2\n"
+    }
+  ]
+}

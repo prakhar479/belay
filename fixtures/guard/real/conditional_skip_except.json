@@ -1,0 +1,13 @@
+{
+  "pattern": "pytest.skip in an except branch: data unavailable at run time.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_d.py",
+      "old": "def test_d():\n    data = load()\n    assert check(data)\n",
+      "new": "def test_d():\n    try:\n        data = load()\n    except OSError:\n        pytest.skip(\"input data unavailable\")\n    assert check(data)\n"
+    }
+  ]
+}

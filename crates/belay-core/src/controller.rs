@@ -11,10 +11,10 @@ use std::collections::{BTreeMap, HashMap};
 /// An edit, by path and content hashes. A blocked edit is allowed by this key.
 type EditKey = (String, String, String);
 
-use crate::broker::{Answer, Broker, Question};
+use crate::broker::{Broker, Question};
 use crate::capability::Capabilities;
 use crate::event::{Event, ToolKind};
-use crate::guard::{self, GuardDecision};
+use crate::guard::GuardDecision;
 use crate::loops::{LoopDetector, LoopSignal};
 use crate::perception::{
     classify, command_key, extract_failures, shell, writes_files, Failure, OutputKind,
@@ -202,9 +202,6 @@ pub struct Decision {
     pub response: Response,
 }
 
-/// Test files whose first text a session keeps for the shell-write guard.
-const MAX_SHELL_BASELINES: usize = 64;
-
 pub struct Controller {
     cfg: Config,
     caps: Capabilities,
@@ -237,9 +234,9 @@ pub struct Controller {
     /// Command keys never to wrap again: a wrapped run of them got no tool result
     /// (Claude Code's auto-mode classifier can deny a rewrite as a bypass).
     no_wrap: std::collections::BTreeSet<String>,
-    /// Test files a shell command changed: their text when this session first saw
-    /// them. Removing a test the session itself added is not weakening.
-    shell_baseline: BTreeMap<String, String>,
+    /// The guard's memory: first texts of shell-written tests, the project top, and
+    /// what this turn's edits added and removed.
+    guard: guard::GuardState,
     /// The last summary the agent saw, to spot an immediate re-run of its command.
     last_summary: Option<LastSummary>,
     /// Set by `observe` in deferred mode; `filter` moves it into the wrapped call.
@@ -459,7 +456,7 @@ impl Controller {
             failure_values: BTreeMap::new(),
             rewrite_ignored: false,
             no_wrap: std::collections::BTreeSet::new(),
-            shell_baseline: BTreeMap::new(),
+            guard: guard::GuardState::default(),
             last_summary: None,
             deferred: None,
             last_ms: None,
@@ -1007,6 +1004,7 @@ impl Controller {
         {
             self.fleet.on_my_failure(output, now_ms);
         }
+        self.guard_before(&mut d, &event, now_ms);
         match event {
             _ if is_bash => self.on_bash(&mut d, event, now_ms),
             _ if is_read => self.on_read(&mut d, event, now_ms),
@@ -1522,7 +1520,7 @@ impl Controller {
         if matches!(kind, OutputKind::Test | OutputKind::Build) {
             let pairs: Vec<(String, String)> = failures
                 .iter()
-                .flat_map(|f| guard::value_pairs(&f.message))
+                .flat_map(|f| crate::guard::value_pairs(&f.message))
                 .collect();
             if pairs.is_empty() {
                 self.failure_values.remove(command);
@@ -2042,265 +2040,6 @@ impl Controller {
         }
     }
 
-    fn on_edit_proposed(&mut self, d: &mut Decision, event: Event, now: u64) {
-        let Event::EditProposed {
-            tool_use_id,
-            path,
-            old_text,
-            new_text,
-        } = event
-        else {
-            return;
-        };
-        let (old_hash, new_hash) = (sha256_hex(&old_text), sha256_hex(&new_text));
-        let key: EditKey = (path.clone(), old_hash.clone(), new_hash.clone());
-        let stored = Event::EditProposed {
-            tool_use_id,
-            path: path.clone(),
-            old_text: format!("<blob:{old_hash}>"),
-            new_text: format!("<blob:{new_hash}>"),
-        };
-        // Keep the texts only where the guard reads them, and only test-sized ones: an
-        // edit of a lockfile or a data file is not worth a copy on disk (I4, F4).
-        if guard::judges(&path, &old_text, &new_text) {
-            for (hash, content) in [(old_hash, &old_text), (new_hash, &new_text)] {
-                if content.len() <= MAX_EDIT_BLOB_BYTES {
-                    d.blobs.push(Blob {
-                        hash,
-                        content: content.clone(),
-                    });
-                }
-            }
-        }
-        let ev = self.push(d, now, vec![], Body::Event { event: stored });
-        // A fleet role edits only within its scope, and not what another session in its
-        // worktree claimed (F5c).
-        if !self.on(Feature::Guard) {
-            return;
-        }
-        if let Some(why) = self.fleet_rules.as_ref().and_then(|r| r.refuse(&path)) {
-            let message = format!(
-                "belay: in this fleet, this session may not edit {path}: {why}. Ask your lead (`belay task blocked`) if it must change."
-            );
-            let decision = self.effective_guard(GuardDecision::Deny);
-            let action = ActionKind::Guard {
-                path: path.clone(),
-                decision,
-            };
-            if self.act(d, now, ev, action, message.clone()) {
-                match decision {
-                    GuardDecision::Warn => d.response.add_context.push(message),
-                    _ => d.response.permission = Some(Permission::Deny(message)),
-                }
-            }
-            return;
-        }
-        let Some((j, reasons)) = self.judge_test_edit(d, now, ev, &path, &old_text, &new_text)
-        else {
-            return;
-        };
-
-        let decision = self.effective_guard(self.session.guard);
-        // U6.3: rules the user allowed twice only warn for the rest of the session.
-        let rules = features::rules_of(&reasons);
-        let relaxed = decision != GuardDecision::Warn && self.guard_fb.warns(&rules);
-        let decision = if relaxed {
-            GuardDecision::Warn
-        } else {
-            decision
-        };
-        if let Some((id, override_seq)) = self.allowed.remove(&key) {
-            let reason = format!("Allowed once by the user (`belay allow {id}`).");
-            let action = ActionKind::Guard { path, decision };
-            let a = self.next_action_id();
-            self.push(
-                d,
-                now,
-                vec![j, override_seq],
-                Body::Action {
-                    id: a,
-                    action,
-                    reason,
-                    applied: false,
-                    unsupported: false,
-                },
-            );
-            return;
-        }
-        let blocking = decision != GuardDecision::Warn;
-        let message = if blocking {
-            format!(
-                "belay: this edit may weaken tests in {path}: {}. If the user wants it anyway, they can run `! belay allow` and you can retry the same edit.",
-                reasons.join("; ")
-            )
-        } else {
-            format!(
-                "belay: this edit may weaken tests in {path}: {}.",
-                reasons.join("; ")
-            )
-        };
-        let reason = if relaxed {
-            format!(
-                "{message} It warns instead of blocking: the user allowed {} twice this session.",
-                rules.join(", ")
-            )
-        } else {
-            message.clone()
-        };
-        let action = ActionKind::Guard { path, decision };
-        let id = format!("a-{}", self.next_action);
-        if self.act(d, now, j, action, reason) {
-            if blocking {
-                self.blocked.insert(id.clone(), (key, rules));
-                self.last_blocked = Some(id);
-            }
-            match decision {
-                GuardDecision::Ask => d.response.permission = Some(Permission::Ask(message)),
-                GuardDecision::Deny => d.response.permission = Some(Permission::Deny(message)),
-                GuardDecision::Warn => d.response.add_context.push(message),
-            }
-        }
-    }
-
-    /// Ask whether an edit to a test file weakens it. Returns the judgment's seq and the
-    /// reasons when it does. Files that are not tests are not judged.
-    fn judge_test_edit(
-        &mut self,
-        d: &mut Decision,
-        now: u64,
-        cause: u64,
-        path: &str,
-        old: &str,
-        new: &str,
-    ) -> Option<(u64, Vec<String>)> {
-        let is_test = guard::judges(path, old, new) || self.policy.is_test(path);
-        let protected = self.policy.protected_by(path).map(str::to_string);
-        if !is_test && protected.is_none() {
-            return None;
-        }
-        let q = Question::TestWeakened { path, old, new };
-        let (answer, source) = if is_test {
-            self.broker.ask(&q)
-        } else {
-            (Answer::Neutral, crate::broker::Source::Rule)
-        };
-        // E4: the edit makes the test expect what the failing run produced.
-        let pairs: Vec<(String, String)> =
-            self.failure_values.values().flatten().cloned().collect();
-        let answer = match (answer, guard::expected_to_actual(old, new, &pairs)) {
-            (Answer::Weakened { mut reasons }, Some(r)) => {
-                reasons.push(r);
-                Answer::Weakened { reasons }
-            }
-            (_, Some(r)) => Answer::Weakened { reasons: vec![r] },
-            (a, None) => a,
-        };
-        // E7: the repo asks for a look at every edit of a protected path.
-        let answer = match (answer, protected) {
-            (a, None) => a,
-            (Answer::Weakened { mut reasons }, Some(pat)) => {
-                reasons.push(format!("the path is protected by .belay.toml (`{pat}`)"));
-                Answer::Weakened { reasons }
-            }
-            (_, Some(pat)) => Answer::Weakened {
-                reasons: vec![format!("the path is protected by .belay.toml (`{pat}`)")],
-            },
-        };
-        let (name, version) = (q.name(), q.version());
-        let j = self.push(
-            d,
-            now,
-            vec![cause],
-            Body::Judgment {
-                question: name.into(),
-                version,
-                subject: path.to_string(),
-                answer: answer.clone(),
-                source,
-            },
-        );
-        match answer {
-            Answer::Weakened { reasons } => Some((j, reasons)),
-            _ => None,
-        }
-    }
-
-    /// A shell command changed a test file (R1.4). The change already happened, so the
-    /// guard can only warn: the agent hears it in context.
-    fn on_file_changed(&mut self, d: &mut Decision, event: Event, now: u64) {
-        let Event::FileChanged {
-            tool_use_id,
-            path,
-            old_text,
-            new_text,
-        } = event
-        else {
-            return;
-        };
-        let (old_hash, new_hash) = (sha256_hex(&old_text), sha256_hex(&new_text));
-        let stored = Event::FileChanged {
-            tool_use_id,
-            path: path.clone(),
-            old_text: format!("<blob:{old_hash}>"),
-            new_text: format!("<blob:{new_hash}>"),
-        };
-        let ev = self.push(d, now, vec![], Body::Event { event: stored });
-        d.blobs.push(Blob {
-            hash: old_hash,
-            content: old_text.clone(),
-        });
-        d.blobs.push(Blob {
-            hash: new_hash.clone(),
-            content: new_text.clone(),
-        });
-        // Edit, revert, edit through the shell is a cycle too.
-        if let Some(LoopSignal::Cycle { path }) = self.loops.on_edit(&path, &new_hash) {
-            let text = format!("belay: {path} is back to an earlier version (edit, revert, edit).");
-            let reason = format!("Content hash of {path} repeated an earlier state.");
-            self.steer(d, now, ev, SteerTrigger::Cycle { path }, text, reason);
-        }
-        // Judged against the file as this session first saw it, when that shows no
-        // weakening: dogfood workers were warned for deleting a probe test they had
-        // added themselves a few calls before.
-        let base = match self.shell_baseline.get(&path) {
-            Some(b) => b.clone(),
-            None => {
-                if self.shell_baseline.len() < MAX_SHELL_BASELINES {
-                    self.shell_baseline.insert(path.clone(), old_text.clone());
-                }
-                old_text.clone()
-            }
-        };
-        let from_start_fine = base != old_text
-            && self.policy.protected_by(&path).is_none()
-            && !matches!(
-                self.broker.ask(&Question::TestWeakened {
-                    path: &path,
-                    old: &base,
-                    new: &new_text
-                }),
-                (Answer::Weakened { .. }, _)
-            );
-        if !self.on(Feature::Guard) {
-            return;
-        }
-        let old = if from_start_fine { &base } else { &old_text };
-        let Some((j, reasons)) = self.judge_test_edit(d, now, ev, &path, old, &new_text) else {
-            return;
-        };
-        let message = format!(
-            "belay: the last command changed {path} and may have weakened tests: {}. If that was not intended, restore the file.",
-            reasons.join("; ")
-        );
-        let action = ActionKind::Guard {
-            path,
-            decision: GuardDecision::Warn,
-        };
-        if self.act(d, now, j, action, message.clone()) {
-            d.response.add_context.push(message);
-        }
-    }
-
     /// Auto mode denied a call. If belay had wrapped it, the wrapper may be why: its
     /// classifier sometimes calls `belay run` a bypass (R3.7). Stop wrapping the command,
     /// and tell the agent it may retry; the retry runs unwrapped.
@@ -2343,26 +2082,6 @@ impl Controller {
             let text = format!("belay: {path} is back to an earlier version (edit, revert, edit).");
             let reason = format!("Content hash of {path} repeated an earlier state.");
             self.steer(d, now, ev, SteerTrigger::Cycle { path }, text, reason);
-        }
-    }
-
-    /// Downgrade the wanted guard decision to the `guard` setting and to what the agent
-    /// supports. Call only while the guard is on.
-    fn effective_guard(&self, wanted: GuardDecision) -> GuardDecision {
-        let wanted = match self.guard_setting() {
-            GuardSetting::Warn => GuardDecision::Warn,
-            _ => wanted,
-        };
-        match wanted {
-            GuardDecision::Ask if !self.caps.ask => {
-                if self.caps.deny {
-                    GuardDecision::Deny
-                } else {
-                    GuardDecision::Warn
-                }
-            }
-            GuardDecision::Deny if !self.caps.deny => GuardDecision::Warn,
-            other => other,
         }
     }
 
@@ -2509,6 +2228,7 @@ impl Controller {
 }
 
 mod features;
+mod guard;
 mod memory;
 mod notice;
 mod reads;

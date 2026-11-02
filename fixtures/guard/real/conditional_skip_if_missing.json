@@ -1,0 +1,13 @@
+{
+  "pattern": "pytest.skip after a data-availability check.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_e.py",
+      "old": "def test_e():\n    assert check(DATA)\n",
+      "new": "def test_e():\n    if not DATA.exists():\n        pytest.skip(\"input data unavailable\")\n    assert check(DATA)\n"
+    }
+  ]
+}

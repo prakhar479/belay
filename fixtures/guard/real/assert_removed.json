@@ -1,0 +1,14 @@
+{
+  "pattern": "An assertion removed from an existing test.",
+  "top": "/work/proj",
+  "expect": "flag",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_api.py",
+      "old": "def test_api():\n    r = get()\n    assert r.status == 200\n    assert r.json()['id'] == 42\n",
+      "new": "def test_api():\n    r = get()\n    assert r.status == 200\n"
+    }
+  ],
+  "rule": "assertions removed"
+}
