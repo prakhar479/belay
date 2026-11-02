@@ -369,6 +369,9 @@ enum Cmd {
     Fleet {
         #[command(subcommand)]
         cmd: Option<FleetCmd>,
+        /// Also list fleets that are down and pruned.
+        #[arg(long)]
+        all: bool,
     },
     /// Roll the files back to a snapshot belay took at the end of an agent turn
     /// (`t-N`; `t-0` is the start). Alone, it lists the snapshots. Your index, HEAD,
@@ -518,10 +521,14 @@ enum FleetCmd {
     /// Hand out work again (after `pause`, a budget, or the usage limit).
     Resume { fleet: Option<String> },
     /// Remove worktrees of fleets that are down and have nothing unsaved in them.
-    /// Without `--yes`, only lists them.
+    /// Without `--yes`, only lists them. Run it yourself, in your own terminal.
     Prune {
         #[arg(long)]
         yes: bool,
+        /// Also delete those fleets' branches that are merged into HEAD (`git branch
+        /// -d`). Branches with commits HEAD lacks are listed and kept.
+        #[arg(long)]
+        branches: bool,
     },
     /// The hub process (started by `up`).
     #[command(hide = true)]
@@ -646,7 +653,12 @@ fn fleet_cmd(c: FleetCmd) -> Result<i32> {
         FleetCmd::Merge { yes, fleet } => hub::merge(fleet.as_deref(), yes)?,
         FleetCmd::Pause { fleet } => hub::ask(fleet.as_deref(), hub::HubRequest::Pause)?,
         FleetCmd::Resume { fleet } => hub::ask(fleet.as_deref(), hub::HubRequest::Resume)?,
-        FleetCmd::Prune { yes } => hub::prune(yes)?,
+        FleetCmd::Prune { yes, branches } => {
+            if yes {
+                paths::users_only("`belay fleet prune --yes`")?;
+            }
+            hub::prune(yes, branches)?
+        }
         FleetCmd::Hub { dir, resume } => {
             hub::run_hub(&dir, resume)?;
             return Ok(0);
@@ -1156,11 +1168,11 @@ fn run(cli: Cli) -> Result<i32> {
                 0
             })
         }
-        Cmd::Fleet { cmd: None } => {
-            print!("{}{}", hub::list(), fleet::view_default());
+        Cmd::Fleet { cmd: None, all } => {
+            print!("{}{}", hub::list(all), fleet::view_default());
             Ok(0)
         }
-        Cmd::Fleet { cmd: Some(c) } => fleet_cmd(c),
+        Cmd::Fleet { cmd: Some(c), .. } => fleet_cmd(c),
         Cmd::Msg {
             to,
             text,

@@ -26,6 +26,7 @@
 - **belay sees reads.** The plugin and `belay claude` also hook Read, Grep, and Glob after they run, and `SubagentStop`. Each read is recorded as an output (`belay show o-N`), never changed. `belay report` adds `Reads: N (R repeated)`: a repeat is the same content of the same file read again with no compaction in between. Read outputs no longer count as Bash output. `belay retro` sees reads in transcripts too, so its "Tool calls" count goes up. New ledger event `subagent_ended` (additive; older belay versions skip it).
 - **Tokens kept out** in `belay report` (new line), `belay status`, and the exit summary is the sum of original − summary over summaries that reached the agent. Summaries whose reply came too late no longer count.
 - **Undo:** belay keeps the working tree at the start and at the end of each agent turn, as private git refs. `belay undo t-N` rolls the files back to one, also what shell commands changed, without touching your index, HEAD, stash, or branches.
+- **`belay fleet prune --branches`** also deletes the merged `belay/<fleet>/*` branches of fleets that are down (`git branch -d`, never `-D`). Unmerged branches are listed with how many commits HEAD lacks, and kept. Sandbox branches are not touched. `prune --yes` is now the user's: refused outside your own terminal and denied to agents. `belay fleet` no longer lists fleets that are down and pruned; `belay fleet --all` does.
 
 ## 0.1.0
 

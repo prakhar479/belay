@@ -2127,7 +2127,26 @@ fn fleet_hub_starts_restarts_and_stops_sessions() {
         "{dry}"
     );
     assert!(dry.contains("keep") && dry.contains("uncommitted"), "{dry}");
-    belay(&["fleet", "prune", "--yes"]);
+    // Removing is the user's (rule 12): refused from a shell without a terminal.
+    let prune_yes = |terminal: bool| {
+        let mut c = Command::new(bin());
+        c.args(["fleet", "prune", "--yes"])
+            .current_dir(&repo)
+            .env("BELAY_HOME", &home)
+            .env("BELAY_CONFIG", repo.join("no-config.toml"));
+        if terminal {
+            c.env("BELAY_TEST_TERMINAL", "1"); // the user typing in their terminal
+        }
+        c.output().unwrap()
+    };
+    let refused = prune_yes(false);
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("own terminal"),
+        "{refused:?}"
+    );
+    assert!(Path::new(cwd2.trim()).exists(), "refused: nothing removed");
+    assert!(prune_yes(true).status.success());
     assert!(
         Path::new(cwd1.trim()).join("work.txt").exists(),
         "work is never lost"

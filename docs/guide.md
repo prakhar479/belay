@@ -530,7 +530,11 @@ tokens   = "20M"
 - When a task is done, belay keeps its worktree as it was then. The tasks that depend on it get that work, even if the session goes on editing. Each move between worktrees is in the fleet's ledger, and `belay fleet report` lists them.
 - Your own terminal session can join a fleet as an attached role: `belay claude --belay-fleet --belay-name rev`.
 
-Other commands: `belay fleet scale <role> <n>` (also a ceiling: belay starts no more sessions of that role on demand), `pause`, `resume`, `stop <slot>`, `down`, `restart` (after the hub stopped; stream sessions resume their conversations), and `prune`. `prune` never removes a worktree with unsaved work.
+Other commands: `belay fleet scale <role> <n>` (also a ceiling: belay starts no more sessions of that role on demand), `pause`, `resume`, `stop <slot>`, `down`, `restart` (after the hub stopped; stream sessions resume their conversations), and `prune`.
+
+`belay fleet prune` lists the worktrees of fleets that are down; `--yes` removes them. It never removes a worktree with unsaved work. With `--branches`, it also deletes those fleets' `belay/<fleet>/*` branches that are merged into your current branch, with `git branch -d`. A branch with commits your branch lacks is listed with their count and kept. Sandbox branches (`belay/sandbox/*`) are never touched. Run `prune --yes` yourself, in your own terminal: belay refuses it elsewhere and denies it to agents.
+
+`belay fleet` alone lists fleets and live sessions. A fleet that is down, with no running session and no worktree left, is not listed; `belay fleet --all` shows it.
 
 ## Repo policy
 

@@ -2662,23 +2662,38 @@ pub fn task(fleet: Option<&str>, verb: TaskVerb) -> Result<String> {
 }
 
 /// `belay fleet` (no subcommand) lists fleets too; one line each.
-pub fn list() -> String {
+pub fn list(all: bool) -> String {
+    list_dirs(&fleet_dirs(), all)
+}
+
+/// A fleet that is down, with no live session and no worktree left (pruned), is not
+/// listed unless `all`: it has nothing left to look at.
+fn list_dirs(dirs: &[PathBuf], all: bool) -> String {
     let mut out = String::new();
-    for d in fleet_dirs() {
-        let Ok(meta) = read_meta(&d) else { continue };
-        let records = read_ledger(&d);
+    for d in dirs {
+        let d = d.as_path();
+        let Ok(meta) = read_meta(d) else { continue };
+        let records = read_ledger(d);
         let model = replay(&meta, &records);
         let live = model
             .slots()
             .values()
             .filter(|s| matches!(s.state, SlotState::Starting | SlotState::Running))
             .count();
-        let unread = unread_for_user(&d);
+        let up = is_up(d);
+        let worktrees = fs::read_dir(d.join("worktrees"))
+            .into_iter()
+            .flatten()
+            .any(|e| e.is_ok());
+        if !all && !up && live == 0 && !worktrees {
+            continue;
+        }
+        let unread = unread_for_user(d);
         let _ = writeln!(
             out,
             "fleet {} · {} · {} sessions running{} · {}",
             meta.id,
-            if is_up(&d) { "up" } else { "down" },
+            if up { "up" } else { "down" },
             live,
             if unread > 0 {
                 format!(" · {unread} unread (`belay inbox`)")
@@ -2762,18 +2777,25 @@ fn changes_in_head(repo: &Path, wt: &Path, base: &str) -> bool {
 }
 
 /// `belay fleet prune`: worktrees of fleets that are down, with no uncommitted changes
-/// and no commits beyond the fleet's base. Lists them; removes them with `yes`.
-pub fn prune(yes: bool) -> Result<String> {
+/// and no commits beyond the fleet's base. Lists them; removes them with `yes`. With
+/// `branches`, also their fleets' merged branches.
+pub fn prune(yes: bool, branches: bool) -> Result<String> {
+    Ok(prune_dirs(&fleet_dirs(), yes, branches))
+}
+
+fn prune_dirs(dirs: &[PathBuf], yes: bool, branches: bool) -> String {
     let mut out = String::new();
     let (mut removed, mut kept) = (0, 0);
-    for d in fleet_dirs() {
-        if is_up(&d) {
+    let mut down = Vec::new();
+    for d in dirs {
+        if is_up(d) {
             continue;
         }
-        let Ok(meta) = read_meta(&d) else { continue };
+        let Ok(meta) = read_meta(d) else { continue };
         let (Some(repo), Some(base)) = (&meta.repo, &meta.base) else {
             continue;
         };
+        down.push((meta.id.clone(), PathBuf::from(repo)));
         let repo = Path::new(repo);
         let mut wts: Vec<PathBuf> = fs::read_dir(d.join("worktrees"))
             .into_iter()
@@ -2857,7 +2879,86 @@ pub fn prune(yes: bool) -> Result<String> {
             " Run `belay fleet prune --yes` to remove them."
         }
     );
-    Ok(out)
+    if branches {
+        prune_branches(&down, yes, &mut out);
+    }
+    out
+}
+
+/// The `belay/<fleet>/*` branches of fleets that are down (worktrees go first, so a
+/// branch is no longer checked out): one whose tip is in the repo's HEAD is deleted with
+/// `git branch -d`, never `-D`; one with commits HEAD lacks is listed and kept.
+/// Sandbox branches (`belay/sandbox/*`) are not a fleet's and are never touched.
+fn prune_branches(down: &[(String, PathBuf)], yes: bool, out: &mut String) {
+    let (mut deleted, mut kept) = (0, 0);
+    for (id, repo) in down {
+        let refs = git_out(
+            repo,
+            &[
+                "for-each-ref",
+                "--format=%(refname:short)",
+                &format!("refs/heads/belay/{id}/"),
+            ],
+        )
+        .unwrap_or_default();
+        for branch in refs.lines().map(str::trim).filter(|b| !b.is_empty()) {
+            if branch.starts_with("belay/sandbox/") {
+                continue;
+            }
+            let merged = Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["merge-base", "--is-ancestor", branch, "HEAD"])
+                .stdin(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success());
+            if !merged {
+                let ahead = git_out(repo, &["rev-list", "--count", &format!("HEAD..{branch}")])
+                    .and_then(|n| n.parse::<u64>().ok())
+                    .unwrap_or(0);
+                kept += 1;
+                let _ = writeln!(
+                    out,
+                    "keep   branch {branch} ({ahead} commit{} not in HEAD)",
+                    if ahead == 1 { "" } else { "s" }
+                );
+            } else if !yes {
+                deleted += 1;
+                let _ = writeln!(out, "would delete branch {branch} (merged)");
+            } else if git_ok(repo, &["branch", "-d", branch]) {
+                deleted += 1;
+                let _ = writeln!(out, "deleted branch {branch} (merged)");
+            } else {
+                // Checked out in a worktree that was kept, or git refused: it stays.
+                kept += 1;
+                let _ = writeln!(out, "keep   branch {branch} (git branch -d failed)");
+            }
+        }
+    }
+    let _ = writeln!(
+        out,
+        "{} {deleted} merged branch{}, kept {kept}.{}",
+        if yes { "Deleted" } else { "Would delete" },
+        if deleted == 1 { "" } else { "es" },
+        if yes || deleted == 0 {
+            ""
+        } else {
+            " Run `belay fleet prune --branches --yes` to delete them."
+        }
+    );
+}
+
+fn git_ok(dir: &Path, args: &[&str]) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// `belay fleet report`: what a fleet did, from its ledger: tasks, sessions, spend, and
@@ -3613,6 +3714,111 @@ mod tests {
         assert_eq!(&u[14..15], "4");
         assert!(matches!(&u[19..20], "8" | "9" | "a" | "b"), "{u}");
         assert_ne!(u, uuid_v4().unwrap());
+    }
+
+    /// A down fleet "F1" over a temp repo: `belay/F1/merged` is in HEAD,
+    /// `belay/F1/open` has one commit HEAD lacks, `belay/sandbox/sb-1` is in HEAD too.
+    fn down_fleet(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let root = std::env::temp_dir().join(format!("belay-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let repo = root.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        let git = |args: &[&str]| {
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+                .args(["-c", "commit.gpgsign=false"])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(ok.status.success(), "git {args:?}: {ok:?}");
+        };
+        git(&["init", "-q", "-b", "main"]);
+        fs::write(repo.join("a.txt"), "a\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "base"]);
+        let base = git_out(&repo, &["rev-parse", "HEAD"]).unwrap();
+        for b in ["belay/F1/merged", "belay/sandbox/sb-1"] {
+            git(&["checkout", "-qb", b, "main"]);
+            fs::write(repo.join(format!("{}.txt", b.replace('/', "-"))), "x\n").unwrap();
+            git(&["add", "."]);
+            git(&["commit", "-qm", b]);
+            git(&["checkout", "-q", "main"]);
+            git(&["merge", "-q", "--no-ff", "-m", "merge", b]);
+        }
+        git(&["checkout", "-qb", "belay/F1/open", "main"]);
+        fs::write(repo.join("open.txt"), "o\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "open"]);
+        git(&["checkout", "-q", "main"]);
+        let fleet = root.join("fleets").join("F1");
+        fs::create_dir_all(&fleet).unwrap();
+        let file: SpecFile = serde_json::from_value(serde_json::json!({"preset": "pool"})).unwrap();
+        let meta = Meta {
+            id: "F1".into(),
+            repo: Some(repo.display().to_string()),
+            base: Some(base),
+            cwd: repo.display().to_string(),
+            mode: None,
+            created_ms: 1,
+            spec: spec::resolve(&file).unwrap(),
+        };
+        fs::write(
+            fleet.join("meta.json"),
+            serde_json::to_string(&meta).unwrap(),
+        )
+        .unwrap();
+        (root, repo, fleet)
+    }
+
+    #[test]
+    fn prune_branches_deletes_merged_keeps_the_rest() {
+        let (root, repo, fleet) = down_fleet("prune-branches");
+        let branch = |b: &str| git_out(&repo, &["rev-parse", "--verify", "-q", b]).is_some();
+
+        let dry = prune_dirs(std::slice::from_ref(&fleet), false, true);
+        assert!(
+            dry.contains("would delete branch belay/F1/merged (merged)"),
+            "{dry}"
+        );
+        assert!(
+            dry.contains("keep   branch belay/F1/open (1 commit not in HEAD)"),
+            "{dry}"
+        );
+        assert!(!dry.contains("sandbox"), "{dry}");
+        assert!(dry.contains("--branches --yes"), "{dry}");
+        assert!(branch("belay/F1/merged"), "a listing deletes nothing");
+
+        let plain = prune_dirs(std::slice::from_ref(&fleet), true, false);
+        assert!(!plain.contains("branch belay/"), "{plain}");
+        assert!(
+            branch("belay/F1/merged"),
+            "no --branches, no branch deleted"
+        );
+
+        let done = prune_dirs(std::slice::from_ref(&fleet), true, true);
+        assert!(done.contains("deleted branch belay/F1/merged"), "{done}");
+        assert!(done.contains("Deleted 1 merged branch, kept 1."), "{done}");
+        assert!(!branch("belay/F1/merged"));
+        assert!(branch("belay/F1/open"), "unmerged work is kept");
+        assert!(
+            branch("belay/sandbox/sb-1"),
+            "sandbox branches are not a fleet's"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_down_pruned_fleet_is_listed_only_with_all() {
+        let (root, _repo, fleet) = down_fleet("list-quiet");
+        let dirs = std::slice::from_ref(&fleet);
+        assert_eq!(list_dirs(dirs, false), "");
+        assert!(list_dirs(dirs, true).starts_with("fleet F1 · down"));
+        // A worktree left to prune keeps it on the board.
+        fs::create_dir_all(fleet.join("worktrees").join("worker-1")).unwrap();
+        assert!(list_dirs(dirs, false).starts_with("fleet F1 · down"));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
