@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>belay · one install that upgrades Claude Code</title>
-<meta name="description" content="belay is an open-source, local supervisor for Claude Code. One install, and each session starts where the last one stopped. It guards your tests, catches loops, runs risky work in a sandbox, and tells you what it did, and why.">
+<title>belay · a safety net and a memory for your coding agent</title>
+<meta name="description" content="belay is a free, open-source companion for Claude Code. It remembers what your last session was doing, stops the agent from quietly bending your tests, and lets you try risky work somewhere safe. Everything stays on your machine.">
 <link rel="canonical" href="https://prakhar479.github.io/belay/">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -14,7 +14,7 @@
 <meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://prakhar479.github.io/belay/">
 <meta property="og:title" content="belay: your agent climbs, belay holds the rope">
-<meta property="og:description" content="One install upgrades Claude Code. Sessions start where the last one stopped. Tests stay honest. Risky work runs in a sandbox.">
+<meta property="og:description" content="A safety net and a memory for your coding agent. It remembers where you left off, keeps your tests honest, and lets you try risky things somewhere safe.">
 <meta property="og:image" content="https://prakhar479.github.io/belay/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
@@ -22,7 +22,7 @@
 <meta property="og:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="belay: your agent climbs, belay holds the rope">
-<meta name="twitter:description" content="One install upgrades Claude Code. Sessions start where the last one stopped. Tests stay honest. Risky work runs in a sandbox.">
+<meta name="twitter:description" content="A safety net and a memory for your coding agent. It remembers where you left off, keeps your tests honest, and lets you try risky things somewhere safe.">
 <meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
 <meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b4f8dc'/%3E%3Cstop offset='.5' stop-color='%233ee6b4'/%3E%3Cstop offset='1' stop-color='%231fb8d6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='%23071012'/%3E%3Cg transform='rotate(30 16 16)'%3E%3Cpath d='M22 11.8A6 6 0 0 0 10 11.8V20.2A6 6 0 0 0 22 20.2' fill='none' stroke='url(%23g)' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M22 19.4V14' stroke='%23eef5f3' stroke-width='2.4' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
@@ -982,12 +982,12 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="cols"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
   </div>
   <div class="wrap hero-inner">
-    <a class="pill" href="#status"><span class="tag">0.2</span> An open-source prototype, for Claude Code <span class="go" aria-hidden="true">→</span></a>
+    <a class="pill" href="#status"><span class="tag">0.2</span> Free and open source · works with Claude Code <span class="go" aria-hidden="true">→</span></a>
     <h1 class="hero-title" id="hero-title">
       <span class="line">Your agent climbs.</span>
       <span class="line grad-text">belay holds the rope.</span>
     </h1>
-    <p class="hero-lede"><strong>One install upgrades Claude Code.</strong> Each session starts where the last one stopped. Tests stay honest. Risky work runs in a sandbox. belay tells you what it did, and why.</p>
+    <p class="hero-lede"><strong>A safety net and a memory for your coding agent.</strong> belay remembers what yesterday's session was doing, stops the agent from quietly bending your tests, and lets you try risky things somewhere safe. When it steps in, it tells you why, in one line.</p>
 
     <div class="install" data-tabs>
       <div class="install-tabs" role="tablist" aria-label="Install method">
@@ -1040,7 +1040,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
           <div class="term-title" id="term-title">~/shop · claude</div>
           <span class="mode-chip">belay on</span>
         </div>
-        <p class="term-cap"><b>What the agent reads.</b> An illustrative session. belay's messages are real, word for word.</p>
+        <p class="term-cap"><b>What the agent sees.</b> A made-up session, but every belay message in it is exactly what belay prints.</p>
         <div class="screen" id="screen">
 
           <div class="scene" id="scene-memory" role="tabpanel" aria-labelledby="tab-memory" tabindex="0" data-title="~/shop · claude">
@@ -1081,9 +1081,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
             <div class="ln tool" data-step data-d="600"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/api.py<span class="ar">)</span></div>
             <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip">round 1</span></div>
             <div class="ln tool" data-step data-d="800"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/api.py<span class="ar">)</span></div>
-            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip s">round 2 · same signature</span></div>
+            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip s">round 2 · same error</span></div>
             <div class="ln tool" data-step data-d="800"><span class="b">●</span> <span class="tn">Edit</span><span class="ar">(</span>shop/api.py<span class="ar">)</span></div>
-            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip s">round 3 · same signature</span></div>
+            <div class="ln tool" data-step data-d="500"><span class="b">●</span> <span class="tn">Bash</span><span class="ar">(</span>pytest tests/test_api.py<span class="ar">)</span><span class="chip r">2 failed</span><span class="chip s">round 3 · same error</span></div>
             <div class="msg" data-step data-d="900">
               <div class="msg-head"><span class="stamp g">Loop</span> told once, after round 3</div>
               <p>belay: 2 failures are unchanged after 3 fix attempts (edit, then run): tests/test_api.py::test_get_order: assert 500 == 200; tests/test_api.py::test_create_order: KeyError: 'total'. A different approach may be needed.</p>
@@ -1134,11 +1134,11 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
   </div>
   <div class="wrap">
     <ul class="factbar" aria-label="belay at a glance">
-      <li><b>~2 ms</b><span>per hook, p95</span></li>
-      <li><b>Fails open</b><span>on any error, the hook prints nothing</span></li>
-      <li><b>Fails closed</b><span>no sandbox, nothing runs</span></li>
-      <li><b>0</b><span>model calls</span></li>
-      <li><b>MIT / Apache-2.0</b><span>open source</span></li>
+      <li><b>~2 ms</b><span>added to each step</span></li>
+      <li><b>Never in the way</b><span>if belay breaks, Claude Code carries on</span></li>
+      <li><b>Safe by default</b><span>no safe sandbox, no risky run</span></li>
+      <li><b>0</b><span>AI calls, no telemetry</span></li>
+      <li><b>Open source</b><span>MIT or Apache-2.0</span></li>
     </ul>
   </div>
 </section>
@@ -1149,31 +1149,31 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head center reveal">
       <p class="eyebrow"><span class="n">01</span> The problem</p>
       <h2 class="h2" id="moments-title">You have watched this happen.</h2>
-      <p class="sec-lede">Coding agents are fast. They also forget, take shortcuts, and run what you did not read.</p>
+      <p class="sec-lede">Coding agents are brilliant and fast. They are also forgetful, a little too eager to see green tests, and happy to run things you never looked at.</p>
     </div>
     <div class="g12 moments">
       <article class="moment reveal" style="--rd:.0s">
         <div class="vis" aria-hidden="true"><span>› carry on</span><span class="amb">what were we doing?</span><span>the last session's work, gone</span></div>
         <h3>Every session starts from zero.</h3>
-        <p>Yesterday's session found the bug and ran out of context. Today's session reads the code again from the top.</p>
+        <p>Yesterday the agent tracked the bug down, then ran out of room. Today it starts over, reading the same code again as if it had never seen it.</p>
       </article>
       <article class="moment reveal" style="--rd:.08s">
         <div class="vis" aria-hidden="true"><span class="del">-  assert total == 19.99</span><span class="add">+  assert total == 19.98</span></div>
         <h3>The test was right. The agent changed it.</h3>
-        <p>The code returned 19.98. The test expected 19.99. The quickest way to green was to edit the test.</p>
+        <p>The code gave 19.98. The test said it should be 19.99. The easiest way to make the test pass? Change the test.</p>
       </article>
       <article class="moment reveal" style="--rd:.16s">
         <div class="vis" aria-hidden="true"><span>edit → run → <span class="red">assert 500 == 200</span></span><span>edit → run → <span class="red">assert 500 == 200</span></span><span>edit → run → <span class="red">assert 500 == 200</span></span></div>
         <h3>Third fix. Same failure.</h3>
-        <p>Edit, run, fail. The error never changes. The agent keeps going anyway.</p>
+        <p>Edit, run, fail. Edit, run, fail. Same error every time, and the agent keeps trying the same kind of fix.</p>
       </article>
       <article class="moment reveal" style="--rd:.24s">
         <div class="vis" aria-hidden="true"><span>$ ./setup.sh</span><span class="amb">~/.ssh · ~/.aws · ~/other-repo</span><span>all of it in reach</span></div>
         <h3>A script you did not read.</h3>
-        <p>The agent runs commands as you. Everything in your home is one command away.</p>
+        <p>The agent runs commands as you. Your SSH keys, your cloud logins, your other projects: all one command away.</p>
       </article>
     </div>
-    <p class="moments-close reveal"><strong>belay catches each of these moments.</strong> It tells the agent in time, and it tells you.</p>
+    <p class="moments-close reveal"><strong>belay catches each of these.</strong> It nudges the agent while there is still time, and lets you know it did.</p>
   </div>
 </section>
 
@@ -1183,20 +1183,20 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">02</span> Memory and handoffs</p>
       <h2 class="h2" id="memory-title">Pick up the rope <span class="mute">where it was dropped.</span></h2>
-      <p class="sec-lede">The next session starts where the last one left off. So does the same session after a compaction, or a <code class="inline-code">--resume</code>.</p>
+      <p class="sec-lede">Close your laptop tonight, open a new session tomorrow, and the agent already knows where things stand. The same goes for a long conversation that gets compacted, or one you <code class="inline-code">--resume</code>.</p>
     </div>
 
     <div class="g12 split">
       <div class="l5 reveal">
         <h3>A handoff, without asking.</h3>
-        <p class="t">When a session ends, and before each compaction, belay keeps a handoff. It says what belay saw: the task, the files changed, the last test, and the failure still open. The agent's own note comes last, labelled as its own.</p>
+        <p class="t">When a session ends, belay writes a short note for the next one: what the task was, which files changed, how the last test run went, and what is still broken. It writes it from what actually happened, not from what the agent says happened. If the agent left a note of its own, that goes at the end, marked as the agent's.</p>
         <ul class="facts">
-          <li><b>Recall</b><span>A new session gets the last handoff and the memories that rank best for the project, within 600 tokens by default.</span></li>
-          <li><b>Carry pack</b><span>After a compaction or a resume, the agent gets back its task, the open failure, the guard's blocks, and the memories it was given.</span></li>
-          <li><b>Resume</b><span><code>belay claude --resume</code>, <code>-c</code>, and <code>/resume</code> go on with belay's state: loop counts, blocked edits, pauses.</span></li>
-          <li><code>belay memory</code><span>List, search, and add. Each memory says who wrote it: belay, the agent, or you.</span></li>
+          <li><b>A good start</b><span>Each new session gets the last note, plus the few memories that matter most for this project. It is kept short, so it does not crowd out real work.</span></li>
+          <li><b>Nothing lost in compaction</b><span>When Claude Code squeezes a long conversation down, belay hands the essentials back: the task, the open failure, and anything it blocked.</span></li>
+          <li><b>Resume means resume</b><span>Pick a conversation back up with <code>--resume</code>, <code>-c</code>, or <code>/resume</code>, and belay picks up right where it was too.</span></li>
+          <li><code>belay memory</code><span>Look through what belay remembers, search it, or add your own. Every memory says who wrote it: belay, the agent, or you.</span></li>
           <li><b>Yours to approve</b><span>An agent's memory waits for you. Only you run <code>belay memory approve</code> or <code>drop</code>.</span></li>
-          <li><code>belay mcp</code><span>The plugin gives the agent memory search, the handoff, and more as MCP tools.</span></li>
+          <li><b>Works with what you have</b><span>belay never touches your CLAUDE.md or Claude Code's own memory. It reads them so it does not repeat what the agent already knows.</span></li>
         </ul>
       </div>
       <div class="r7 reveal" style="--rd:.08s">
@@ -1234,7 +1234,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">03</span> Honesty</p>
       <h2 class="h2" id="features-title">It watches every move. <span class="mute">It catches the fall.</span></h2>
-      <p class="sec-lede">belay sees each tool call, and its output, before the agent reads it. It keeps the agent honest about its tests.</p>
+      <p class="sec-lede">belay sees each step the agent takes, and what came back, before the agent does. That is how it keeps the agent honest about your tests.</p>
     </div>
 
     <div class="g12 bento">
@@ -1242,7 +1242,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-guard reveal" aria-labelledby="f-guard">
         <p class="kicker">Test guard</p>
         <h3 id="f-guard">Edits that weaken tests wait for you.</h3>
-        <p class="body">Before an Edit or Write lands in a test file, belay compares the old and new text. It flags six things. The edit is denied until you allow it.</p>
+        <p class="body">Before the agent changes a test, belay compares the old and new versions. If the change makes the test easier to pass rather than the code better, the edit is held until you say it is fine.</p>
         <div class="demo grow">
           <ul class="rules" id="rules">
             <li><span class="x" aria-hidden="true">✕</span><span>An assertion is removed</span><code><i>e.g.</i> - assert total(cart) == 19.99</code></li>
@@ -1262,9 +1262,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
             <div class="who-step"><span class="who-k">Agent</span><span class="who-v">Retries the same edit</span></div>
           </div>
           <div class="notes">
-            <p><b>Only you can allow it.</b> belay refuses the agent's own <code class="inline-code">belay allow</code>.</p>
-            <p><b>Protect any path.</b> List it in <code class="inline-code">.belay.toml</code>.</p>
-            <p class="wide"><b>Or only warn.</b> With <code class="inline-code">guard = warn</code>, the edit goes through and the agent is told why it may weaken tests.</p>
+            <p><b>Only you can let it through.</b> The agent can't approve its own edit.</p>
+            <p><b>Protect anything.</b> Add paths you care about to <code class="inline-code">.belay.toml</code>.</p>
+            <p class="wide"><b>Prefer a gentler touch?</b> Set <code class="inline-code">guard = warn</code>: the edit goes through, and the agent is told why it looks suspicious.</p>
           </div>
         </div>
       </article>
@@ -1273,7 +1273,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-loop reveal" style="--rd:.08s" aria-labelledby="f-loop">
         <p class="kicker">Loop detection</p>
         <h3 id="f-loop">Three rounds. Same failure. One message.</h3>
-        <p class="body">It matches failures by a normalized signature. It also catches edit cycles: edit, revert, edit. It tells the agent once. And when the agent ends its turn with files changed since the last passing run, belay asks it once to run the tests before it finishes.</p>
+        <p class="body">belay recognizes the same failure even when the details shift (a different line number, a different temp path). After three tries with no progress, it tells the agent, once, to step back. And if the agent tries to call it done after changing code it never re-tested, belay asks it to run the tests first.</p>
         <div class="demo">
           <div class="loopviz" id="loopviz" aria-hidden="true">
             <div class="ring">
@@ -1299,7 +1299,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-sum reveal" style="--rd:.12s" aria-labelledby="f-sum">
         <p class="kicker">Faithful summaries</p>
         <h3 id="f-sum">Every failure line kept. The noise cut.</h3>
-        <p class="body">A real pytest run, before and after. <code class="inline-code">belay show o-3</code> prints the original.</p>
+        <p class="body">A real test run, before and after. Hundreds of "passed" lines become a count; every failure stays word for word. The full output is always one command away: <code class="inline-code">belay show o-3</code>.</p>
         <div class="demo sumviz" id="sumviz">
           <div class="srow">
             <div class="top"><span class="k">Lines</span><span class="v"><s>334</s><span>93</span></span></div>
@@ -1318,7 +1318,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-retro reveal" aria-labelledby="f-retro">
         <p class="kicker">Replay history</p>
         <h3 id="f-retro">See what it would have caught. Before you trust it.</h3>
-        <p class="body"><code class="inline-code">belay retro --all</code> reads the Claude Code transcripts you already have. It ranks past sessions by what belay would have caught. It starts nothing and changes nothing.</p>
+        <p class="body">Curious before you commit? <code class="inline-code">belay retro --all</code> looks back over the Claude Code sessions you have already had and shows what belay would have caught. It only reads; it changes nothing.</p>
         <div class="demo">
           <div class="rflow" role="group" aria-label="How belay retro works">
             <div class="rf-step"><span class="rf-k">In</span><span class="rf-v">The Claude Code transcripts you already have</span></div>
@@ -1333,9 +1333,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 
       <!-- Ledger -->
       <article class="card c-ledger reveal" style="--rd:.08s" aria-labelledby="f-ledger">
-        <p class="kicker">Ledger with reasons</p>
+        <p class="kicker">Always explained</p>
         <h3 id="f-ledger">Every action has a reason.</h3>
-        <p class="body">Every session is recorded. Each action carries a one-sentence reason and the chain of causes behind it.</p>
+        <p class="body">Whenever belay does something, it writes down why, in one sentence, along with what led to it. You can always ask.</p>
         <div class="demo">
           <div class="ticks" id="ticks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="a" data-l="a-1"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="a" data-l="a-2"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
           <div class="cmds">
@@ -1352,7 +1352,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
           <div>
             <p class="kicker">Learned fixes</p>
             <h3 id="f-learn">A fix found once is not lost.</h3>
-            <p class="body">When a failure is fixed and the full suite passes, belay keeps the change. The next session in that project that hits the same failure is told how it was fixed, with the diff.</p>
+            <p class="body">When the agent fixes a failure and the whole test suite passes, belay remembers how. If the same failure turns up again later, the agent is shown the fix that worked last time.</p>
           </div>
           <div class="flow" id="flow" role="group" aria-label="How a fix is learned">
             <div class="step fail lit"><b>1 · Fails</b>A test fails</div>
@@ -1373,19 +1373,19 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">04</span> Sandboxes and skills</p>
       <h2 class="h2" id="sandbox-title">Climb on a short rope.</h2>
-      <p class="sec-lede">Run risky work where it cannot reach your other files. Take in skills from the web only after you have read them.</p>
+      <p class="sec-lede">Try the risky thing somewhere it can't hurt you. And when you add a skill from the internet, see what it says before your agent does.</p>
     </div>
 
     <div class="g12 split">
       <div class="l5 reveal">
         <h3>Sandboxes.</h3>
-        <p class="t">A sandbox runs a command, a whole agent session, or a headless follow-up on its own clone of the repo, with a private home and limits. git works inside. The work comes back as a branch you read and merge.</p>
+        <p class="t">A sandbox is a walled-off copy of your project. Run one command in it, a whole agent session, or a task you leave running. Whatever happens inside stays inside. The work comes back to you as a git branch: read it, and merge it if you like it.</p>
         <ul class="facts">
-          <li><b>Contained</b><span>It does not see the rest of your home (<code>~/.ssh</code>, cloud credentials, other repos), the Docker socket, or your ssh agent. On WSL it cannot run Windows programs.</span></li>
-          <li><b>The network</b><span>The network is the host's. Anything your machine reaches, the sandbox reaches.</span></li>
-          <li><b>Limits</b><span>Memory, processes, disk, and wall time. Past one, belay stops it and records why.</span></li>
-          <li><b>Fails closed</b><span>Without bubblewrap or user namespaces, belay refuses and runs nothing. Linux only.</span></li>
-          <li><code>belay sandbox doctor</code><span>Tries to escape a fresh sandbox, and exits 1 if one gets out.</span></li>
+          <li><b>Walled off</b><span>It can't see your SSH keys, cloud logins, other projects, or Docker. On WSL it can't reach Windows either.</span></li>
+          <li><b>Honest about the network</b><span>It uses your normal internet connection. Anything your machine can reach, the sandbox can too.</span></li>
+          <li><b>Can't run away</b><span>It has limits on memory, processes, disk and time. Hit one, and belay stops it and tells you which.</span></li>
+          <li><b>Safe or nothing</b><span>If a proper sandbox can't be built on your machine, belay won't pretend: it runs nothing. Linux only for now.</span></li>
+          <li><code>belay sandbox doctor</code><span>Don't take our word for it: this tries to break out of a fresh sandbox and tells you if anything gets through.</span></li>
         </ul>
         <p class="t">What it protects, and what it does not: <a href="https://github.com/prakhar479/belay/blob/main/docs/sandbox.md">the threat model</a>.</p>
       </div>
@@ -1400,7 +1400,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <span class="ps">$</span> git merge belay/sandbox/fix            <span class="dm"># take the work, once you have read it</span></pre>
         </div>
         <div class="fleetflow" role="group" aria-label="How work leaves a sandbox">
-          <div class="ff-step"><span class="ff-k">Start</span><span class="ff-v">A clone of your HEAD</span></div>
+          <div class="ff-step"><span class="ff-k">Start</span><span class="ff-v">A copy of your project</span></div>
           <div class="ff-step workers"><span class="ff-k">Work</span><span class="ff-v">Private home, limits</span></div>
           <div class="ff-step"><span class="ff-k">Commit</span><span class="ff-v">On <code>belay/sandbox/&lt;id&gt;</code></span></div>
           <div class="ff-step gate"><span class="ff-k">You</span><span class="ff-v">Read it, then <code>git merge</code></span></div>
@@ -1411,12 +1411,12 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="g12 split rev fleet-block">
       <div class="l5 reveal">
         <h3>Skills from URLs.</h3>
-        <p class="t">A skill is a lasting way into the agent's instructions. belay makes installing one deliberate: it fetches, checks, pins, and records it. Only you approve it.</p>
+        <p class="t">A skill is a set of instructions your agent follows from then on, so adding one from a stranger deserves a look first. belay downloads it, checks it, and shows it to you. Nothing is active until you approve it.</p>
         <ul class="facts">
-          <li><b>Preview</b><span>The name, the files, the warnings, and a digest. It installs nothing.</span></li>
-          <li><b>Checked</b><span>Warnings for <code>curl … | sh</code>, base64 blobs, executables, hidden Unicode, and text that asks to disable belay.</span></li>
-          <li><b>Pinned</b><span>A GitHub source is pinned to its commit. A lock file keeps the digest, and belay says when files drift.</span></li>
-          <li><b>Agents stage</b><span>An agent's <code>belay skill add</code> only stages. You run <code>belay skill approve</code>.</span></li>
+          <li><b>Look first</b><span>See its name, its files, and any warnings. Looking installs nothing.</span></li>
+          <li><b>Checked for tricks</b><span>belay flags things like hidden characters, encoded blobs, scripts that download and run code, and text telling the agent to switch belay off.</span></li>
+          <li><b>No surprises later</b><span>It is pinned to the exact version you saw. If its files change afterwards, belay notices.</span></li>
+          <li><b>You decide</b><span>Your agent can suggest a skill, but only you can approve it.</span></li>
         </ul>
       </div>
       <div class="r7 reveal" style="--rd:.08s">
@@ -1430,10 +1430,10 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <span class="ps">$</span> belay skill approve pdf     <span class="dm"># yours to run</span></pre>
         </div>
         <div class="fleetflow" role="group" aria-label="How a skill is installed">
-          <div class="ff-step"><span class="ff-k">Preview</span><span class="ff-v">Fetch and show</span></div>
-          <div class="ff-step"><span class="ff-k">Stage</span><span class="ff-v">Waits for you</span></div>
-          <div class="ff-step workers"><span class="ff-k">Approve</span><span class="ff-v">In your terminal</span></div>
-          <div class="ff-step gate"><span class="ff-k">Pinned</span><span class="ff-v">Commit and digest</span></div>
+          <div class="ff-step"><span class="ff-k">Look</span><span class="ff-v">See what it says</span></div>
+          <div class="ff-step"><span class="ff-k">Wait</span><span class="ff-v">Nothing active yet</span></div>
+          <div class="ff-step workers"><span class="ff-k">Approve</span><span class="ff-v">Only you can</span></div>
+          <div class="ff-step gate"><span class="ff-k">Pinned</span><span class="ff-v">The version you saw</span></div>
         </div>
       </div>
     </div>
@@ -1445,33 +1445,33 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
   <div class="wrap">
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">05</span> What you see</p>
-      <h2 class="h2" id="how-title">Between the hook and the agent.</h2>
-      <p class="sec-lede">Claude Code calls a hook on every tool call. belay answers in about 2 ms, or it stays quiet. Either way, it writes down what it did.</p>
+      <h2 class="h2" id="how-title">Quietly, at every step.</h2>
+      <p class="sec-lede">Each time the agent is about to do something, Claude Code checks in with belay. belay answers in a couple of milliseconds, usually with "carry on". Either way, it keeps a note of what happened.</p>
     </div>
 
     <div class="pipe reveal" role="group" aria-label="Data flow: hook, shim, daemon, core, ledger">
-      <div class="node"><p class="nk">1 · Hook</p><h3>Claude Code</h3><p>Calls belay before and after each tool call.</p></div>
+      <div class="node"><p class="nk">1 · The agent</p><h3>Claude Code</h3><p>Checks in with belay before and after each step.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:0s"></i></div>
-      <div class="node"><p class="nk">2 · Shim</p><h3>belay hook</h3><p>A thin shim. It only forwards. On any error it prints nothing.</p></div>
+      <div class="node"><p class="nk">2 · The messenger</p><h3>belay hook</h3><p>Passes the question along. If anything goes wrong, it simply stays out of the way.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:.6s"></i></div>
-      <div class="node"><p class="nk">3 · Daemon</p><h3>daemon</h3><p>One per session. It keeps the session's state.</p></div>
+      <div class="node"><p class="nk">3 · The watcher</p><h3>one per session</h3><p>Keeps track of how the session is going.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.2s"></i></div>
-      <div class="node core"><p class="nk">4 · Core</p><h3>core</h3><p>Decides: guard, loops, summaries, memory.</p></div>
+      <div class="node core"><p class="nk">4 · The judgment</p><h3>belay</h3><p>Decides: is this test change fair? Is it going in circles? What should it remember?</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.8s"></i></div>
-      <div class="node"><p class="nk">5 · Ledger</p><h3>ledger</h3><p>Records every action with a reason.</p></div>
+      <div class="node"><p class="nk">5 · The record</p><h3>a log</h3><p>Writes down everything it did, and why.</p></div>
     </div>
     <div class="ret reveal">
       <span class="arrow" aria-hidden="true">←</span>
-      <span>The decision goes back to the agent: a deny, a message, or a summary. A note goes to you, and never to the model.</span>
+      <span>The agent gets an answer: go ahead, stop, or "here's something you should know". You get a short note too, which the agent never sees.</span>
       <span class="lane" aria-hidden="true"><i></i></span>
     </div>
 
     <div class="g12 modes">
       <div class="modes-text reveal">
         <h3>You see what it did.</h3>
-        <p>When belay acts, Claude Code shows you a one-line note under the hook. <code class="inline-code">report = quiet</code> (the default) shows warnings. <code class="inline-code">normal</code> and <code class="inline-code">verbose</code> show more.</p>
-        <p>Each feature has its own switch. <code class="inline-code">belay pause</code> stops one, or all of them, from your terminal. The agent may not pause belay.</p>
-        <p class="was">0.1 had a look mode and an optimize mode; 0.2 has no modes.</p>
+        <p>When belay does something that matters, you see a one-line note in Claude Code. By default that's only the important stuff; set <code class="inline-code">report = normal</code> or <code class="inline-code">verbose</code> if you'd like to see more.</p>
+        <p>Everything can be switched off. <code class="inline-code">belay pause</code> turns belay off for this session, or just one part of it. Only you can do that; the agent can't switch belay off on its own.</p>
+        <p class="was">There are no modes to choose from: belay just works.</p>
       </div>
       <div class="modes-panel reveal" style="--rd:.08s">
         <div class="toasts">
@@ -1510,13 +1510,13 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">06</span> Many sessions</p>
       <h2 class="h2" id="sessions-title">Many sessions. <span class="mute">One rope.</span></h2>
-      <p class="sec-lede">Sessions on one machine can see each other. Or run a whole fleet, each session in its own worktree.</p>
+      <p class="sec-lede">Running a few agents at once? belay lets them know about each other, so they don't trip over the same files.</p>
     </div>
 
     <div class="g12 split">
       <div class="l5 reveal">
         <h3>Sessions that see each other.</h3>
-        <p class="t"><code class="inline-code">belay sessions</code> is a board of live sessions. A session hears when another one:</p>
+        <p class="t"><code class="inline-code">belay sessions</code> shows every agent running on your machine and what each is up to. An agent hears about it when another one:</p>
         <div class="hears"><span>edits the same file</span><span>runs <code>git reset</code> under it</span><span>is about to cause a merge conflict</span></div>
         <ul class="facts">
           <li><code>belay msg</code><span>Message another session.</span></li>
@@ -1547,9 +1547,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="g12 split rev fleet-block">
       <div class="l5 reveal">
         <h3>Or run a fleet.</h3>
-        <p class="t"><code class="inline-code">belay fleet up</code> runs a team of headless Claude Code sessions. Fleets keep working as they are; they get no new features for now.</p>
+        <p class="t">For bigger jobs, <code class="inline-code">belay fleet up</code> runs a small team of agents, each in its own copy of the project. It works today, though it's not where new features are going for now.</p>
         <ul class="facts">
-          <li><b>Worktrees</b><span>Each session gets its own git worktree.</span></li>
+          <li><b>Worktrees</b><span>Each agent gets its own copy of the project.</span></li>
           <li><b>Task board</b><span>Tasks come from a board.</span></li>
           <li><b>Checks</b><span>A check command must pass before a task counts as done.</span></li>
           <li><b>Presets</b><span>Nine, such as <code>lead</code>, <code>pool</code>, and <code>review</code>.</span></li>
@@ -1580,45 +1580,45 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="sec-head reveal">
       <p class="eyebrow"><span class="n">07</span> Principles</p>
       <h2 class="h2" id="principles-title">Built to stay out of the way.</h2>
-      <p class="sec-lede">A supervisor should never be the thing that breaks your session.</p>
+      <p class="sec-lede">A safety net should never be the thing that trips you up.</p>
     </div>
     <div class="g12 stats reveal">
       <div class="stat">
         <p class="lbl">Fast</p>
         <p class="big" aria-hidden="true">~2<small>ms</small></p>
-        <h3><span class="sr-only">About 2 ms </span>per hook, at p95.</h3>
-        <p>The budget is 20 ms.</p>
+        <h3><span class="sr-only">About 2 ms </span>per step. You won't notice it.</h3>
+        <p>We hold ourselves to 20 ms, and stay well under it.</p>
         <div class="meter" role="img" aria-label="About 2 ms of a 20 ms budget"><div class="mt"><i></i></div><div class="ml"><span>2 ms</span><span>budget 20 ms</span></div></div>
       </div>
       <div class="stat">
-        <p class="lbl">Fails open</p>
+        <p class="lbl">Never in the way</p>
         <p class="big" aria-hidden="true">250<small>ms</small></p>
         <h3><span class="sr-only">250 ms, </span>and then it lets go.</h3>
-        <p>On any error, or a timeout over 250 ms, the hook prints nothing. The agent goes on.</p>
+        <p>If belay hits a problem, or takes longer than a quarter of a second, it steps aside and Claude Code carries on as if belay weren't there.</p>
       </div>
       <div class="stat">
         <p class="lbl">Local</p>
         <p class="big" aria-hidden="true">0</p>
         <h3><span class="sr-only">0 </span>model calls.</h3>
-        <p>belay goes on the network only when you ask: to fetch a skill, or the plugin at install. Secrets are redacted before anything is written.</p>
+        <p>No AI calls, no telemetry. belay only goes online when you ask it to, like fetching a skill. Everything it keeps stays on your machine, with passwords and keys blanked out.</p>
       </div>
       <div class="stat">
         <p class="lbl">Prompt cache</p>
         <p class="big" aria-hidden="true">Never</p>
-        <h3><span class="sr-only">Never </span>edits the past.</h3>
-        <p>belay acts only on what the agent has not seen yet. The prompt cache stays intact.</p>
+        <h3><span class="sr-only">Never </span>rewrites history.</h3>
+        <p>belay only adds to what comes next; it never changes what the agent has already seen. That keeps things fast and cheap.</p>
       </div>
       <div class="stat">
         <p class="lbl">Yours to approve</p>
         <p class="big" aria-hidden="true">You</p>
         <h3><span class="sr-only">You </span>approve what lasts.</h3>
-        <p><code class="inline-code">allow</code>, <code class="inline-code">pause</code>, <code class="inline-code">undo</code>, <code class="inline-code">memory approve</code>, <code class="inline-code">skill approve</code>, and <code class="inline-code">sandbox rm</code> refuse to run outside your terminal.</p>
+        <p>Anything that lasts, or that lifts a safeguard, is yours to say yes to: letting an edit through, pausing belay, undoing work, keeping a memory, approving a skill. The agent can't do those for you.</p>
       </div>
       <div class="stat">
         <p class="lbl">One binary</p>
         <p class="big" aria-hidden="true">1</p>
         <h3><span class="sr-only">1 </span>Rust binary.</h3>
-        <p>The hook, the daemon and every command ship as one binary. Build it with cargo, or take one from Releases.</p>
+        <p>One small program does everything. Install it with one command, and remove it just as easily.</p>
       </div>
     </div>
   </div>
@@ -1631,7 +1631,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <div class="l5 reveal">
         <p class="eyebrow"><span class="n">08</span> Quick start</p>
         <h2 class="h2" id="start-title">Try it in a minute.</h2>
-        <p class="sec-lede">One command installs belay and adds it to Claude Code. Then keep working as you do: belay speaks up only when it has something to say, and each message names the command you might want next.</p>
+        <p class="sec-lede">One command sets everything up. After that, just use Claude Code the way you already do. belay stays quiet until it has something worth saying, and when it does, it tells you exactly what you can do about it. There's nothing to memorize.</p>
         <div data-tabs>
           <div class="qs-tabs" role="tablist" aria-label="Install with">
             <button role="tab" type="button" id="qt-one" aria-controls="qp-one" aria-selected="true" tabindex="0">One command</button>
@@ -1693,17 +1693,17 @@ Loops (13 s in loops): 1
       <div class="status-top">
         <div>
           <h3>belay 0.2 is a prototype.</h3>
-          <p>Read this before you rely on it.</p>
+          <p>It's young. Here's exactly where it stands, so you know what to expect.</p>
         </div>
         <span class="badge-proto"><i aria-hidden="true"></i> Prototype</span>
       </div>
       <div class="status-grid">
-        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other agents are not supported yet.</span><p class="st">Supported</p></div></div>
-        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>The Claude Code versions its conformance is checked on:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code><code>2.1.316</code></span><p class="st">Checked</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other coding agents are on the way; belay is built so they can plug in.</span><p class="st">Supported</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>We test belay against real Claude Code sessions on each of these versions:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code><code>2.1.316</code></span><p class="st">Checked</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Linux and WSL</b><span>Where it is tested.</span><p class="st">Tested</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Builds exist. They are untested.</span><p class="st">Untested</p></div></div>
         <div class="srow2 no"><span class="si" aria-hidden="true">✕</span><div><b>Windows</b><span>Not supported.</span><p class="st">Not supported</p></div></div>
-        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only, with bubblewrap. The network is the host's.</span><p class="st">Linux only</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only for now. Uses your normal internet connection.</span><p class="st">Linux only</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They keep working. No new features for now.</span><p class="st">Frozen</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Audit</b><span><code>belay audit</code> is under test. Its output may change.</span><p class="st">Experimental</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>MIT OR Apache-2.0</b><span>Open source, your choice of license.</span><p class="st">License</p></div></div>
@@ -1745,7 +1745,7 @@ Loops (13 s in loops): 1
     <div class="g12 foot-grid">
       <div class="foot-brand">
         <a class="brand" href="#top"><svg aria-hidden="true"><use href="#mark"/></svg> belay</a>
-        <p>One install that upgrades Claude Code. Formerly called tend. In climbing, the belayer holds the rope and catches the fall.</p>
+        <p>A safety net and a memory for your coding agent. The name comes from climbing: the person on belay holds the rope, so a slip never becomes a fall.</p>
       </div>
       <div class="foot-col">
         <h2>Project</h2>

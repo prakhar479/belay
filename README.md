@@ -1,6 +1,6 @@
 <h1 align="center">belay</h1>
 
-<p align="center"><b>A safety net and a memory for your coding agent.</b><br>Install it once. Keep using Claude Code the way you do now.</p>
+<p align="center"><b>A safety net and a memory for your coding agent.</b><br>Install it once, then keep using Claude Code exactly the way you do now.</p>
 
 <p align="center">
   <a href="https://github.com/prakhar479/belay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/prakhar479/belay/actions/workflows/ci.yml/badge.svg"></a>
@@ -15,13 +15,13 @@
 
 ---
 
-belay runs next to [Claude Code](https://claude.com/claude-code). It sees what the agent does, and it steps in at the few moments that matter:
-- when the agent tries to make a failing test pass by weakening it;
-- when it goes in circles;
-- when it stops with tests it never ran;
-- when a new session starts with no idea what the last one did.
+If you work with an AI coding agent like [Claude Code](https://claude.com/claude-code), you've probably seen at least one of these:
+- **A new session starts from zero.** Yesterday the agent tracked down the bug and ran out of room. Today it reads all the same code again.
+- **A test fails, so the agent "fixes" the test.** It changes what the test expects instead of fixing the code.
+- **The same fix, over and over.** Edit, run, fail, five times, with the same error each time.
+- **It says it's done, but it never re-ran the tests** after its last change.
 
-It tells you what it did in one line, and it stays out of the way the rest of the time.
+belay sits quietly next to your agent and steps in at exactly those moments. The rest of the time you won't notice it's there. When it does step in, it tells you what it did and why, in one line.
 
 ## Install
 
@@ -29,19 +29,24 @@ It tells you what it did in one line, and it stays out of the way the rest of th
 curl -fsSL https://prakhar479.github.io/belay/install.sh | sh
 ```
 
-That's it:
-- The script puts `belay` in `~/.local/bin` after checking the download's checksum.
-- If Claude Code is installed, it adds belay's plugin.
-- Run `belay doctor` any time to check your setup.
-- `belay uninstall` takes the plugin out again.
+That's all. The script:
+- downloads belay and checks the download is genuine;
+- installs it for your user only (no `sudo`);
+- connects it to Claude Code if you have Claude Code installed.
 
-[Read the script first](site/install.sh) if you like. With Rust installed you can also run `cargo install --git https://github.com/prakhar479/belay belay-cli`, then `belay install`.
+Then run `belay doctor` to check everything's in place. Changed your mind? `belay uninstall` takes it out again.
 
-## Use it: nothing new to learn
+Like to look before you run something? [Here's the script](site/install.sh). If you have Rust, `cargo install --git https://github.com/prakhar479/belay belay-cli` followed by `belay install` works too.
 
-Start Claude Code as you always do. belay shows up only when it has something to say. Each message names the one command you might want next, so there is nothing to memorize.
+## What it's like to use
 
-**A new day, a new session.** The agent starts from where the last session stopped: what it was doing, which files it changed, which test was still failing.
+There's nothing new to learn. Open Claude Code the way you always do, and belay speaks up only when there's something worth saying. Each message tells you the one command you might want next, so there's nothing to memorize.
+
+Here's what that looks like in practice.
+
+### The next morning, your agent remembers
+
+Start a new session, and the agent already knows where things stand: what it was working on, which files it touched, and which test was still failing.
 
 ```text
 belay: memory for this project (`belay memory list` shows it all; check that each still fits):
@@ -49,7 +54,11 @@ belay: memory for this project (`belay memory list` shows it all; check that eac
   tests/test_dates.py. Last test: `pytest` failed (1 failing). Open failure: test_leap_year …
 ```
 
-**The agent tries to cheat a test.** belay stops the edit, and the agent fixes the code instead. If you really want the edit, type `! belay allow` in Claude Code.
+belay writes this from what actually happened, not from what the agent says happened. It also works alongside your `CLAUDE.md` and Claude Code's own memory, never on top of them.
+
+### Your tests stay honest
+
+When the agent tries to make a failing test pass by changing the test itself, belay holds the edit, and the agent goes back and fixes the real problem:
 
 ```text
 belay: this edit may weaken tests in tests/test_discount.py: expected value changed to the
@@ -57,9 +66,9 @@ failing run's actual value (19.99 → 19.98). If the user wants it anyway, they 
 `! belay allow` and you can retry the same edit.
 ```
 
-**It says it's done, but the tests never ran.** belay asks it, once, to run them before it stops.
+If you look at it and the change is actually right, type `! belay allow` in Claude Code and it goes through. If the agent wraps up without running the tests after its last change, belay asks it to run them first.
 
-**Before you commit, ask what really happened.** The answer comes from belay's own record, not from the agent's summary.
+### Before you commit, ask what really happened
 
 ```console
 $ belay brief
@@ -72,64 +81,81 @@ Look at
   2. src/app.py changed after the last passing run [44]
 ```
 
-Add `--markdown` to paste it into a pull request.
+It's a quick, honest summary for you to review: what changed, what was actually tested, and what deserves a second look. Add `--markdown` to paste it straight into a pull request.
 
-**You stepped away.** You get a desktop notification when the agent is blocked, looping, or done. To get it on your phone, set `notify_command` to any command you like ([guide](docs/guide.md#getting-told-when-you-are-needed)).
+### Step away; belay will let you know
 
-**You're leaving, and the work isn't done.** Tell the agent you're heading out, and it offers to keep going in the background. Or start that yourself:
+You'll get a desktop notification when the agent is stuck, going in circles, or done. Want it on your phone instead? Point `notify_command` at whatever you use ([how](docs/guide.md#getting-told-when-you-are-needed)).
+
+### Leaving for the day? Let it keep going
+
+Tell the agent you're heading out, and it will offer to carry on without you. Or start it yourself:
 
 ```sh
 belay bg start "finish the parser and make the tests pass"
 ```
 
-It keeps working after you close the terminal, in a sandbox when it can. It keeps the machine awake and notifies you when it's done or needs you. Later, `belay bg attach` brings the conversation back to your terminal. A closed laptop lid still sleeps if your system is set to; `belay doctor` says whether yours is, and how to change it.
+It keeps working after you close the terminal, walled off from the rest of your machine when possible. It keeps your computer awake, and lets you know when it's finished or needs you. When you're back, `belay bg attach` brings the conversation back to your screen.
 
-**You want to try something risky.** `belay sandbox claude` runs the whole session in a contained copy of your repo. The work comes back as a git branch for you to read and merge.
+One honest caveat: closing a laptop lid still puts the machine to sleep if it's set up that way. `belay doctor` tells you how yours behaves, and how to change it if you want to.
 
-**Where did my tokens go?** `belay usage` shows them by day, project, or session, including how much went into loops and failing runs.
+### Try risky things somewhere safe
 
-**belay got it wrong.** Every warning ends with `Wrong? belay flag a-N`. Run it, and belay records the mistake for review.
+```sh
+belay sandbox claude
+```
 
-## Your controls
+This runs the whole session in a walled-off copy of your project. It can't see your SSH keys, cloud logins, or other projects. When it's done, the work comes back to you as a git branch: read it, and merge it if you like it.
 
-| You want to | Run |
+### And a few more things
+
+- **Where did my tokens go?** `belay usage` breaks it down by day, project, or session, including how much went into loops and failing runs.
+- **Got it wrong?** Every warning ends with `Wrong? belay flag a-N`. Run it, and the mistake is recorded so belay gets better.
+- **Rewind.** `belay undo` puts your files back the way they were at the end of an earlier step.
+
+## You're always in charge
+
+| If you want to | Run |
 |---|---|
-| Check that everything works | `belay doctor` |
-| See what belay did in a session | `belay report` · `belay brief` |
-| Let a blocked edit through | `! belay allow` (in Claude Code) |
-| Roll files back to the end of a turn | `belay undo` |
-| Turn belay off for this session | `belay pause` (and `belay resume`) |
-| Change a setting | `belay config` |
+| Check that everything is working | `belay doctor` |
+| See what belay did, and why | `belay report` or `belay brief` |
+| Let a held edit through | `! belay allow` (inside Claude Code) |
+| Roll your files back | `belay undo` |
+| Switch belay off for this session | `belay pause` (`belay resume` turns it back on) |
+| See or change settings | `belay config` |
 | Remove belay from Claude Code | `belay uninstall` |
 
-## Private by design
+The agent can't do any of the things that lift a safeguard. Letting an edit through, pausing belay or approving something are yours alone.
 
-- **Everything stays on your machine,** in `~/.local/share/belay`. Secrets are redacted before anything is written.
-- **No telemetry. No model calls.** belay goes on the network only when you ask it to fetch something (a skill).
-- **If belay breaks or is slow, Claude Code carries on without it.** A hook gives up after 250 ms; it usually takes 2–3 ms.
+## Your data stays yours
 
-## Status
+- **Everything stays on your computer.** Passwords and keys are blanked out before anything is saved.
+- **No telemetry, no AI calls.** belay only goes online when you ask it to.
+- **It never gets in the way.** If belay hits a problem, Claude Code just carries on without it. Most of the time it adds about 2 milliseconds to each step.
 
-| | |
-|---|---|
-| Version | belay 0.2 |
-| Agent | Claude Code (checked against 2.1.303 to 2.1.316; `belay doctor` checks yours). The core is built to support more agents. |
-| Platforms | Tested on Linux and WSL. macOS builds exist but are not yet tested. No Windows outside WSL. Sandboxes need Linux. |
+## Where it stands
+
+belay 0.2 is young, and here's exactly where it is:
+
+- **Works with Claude Code.** It's tested against real sessions on Claude Code 2.1.303 to 2.1.316, and `belay doctor` checks your version. Support for other agents is planned, and the design allows for it.
+- **Platforms:** tested on Linux and on Windows through WSL. Mac builds exist but haven't been tried on a real Mac yet. Sandboxes need Linux.
 
 ## Learn more
 
-- **[The guide](docs/guide.md):** every feature, every setting, troubleshooting.
-- **[Sandbox threat model](docs/sandbox.md):** what a sandbox protects, and what it does not.
-- **Design notes:** [reference](docs/belay-reference.md).
+- **[The guide](docs/guide.md):** every feature and setting, explained, plus troubleshooting.
+- **[How sandboxes protect you](docs/sandbox.md):** what they keep safe, and what they don't.
+- **[Design notes](docs/belay-reference.md):** for the curious.
 
 ## Contributing
 
+Contributions are welcome. Run the full check before sending a change:
+
 ```sh
-make check     # format, lint, and every test
+make check
 ```
 
-`belay-core` is pure logic with no I/O, and `belay-cli` does the I/O. [`CLAUDE.md`](CLAUDE.md) lists the rules the code keeps.
+[`CLAUDE.md`](CLAUDE.md) explains how the code is organized and the rules it follows.
 
 ## License
 
-MIT or Apache-2.0, at your option: [LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE).
+Free and open source, under your choice of [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
