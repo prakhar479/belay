@@ -52,10 +52,10 @@ cargo install --path crates/belay-cli    # installs `belay` into ~/.cargo/bin
 Then check the install:
 
 ```sh
-belay doctor     # which belay runs, your Claude Code version, the data dir, the config
+belay doctor     # will belay work here? one line per check: ok, warn, or fail, with the fix
 ```
 
-`belay doctor` also says whether your Claude Code version is one belay was checked against.
+`belay doctor` also says whether your Claude Code version is one belay was checked against. See [Troubleshooting](#troubleshooting) for what it checks.
 
 ### Into Claude Code
 
@@ -702,6 +702,17 @@ Everything stays on your machine. belay makes no network calls and no model call
 **The agent was blocked and you agree with the edit.** Run `! belay allow` in Claude Code, and the agent can retry the same edit.
 
 **A summary hid something.** `belay show o-N` prints the original. `belay flag o-N "…"` records the miss, so it shows up in `belay review`.
+
+**Will belay work here?** Run `belay doctor`. Each line is `ok`, `warn`, or `fail`, with one sentence and the fix. It exits 1 only on a `fail`. `belay doctor --json` prints the same checks as JSON: `{"ok": bool, "checks": [{"status", "area", "text", "fix"}]}`. It changes nothing. It checks:
+
+- `belay`: the `belay` on PATH is this binary.
+- `claude`: Claude Code runs, and its version has a conformance record (`docs/conformance/<version>.md`, baked into belay at build time). An unchecked version warns: run `scripts/conformance.py --record` from belay's source tree. No Claude Code is a `fail`.
+- `home`: the data dir is a real directory, private to you.
+- `config`: 0.1 names (`learn`, `fleet`, `plugin_mode`, a `look` value) and bad lines. Rename them as [Config](#config) says.
+- `plugin`, `alias`, `statusline`: the plugin is installed and its version matches the binary's; `claude` starts under belay (the alias, or the plugin); the status line is belay's.
+- `sandbox`: bubblewrap is installed and can make a sandbox (user namespaces work); on WSL, the layout hides `/init`, `/mnt`, and `WSL_INTEROP`; limits use a systemd user scope, or belay's watchdog alone. It runs no escape probe: `belay sandbox doctor` does. The sandbox is optional, so these only warn.
+- `skills`: skills whose files differ from the lock, and skills waiting for `belay skill approve`.
+- `data`: the size of belay's home, the sessions, and whether the oldest is past `keep_days`.
 
 **Something else.** Run `belay doctor`, then open an issue with `belay export --session -1`.
 

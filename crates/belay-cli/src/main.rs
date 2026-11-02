@@ -175,8 +175,13 @@ enum Cmd {
         #[arg(long, short)]
         yes: bool,
     },
-    /// Check the install: which belay runs, the Claude Code version, the data dir, config.
-    Doctor,
+    /// Will belay work here? Checks the install, Claude Code, the plugin, the sandbox,
+    /// skills, config, and data. Each line is ok, warn, or fail; exit 1 only on a fail.
+    Doctor {
+        /// The same checks as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// One session as a sanitized JSON bundle (paths, home, user name, and secrets
     /// replaced), to attach to a bug report.
     Export {
@@ -1108,10 +1113,10 @@ fn run(cli: Cli) -> Result<i32> {
             force: false,
             yes,
         }),
-        Cmd::Doctor => {
-            let (report, healthy) = doctor::run();
+        Cmd::Doctor { json } => {
+            let (report, code) = doctor::run(json);
             print!("{report}");
-            Ok(if healthy { 0 } else { 1 })
+            Ok(code)
         }
         Cmd::Review => {
             print!("{}", review(&paths::list_sessions()));

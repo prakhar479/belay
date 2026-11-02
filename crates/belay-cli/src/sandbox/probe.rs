@@ -110,7 +110,7 @@ pub fn doctor() -> Result<i32> {
     Ok(i32::from(escaped))
 }
 
-fn wsl() -> bool {
+pub fn wsl() -> bool {
     Path::new("/proc/sys/fs/binfmt_misc/WSLInterop").exists()
         || fs::read_to_string("/proc/version").is_ok_and(|v| v.to_lowercase().contains("microsoft"))
 }

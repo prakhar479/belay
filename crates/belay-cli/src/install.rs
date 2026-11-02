@@ -325,14 +325,6 @@ pub fn uninstall(o: &Opts) -> Result<i32> {
     run_steps(steps, notes, o.yes)
 }
 
-/// For `belay doctor`: whether Claude Code lists belay's plugin as installed.
-pub fn plugin_installed(dir: &Path) -> bool {
-    fs::read_to_string(dir.join("plugins/installed_plugins.json"))
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .is_some_and(|v| v.get("plugins").and_then(|p| p.get(PLUGIN_ID)).is_some())
-}
-
 /// For `belay doctor`: the status line in a settings file, if any, and whether it is
 /// belay's.
 pub fn statusline_of(text: &str) -> Option<(String, bool)> {
@@ -444,20 +436,6 @@ mod tests {
         assert!(write_with_backup(&path, &new).unwrap().is_none());
         assert!(path.exists());
         fs::remove_dir_all(&home).unwrap();
-    }
-
-    #[test]
-    fn doctor_sees_the_installed_plugin() {
-        let dir = std::env::temp_dir().join(format!("belay-install-doc-{}", std::process::id()));
-        fs::create_dir_all(dir.join("plugins")).unwrap();
-        assert!(!plugin_installed(&dir));
-        fs::write(
-            dir.join("plugins/installed_plugins.json"),
-            r#"{"version": 2, "plugins": {"belay@belay": [{"scope": "user"}]}}"#,
-        )
-        .unwrap();
-        assert!(plugin_installed(&dir));
-        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
