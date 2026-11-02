@@ -49,7 +49,7 @@ pub fn remove_stale_sockets(root: &Path) -> Vec<PathBuf> {
 }
 
 /// Last activity in seconds: the newest of the id's start time and the ledger's mtime.
-fn last_active_secs(dir: &Path) -> u64 {
+pub fn last_active_secs(dir: &Path) -> u64 {
     let started = dir
         .file_name()
         .and_then(|n| n.to_str())
