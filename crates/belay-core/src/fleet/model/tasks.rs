@@ -91,6 +91,10 @@ pub struct Task {
     /// A part a best-of task fanned out.
     #[serde(default)]
     pub candidate: bool,
+    /// The worktree (a slot id) where an attempt's session stopped before the task was
+    /// done: its partial work is there, and the next attempt starts in it (BG0).
+    #[serde(default)]
+    pub left_in: Option<SlotId>,
 }
 
 impl Model {
@@ -231,6 +235,7 @@ impl Model {
                 check: t.check,
                 last_check: None,
                 interference_retried: false,
+                left_in: None,
                 handoff_of: None,
                 round: 0,
                 best_of: false,
@@ -366,6 +371,7 @@ impl Model {
                 check: from.check.clone(),
                 last_check: None,
                 interference_retried: false,
+                left_in: None,
                 handoff_of: None,
                 round: from.round,
                 best_of: false,
@@ -1271,6 +1277,31 @@ impl Model {
             .scope(t.board.as_deref())
             .and_then(|sp| sp.roles.get(&role))
             .map_or(3, |r| r.budget.attempts.max(1));
+        let left_in = self.own_worktree(slot);
+        // The plan's usage limit stopped it, not the task: no attempt is used, and the
+        // task waits for the pause to end, not for a backoff (BG0).
+        if self.slots.get(slot).is_some_and(|s| s.limited) {
+            if let Some(x) = self.tasks.get_mut(&tid) {
+                x.state = TaskState::Queued;
+                x.slot = None;
+                x.not_before = None;
+                x.left_in = left_in;
+                if x.target.as_deref() == Some(slot) {
+                    x.target = Some(role.clone());
+                }
+            }
+            return self.cmd(
+                cx,
+                Command::TaskRetry {
+                    task: tid.clone(),
+                    at_ms: cx.now,
+                },
+                &format!(
+                    "{tid}: its session {slot} hit the usage limit, so the attempt does not count; attempt {} of {budget} starts when the fleet resumes.",
+                    t.attempts + 1
+                ),
+            );
+        }
         let attempts = t.attempts + 1;
         if attempts >= budget {
             if let Some(x) = self.tasks.get_mut(&tid) {
@@ -1296,6 +1327,7 @@ impl Model {
             x.state = TaskState::Queued;
             x.slot = None;
             x.not_before = Some(at_ms);
+            x.left_in = left_in;
             // A task for a slot that is gone goes to the slot's role.
             if x.target.as_deref() == Some(slot) {
                 x.target = Some(role.clone());
@@ -1456,8 +1488,46 @@ impl Model {
                 continue;
             }
             self.bind(&tid, &sid, cx.now);
-            self.try_spawn(cx, &sid, &format!("A fresh {role} session for {tid}."));
+            let why = match self.take_left_worktree(&tid, &sid) {
+                Some(w) => format!(
+                    "A fresh {role} session for {tid}, in {w}'s worktree: the last attempt stopped there."
+                ),
+                None => format!("A fresh {role} session for {tid}."),
+            };
+            self.try_spawn(cx, &sid, &why);
         }
+    }
+
+    /// The worktree a slot's session works in, when it is a worker's own one: what a
+    /// next attempt of its task can start in (BG0). None for a shared or team one.
+    pub(super) fn own_worktree(&self, slot: &str) -> Option<SlotId> {
+        let ws = &self.role_of(slot)?.workspace;
+        (*ws == Workspace::WorktreePerWorker)
+            .then(|| self.worktree_name(slot))
+            .flatten()
+    }
+
+    /// A fresh oneshot `sid` for `tid` works where the task's last attempt stopped, when
+    /// its role uses worker worktrees and no live session works there.
+    fn take_left_worktree(&mut self, tid: &str, sid: &str) -> Option<SlotId> {
+        let w = self.tasks.get(tid)?.left_in.clone()?;
+        let per_worker = self
+            .role_of(sid)
+            .is_some_and(|r| r.workspace == Workspace::WorktreePerWorker);
+        let busy = self
+            .slots
+            .values()
+            .any(|s| s.id != sid && s.live() && self.worktree_name(&s.id).as_deref() == Some(&w));
+        if !per_worker || busy {
+            return None;
+        }
+        if let Some(t) = self.tasks.get_mut(tid) {
+            t.left_in = None;
+        }
+        if let Some(s) = self.slots.get_mut(sid) {
+            s.worktree_of = Some(w.clone());
+        }
+        Some(w)
     }
 
     fn deliver_task(&mut self, cx: &mut Cx, tid: &str, slot: &str) {

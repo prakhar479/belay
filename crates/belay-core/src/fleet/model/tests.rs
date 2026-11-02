@@ -1678,6 +1678,7 @@ fn the_plans_usage_limit_pauses_the_fleet() {
     let c = r.ev(FleetEvent::UsageLimit {
         slot: "peer-1".into(),
         text: "5-hour limit reached ∙ resets 3pm".into(),
+        resets_at_ms: None,
     });
     assert!(notified(&c, "hit the plan's usage limit"), "{c:?}");
     let c = r.ev(add(Actor::User, "x", &[], None));
@@ -2665,4 +2666,158 @@ fn work_records_keep_the_numbers_a_replay_makes() {
     let mut sorted = seqs.clone();
     sorted.dedup();
     assert_eq!(seqs, sorted, "unique and in order");
+}
+
+// --- Supervisor resilience (BG0) ----------------------------------------------------
+
+fn limit(slot_id: &str, resets_at_ms: Option<u64>) -> FleetEvent {
+    FleetEvent::UsageLimit {
+        slot: slot_id.into(),
+        text: "You've hit your 5-hour limit · resets 2:30am (UTC)".into(),
+        resets_at_ms,
+    }
+}
+
+fn spawn_of<'a>(cmds: &'a [Command], id: &str) -> Option<&'a Command> {
+    cmds.iter()
+        .find(|c| matches!(c, Command::Spawn { slot, .. } if slot == id))
+}
+
+/// A pool with one task given to worker-1, which is running it.
+fn pool_with_a_task() -> Sim {
+    let mut r = Sim::new(preset(Preset::Pool));
+    let up = r.ev(FleetEvent::Up);
+    r.start_all(&up);
+    let c = r.ev(add(Actor::User, "one", &[], Some("worker")));
+    r.start_all(&c);
+    assert_eq!(task_state(&r, "t-1"), TaskState::Working);
+    r
+}
+
+#[test]
+fn a_usage_limit_pauses_without_using_an_attempt_and_resumes_after_the_reset() {
+    let mut r = pool_with_a_task();
+    let reset = 10_000_000;
+    let c = r.ev(limit("worker-1", Some(reset)));
+    assert!(r.m.paused() && r.m.limit_paused());
+    assert!(notified(&c, "resumes on its own at"), "{c:?}");
+    let at = reset + RESUME_MARGIN_MS;
+    assert!(
+        c.contains(&Command::ResumeAt { at_ms: at }),
+        "the resume is recorded: {c:?}"
+    );
+    assert_eq!(r.m.resume_at(), Some(at));
+    // The session ends after its limited turn: the attempt is not the task's.
+    let c = r.ev(FleetEvent::Exited {
+        slot: "worker-1".into(),
+        code: Some(0),
+    });
+    let t = r.m.tasks().find(|t| t.id == "t-1").unwrap();
+    assert_eq!(t.attempts, 0, "{c:?}");
+    assert_eq!(t.state, TaskState::Queued);
+    assert!(spawned(&c).is_empty(), "nothing starts while paused: {c:?}");
+    // Never before the stated reset and its margin.
+    let c = r.at(at - 1, FleetEvent::Tick);
+    assert!(r.m.paused() && spawned(&c).is_empty(), "{c:?}");
+    let c = r.at(at, FleetEvent::Tick);
+    assert!(!r.m.paused());
+    assert!(notified(&c, "the usage limit has reset"), "{c:?}");
+    // The next attempt starts where the last one stopped.
+    assert!(
+        matches!(spawn_of(&c, "worker-2"), Some(Command::Spawn { worktree_of: Some(w), .. }) if w == "worker-1"),
+        "{c:?}"
+    );
+    assert_eq!(r.m.worktree_name("worker-2").as_deref(), Some("worker-1"));
+    let render = crate::fleet::model::clock_utc(at);
+    assert_eq!(render, "02:48 UTC");
+}
+
+#[test]
+fn a_later_reset_wins_an_earlier_one_does_not_and_no_time_means_the_user_resumes() {
+    let mut r = pool_with_a_task();
+    r.ev(limit("worker-1", None));
+    assert!(r.m.limit_paused() && r.m.resume_at().is_none());
+    let c = r.ev(limit("worker-1", Some(5_000_000)));
+    assert!(c.contains(&Command::ResumeAt {
+        at_ms: 5_000_000 + RESUME_MARGIN_MS
+    }));
+    let c = r.ev(limit("worker-1", Some(4_000_000)));
+    assert!(c.is_empty(), "an earlier reset changes nothing: {c:?}");
+    let c = r.ev(limit("worker-1", Some(6_000_000)));
+    assert!(c.contains(&Command::ResumeAt {
+        at_ms: 6_000_000 + RESUME_MARGIN_MS
+    }));
+    // The user's pause is the user's: no resume on its own after it.
+    let c = r.ev(FleetEvent::Pause);
+    assert!(notified(&c, "no longer resumes on its own"), "{c:?}");
+    assert!(r.m.resume_at().is_none());
+    r.at(7_000_000, FleetEvent::Tick);
+    assert!(r.m.paused());
+    // Nor does a limit hit while the user has it paused schedule one.
+    let c = r.ev(limit("worker-1", Some(8_000_000)));
+    assert!(c.is_empty() && r.m.resume_at().is_none(), "{c:?}");
+    r.ev(FleetEvent::Resume);
+    assert!(!r.m.paused());
+}
+
+#[test]
+fn a_crashed_attempt_counts_and_the_next_one_starts_in_its_worktree() {
+    let mut r = pool_with_a_task();
+    let c = r.ev(FleetEvent::Exited {
+        slot: "worker-1".into(),
+        code: Some(1),
+    });
+    let t = r.m.tasks().find(|t| t.id == "t-1").unwrap();
+    assert_eq!(t.attempts, 1);
+    assert_eq!(t.left_in.as_deref(), Some("worker-1"));
+    assert!(spawned(&c).is_empty(), "after a backoff: {c:?}");
+    let c = r.at(r.now + 120_000, FleetEvent::Tick);
+    assert!(
+        matches!(spawn_of(&c, "worker-2"), Some(Command::Spawn { worktree_of: Some(w), .. }) if w == "worker-1"),
+        "{c:?}"
+    );
+    // That session crashes too: the next one still works in worker-1's worktree.
+    r.start_all(&c);
+    let c = r.ev(FleetEvent::Exited {
+        slot: "worker-2".into(),
+        code: Some(1),
+    });
+    assert!(spawned(&c).is_empty());
+    let c = r.at(r.now + 600_000, FleetEvent::Tick);
+    assert!(
+        matches!(spawn_of(&c, "worker-3"), Some(Command::Spawn { worktree_of: Some(w), .. }) if w == "worker-1"),
+        "{c:?}"
+    );
+}
+
+#[test]
+fn a_task_cut_off_by_a_hub_restart_goes_back_to_its_worktree() {
+    let mut r = pool_with_a_task();
+    let c = r.ev(FleetEvent::HubRestarted);
+    let t = r.m.tasks().find(|t| t.id == "t-1").unwrap();
+    assert_eq!(t.attempts, 0);
+    assert!(
+        matches!(spawn_of(&c, "worker-2"), Some(Command::Spawn { worktree_of: Some(w), .. }) if w == "worker-1"),
+        "{c:?}"
+    );
+}
+
+#[test]
+fn old_spawn_and_limit_records_still_read() {
+    let e: FleetEvent =
+        serde_json::from_str(r#"{"type":"usage_limit","slot":"w-1","text":"x"}"#).unwrap();
+    assert!(matches!(
+        e,
+        FleetEvent::UsageLimit {
+            resets_at_ms: None,
+            ..
+        }
+    ));
+    let s: Slot = serde_json::from_value(serde_json::json!({
+        "id": "w-1", "role": "worker", "leader": null, "n": 1, "state": "running",
+        "session": null, "restarts": 0, "retry_at": null, "busy": false,
+        "last_seen_ms": 0, "stuck": 0, "stopping": false
+    }))
+    .unwrap();
+    assert!(!s.limited && s.worktree_of.is_none());
 }

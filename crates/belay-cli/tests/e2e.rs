@@ -2783,6 +2783,132 @@ fn fleet_check_gate_sends_a_failure_back_to_the_worker() {
     assert_eq!(String::from_utf8_lossy(&head.stdout).lines().count(), 1);
 }
 
+/// BG0: a hub started from a shell is detached from it. A SIGHUP to the shell's
+/// process group (its terminal closing) ends the shell, and the hub answers on.
+#[test]
+fn a_fleet_hub_outlives_the_shell_that_started_it() {
+    use std::os::unix::process::CommandExt;
+    let (dir, repo, home) = fleet_repo("detach", &[("a.txt", "a\n")], "preset = \"pool\"\n");
+    let agent = fake_stream_agent(&dir);
+    let _down = FleetDown(repo.clone(), home.clone(), agent.clone());
+    let said = dir.join("up.txt");
+    let mut shell = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "'{}' fleet up fleet.toml > '{}' 2>&1; sleep 60",
+            bin(),
+            said.display()
+        ))
+        .current_dir(&repo)
+        .env("BELAY_HOME", &home)
+        .env("BELAY_CLAUDE_BIN", &agent)
+        .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("RUSTC_WRAPPER")
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    for _ in 0..200 {
+        if fs::read_to_string(&said).is_ok_and(|t| t.contains(" is up.")) {
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    let fleet_dir = fs::read_dir(home.join("fleets"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let pid: i32 = fs::read_to_string(fleet_dir.join("hub.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let group = shell.id() as i32;
+    // SAFETY: signals and process queries only.
+    unsafe {
+        assert_ne!(
+            libc::getsid(pid),
+            libc::getsid(group),
+            "the hub leads its own session"
+        );
+        libc::kill(-group, libc::SIGHUP);
+    }
+    let status = shell.wait().unwrap();
+    assert!(!status.success(), "the shell died of the SIGHUP");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(unsafe { libc::kill(pid, 0) }, 0, "the hub is alive");
+    let s = belay_in(&repo, &home, &agent, &["fleet", "status"]);
+    assert!(s.contains(" · up · "), "and answering: {s}");
+}
+
+/// BG0: a usage limit pauses the fleet without using the task's attempt, says when it
+/// resumes on its own, and the next attempt starts in the worktree the last one left,
+/// told that its partial work is there.
+#[test]
+fn a_usage_limit_pauses_without_a_failed_attempt_and_the_retry_keeps_the_worktree() {
+    let (dir, repo, home) = fleet_repo("limit", &[("a.txt", "a\n")], "preset = \"pool\"\n");
+    let line = include_str!("../../../fixtures/fleet/result_five_hour_limit.json");
+    fs::write(dir.join("limit.json"), line.trim()).unwrap();
+    let agent = fake_script(
+        &dir,
+        "fake-limit.sh",
+        r#"    *"[belay fleet: task"*)
+      pwd > "$D/cwd-$BELAY_FLEET_SLOT.txt"; printf '%s\n' "$line" > "$D/task-$BELAY_FLEET_SLOT.txt"
+      if [ ! -f "$D/limited" ]; then
+        touch "$D/limited"; echo partial > partial.txt; cat "$D/limit.json"; echo
+      else result; fi ;;"#,
+    );
+    let belay = |args: &[&str]| belay_in(&repo, &home, &agent, args);
+    let _down = FleetDown(repo.clone(), home.clone(), agent.clone());
+    belay(&["fleet", "up", "fleet.toml"]);
+    belay(&["task", "add", "make it", "--role", "worker"]);
+    let mut status = String::new();
+    for _ in 0..200 {
+        status = belay(&["fleet", "status"]);
+        if status.contains("paused until") {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    assert!(
+        status.contains("paused until 02:32 UTC (usage limit)"),
+        "{status}"
+    );
+    // worker-1's session ends after its limited turn; the task waits, no attempt used.
+    let board = board_until(&belay, &|b| b.contains(" queued"));
+    assert!(!board.contains("failed attempt"), "{board}");
+    let fleet_dir = fs::read_dir(home.join("fleets"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let ledger = fs::read_to_string(fleet_dir.join("ledger.jsonl")).unwrap();
+    assert!(ledger.contains(r#""type":"resume_at""#), "{ledger}");
+    assert!(ledger.contains("the attempt does not count"), "{ledger}");
+    let inbox = fs::read_to_string(fleet_dir.join("inbox.jsonl")).unwrap();
+    assert!(inbox.contains("resumes on its own at 02:32 UTC"), "{inbox}");
+    belay(&["fleet", "resume"]);
+    let mut task = String::new();
+    for _ in 0..200 {
+        if let Ok(t) = fs::read_to_string(dir.join("task-worker-2.txt")) {
+            task = t;
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(task.contains("partial, unchecked work"), "{task}");
+    let cwd = fs::read_to_string(dir.join("cwd-worker-2.txt")).unwrap();
+    assert!(cwd.trim().ends_with("/worktrees/worker-1"), "{cwd}");
+    let ledger = fs::read_to_string(fleet_dir.join("ledger.jsonl")).unwrap();
+    assert!(
+        ledger.contains(r#""type":"resumed""#) && ledger.contains(r#""partial":true"#),
+        "{ledger}"
+    );
+}
+
 /// F5b with the audit on (experimental): a change that deletes a test passes its check,
 /// but waits for its creator, who accepts it.
 #[test]

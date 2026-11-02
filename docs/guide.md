@@ -776,6 +776,9 @@ tokens   = "20M"
 - With `experimental_audit = true`, a change that passes but weakens tests waits for its creator. `belay task done` accepts it, and `belay task reject` sends it back.
 - Roles can be limited to paths (`may_write`, `may_not_write`). A task's `--scope` is a claim that other sessions in the same worktree may not edit.
 - Token and wall-time budgets stop a session. Token counts include cache reads, so set budgets from `belay fleet report`. The fleet pauses at its token limit or the plan's usage limit; `belay fleet resume` goes on.
+- A usage limit does not use up a task's attempt. When the limit message gives a reset time in UTC ("resets 2:30am (UTC)"), the fleet resumes on its own 2 minutes after it, never before. `belay fleet status` shows `paused until 02:32 UTC (usage limit)`, and your inbox says so. With no time belay can read, run `belay fleet resume` yourself. `belay fleet pause` cancels the planned resume.
+- When a task's session stops before the task is done (a usage limit, a crash, a hub restart), its next attempt starts in the same worktree. The new session is told that the earlier attempt's partial, unchecked work is there.
+- The hub runs detached from the terminal that started it: closing that terminal, or exiting its shell, does not stop the fleet. `belay fleet down` does.
 - belay tells sessions apart by their process tree, so one agent cannot act as another, or as you.
 - When a task is done, belay keeps its worktree as it was then. The tasks that depend on it get that work, even if the session goes on editing. Each move between worktrees is in the fleet's ledger, and `belay fleet report` lists them.
 - Your own terminal session can join a fleet as an attached role: `belay claude --belay-fleet --belay-name rev`.

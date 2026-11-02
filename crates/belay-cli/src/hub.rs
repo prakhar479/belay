@@ -35,6 +35,8 @@ use serde::{Deserialize, Serialize};
 use crate::ipc::Reply;
 use crate::paths::{self, now_ms, socket_path};
 
+mod supervise;
+
 /// The hub sends the model a Tick this often.
 const TICK: Duration = Duration::from_secs(2);
 /// Activity events per slot, at most one this often (turn ends always go).
@@ -259,20 +261,7 @@ pub fn up(file: Option<&Path>, preset: Option<Preset>) -> Result<String> {
     for n in notes {
         inbox(&dir, &n);
     }
-    let exe = std::env::current_exe().context("find belay executable")?;
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("hub.log"))?;
-    Command::new(exe)
-        .args(["fleet", "hub", "--dir"])
-        .arg(&dir)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
-        .process_group(0)
-        .spawn()
-        .context("start the fleet hub")?;
+    supervise::start_hub(&dir, false)?;
     for _ in 0..200 {
         if send(&dir, &HubRequest::Ping).is_ok() {
             return Ok(id);
@@ -344,6 +333,8 @@ struct Hub {
     pending_trees: BTreeMap<String, String>,
     /// `build_cache`, and what the hub's environment already says (P0.4).
     build: (crate::disk::BuildCache, crate::disk::Env),
+    /// The seq of the command being run: the cause of the work records it leads to.
+    running: u64,
 }
 
 pub fn run_hub(dir: &Path, resume: bool) -> Result<()> {
@@ -392,6 +383,7 @@ pub fn run_hub(dir: &Path, resume: bool) -> Result<()> {
             crate::config::load().build_cache,
             crate::disk::Env::current(),
         ),
+        running: 0,
     };
     let _ = fs::write(dir.join("hub.pid"), std::process::id().to_string());
     if resume {
@@ -817,6 +809,7 @@ impl Hub {
             self.bring_up_done_parts();
             for r in &recs {
                 if let FleetBody::Command { command, .. } = &r.body {
+                    self.running = r.seq;
                     self.run(command);
                 }
             }
@@ -837,8 +830,9 @@ impl Hub {
                 model,
                 permission_mode,
                 brief,
+                worktree_of,
                 ..
-            } => match self.spawn(slot, workspace, model.as_deref(), permission_mode.as_deref(), brief) {
+            } => match self.spawn(slot, workspace, worktree_of.as_deref(), model.as_deref(), permission_mode.as_deref(), brief) {
                 Ok(session) => {
                     self.last_session.insert(slot.clone(), session.clone());
                     self.queue.push_back(FleetEvent::Started {
@@ -892,6 +886,9 @@ impl Hub {
                 let mut text = text.clone();
                 if let (belay_core::fleet::spec::MsgKind::Task, Address::Slot { id }) = (kind, to) {
                     // Its dependencies' work first, then the base the audit diffs from.
+                    if let Some(note) = self.left_work_note(id, &text) {
+                        text = format!("{text}\n\n{note}");
+                    }
                     if let Some(note) = self.bring_in_dependencies(id, &text) {
                         text = format!("{text}\n\n{note}");
                     }
@@ -944,7 +941,7 @@ impl Hub {
                 }
             }
             Cmd::RunCheck { task, slot, command } => self.run_check(task, slot, command),
-            Cmd::Backoff { .. } | Cmd::TaskRetry { .. } | Cmd::Answer { .. } => {}
+            Cmd::Backoff { .. } | Cmd::TaskRetry { .. } | Cmd::ResumeAt { .. } | Cmd::Answer { .. } => {}
         }
     }
 
@@ -960,11 +957,12 @@ impl Hub {
         &mut self,
         slot: &str,
         workspace: &Workspace,
+        worktree_of: Option<&str>,
         model: Option<&str>,
         permission_mode: Option<&str>,
         brief: &str,
     ) -> Result<String> {
-        let cwd = self.workspace_dir(slot, workspace)?;
+        let cwd = self.workspace_dir(worktree_of.unwrap_or(slot), workspace)?;
         // A stream slot that ran before resumes its conversation (G1); a oneshot always
         // starts fresh, as a task's attempts do.
         let resume = self
@@ -1039,18 +1037,26 @@ impl Hub {
         });
         let stdout = child.stdout.take();
         let exited = Arc::new(AtomicBool::new(false));
+        // The exit waits a little for the output's last lines: a session that stops at
+        // a usage limit must be known as limited when its exit is judged (BG0).
+        let (read_tx, read_rx) = mpsc::channel::<()>();
         if let Some(out) = stdout {
             let log = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(files.join(format!("{name}.jsonl")))?;
             let (tx, slot) = (self.tx.clone(), slot.to_string());
-            thread::spawn(move || read_output(out, log, &slot, &tx));
+            thread::spawn(move || {
+                read_output(out, log, &slot, &tx);
+                drop(read_tx);
+            });
         }
         {
             let (tx, slot, exited) = (self.tx.clone(), slot.to_string(), Arc::clone(&exited));
             thread::spawn(move || {
                 let code = child.wait().ok().and_then(|s| s.code());
+                // A child that keeps the pipe open must not hold the exit up for long.
+                let _ = read_rx.recv_timeout(Duration::from_secs(2));
                 exited.store(true, Ordering::SeqCst);
                 let _ = tx.send(Msg::Event(FleetEvent::Exited { slot, code }));
             });
@@ -1069,8 +1075,9 @@ impl Hub {
         Ok(session)
     }
 
-    /// The slot's working directory: its own worktree (made once, kept across restarts),
-    /// a team's shared one, or the checkout itself.
+    /// The slot's working directory: its own worktree (made once, kept across restarts;
+    /// for a task's next attempt, the slot's where the last one stopped), a team's
+    /// shared one, or the checkout itself.
     fn workspace_dir(&self, slot: &str, ws: &Workspace) -> Result<PathBuf> {
         let (Some(repo), Some(base)) = (&self.meta.repo, &self.meta.base) else {
             return Ok(PathBuf::from(&self.meta.cwd));
@@ -1159,6 +1166,43 @@ impl Hub {
             );
             self.done_trees.insert(tid, (tree, seq));
         }
+    }
+
+    /// A task's next attempt starts in the worktree where the last one stopped (BG0):
+    /// say so, when that attempt left changes there, and record it (rule 4).
+    fn left_work_note(&mut self, slot: &str, text: &str) -> Option<String> {
+        let tid = text.strip_prefix("Task ")?.split(':').next()?.to_string();
+        let s = self.model.slots().get(slot)?;
+        let from = s.worktree_of.clone()?;
+        if s.task.as_deref() != Some(tid.as_str()) {
+            return None;
+        }
+        let wt = self.worktrees.get(slot)?.clone();
+        let base = self.meta.base.clone()?;
+        let dirty = git_out(&wt, &["status", "--porcelain"]).is_some();
+        let ahead = git_out(&wt, &["rev-list", "--count", &format!("{base}..HEAD")])
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or(0);
+        let partial = dirty || ahead > 0;
+        let reason = if partial {
+            format!("{tid}'s last attempt stopped in {from}'s worktree before it was done and left changes; {slot} goes on from them.")
+        } else {
+            format!("{tid}'s last attempt stopped in {from}'s worktree and left no changes; {slot} starts there.")
+        };
+        let cause = self.running;
+        self.write_work(
+            Work::Resumed {
+                task: tid.clone(),
+                slot: slot.to_string(),
+                worktree: from,
+                partial,
+            },
+            reason,
+            vec![cause],
+        );
+        partial.then(|| {
+            "An earlier attempt at this task stopped before it was done (a usage limit, a crash, or a hub restart). Its partial, unchecked work is in this worktree: `git status` and `git log` show it. Review it, keep what is right, and finish the task.".to_string()
+        })
     }
 
     /// A worktree lacks the work of the tasks its task depends on (a fresh worker starts
@@ -1751,10 +1795,9 @@ impl Hub {
     /// Where a slot works, without making anything: its worktree if it exists, or the
     /// checkout (G1: a restarted hub, a check after its session ended).
     fn slot_dir(&self, slot: &str) -> Option<PathBuf> {
-        let name = match &self.model.role_of(slot)?.workspace {
-            Workspace::Shared => return Some(PathBuf::from(&self.meta.cwd)),
-            Workspace::WorktreePerWorker => slot.to_string(),
-            Workspace::Team { name } => format!("team-{name}"),
+        self.model.role_of(slot)?;
+        let Some(name) = self.model.worktree_name(slot) else {
+            return Some(PathBuf::from(&self.meta.cwd));
         };
         let p = self.dir.join("worktrees").join(file_name(&name));
         if p.exists() {
@@ -2003,7 +2046,7 @@ fn read_output(out: impl Read, mut log: File, slot: &str, tx: &Sender<Msg>) {
             if let Some(e) = usage_of(line, slot) {
                 let _ = tx.send(Msg::Event(e));
             }
-            if let Some(e) = limit_of(line, slot) {
+            if let Some(e) = limit_of(line, slot, now_ms()) {
                 let _ = tx.send(Msg::Event(e));
             }
             tx.send(Msg::TurnEnded(slot.to_string()))
@@ -2171,8 +2214,9 @@ fn usage_of(line: &str, slot: &str) -> Option<FleetEvent> {
     })
 }
 
-/// A result that says the plan's usage limit was hit (the bench runner's signal).
-fn limit_of(line: &str, slot: &str) -> Option<FleetEvent> {
+/// A result that says the plan's usage limit was hit (the bench runner's signal), and
+/// when it resets if it says so, read at `now`.
+fn limit_of(line: &str, slot: &str, now: u64) -> Option<FleetEvent> {
     let v: serde_json::Value = serde_json::from_str(line).ok()?;
     let text = v.get("result").and_then(|r| r.as_str()).unwrap_or("");
     let lower = text.to_lowercase();
@@ -2191,6 +2235,7 @@ fn limit_of(line: &str, slot: &str) -> Option<FleetEvent> {
     hit.then(|| FleetEvent::UsageLimit {
         slot: slot.to_string(),
         text: text.to_string(),
+        resets_at_ms: supervise::reset_at(text, now),
     })
 }
 
@@ -2467,10 +2512,15 @@ fn render_status(meta: &Meta, model: &Model, procs: &BTreeMap<String, Proc>, up:
         "Spent: {} tokens · {}{}",
         crate::report::k(tokens),
         dollars(cost),
-        if model.paused() {
-            " · paused (`belay fleet resume`)"
-        } else {
-            ""
+        match (model.paused(), model.resume_at()) {
+            (_, Some(at)) => format!(
+                " · paused until {} (usage limit)",
+                belay_core::fleet::model::clock_utc(at)
+            ),
+            (true, None) if model.limit_paused() =>
+                " · paused (usage limit; `belay fleet resume`)".to_string(),
+            (true, None) => " · paused (`belay fleet resume`)".to_string(),
+            (false, _) => String::new(),
         }
     );
     out
@@ -2976,13 +3026,15 @@ fn prune_at_down(dir: &Path) -> String {
         if matches!(t.state, TaskState::Done | TaskState::Dropped) {
             continue;
         }
-        let Some(slot) = &t.slot else { continue };
-        let name = match model.role_of(slot).map(|r| &r.workspace) {
-            Some(Workspace::Shared) => continue,
-            Some(Workspace::Team { name }) => format!("team-{name}"),
-            _ => slot.to_string(),
+        // Where its session works, or where its last attempt stopped (BG0).
+        let name = match &t.slot {
+            Some(slot) if model.role_of(slot).is_some() => model.worktree_name(slot),
+            Some(slot) => Some(slot.clone()),
+            None => t.left_in.clone(),
         };
-        open.entry(name).or_insert_with(|| t.id.clone());
+        if let Some(name) = name {
+            open.entry(name).or_insert_with(|| t.id.clone());
+        }
     }
     let hold = |name: &str| open.get(name).map(|id| format!("task {id} is not done"));
     let mut out = String::new();
@@ -3144,6 +3196,19 @@ pub fn report(spec: Option<&str>) -> Result<String> {
                     conflicts.join(", ")
                 )),
                 Work::Lifted { task, slot } => Some(format!("  {id} {task} → {slot} (up)")),
+                Work::Resumed {
+                    task,
+                    slot,
+                    worktree,
+                    partial,
+                } => Some(format!(
+                    "  {id} {task} → {slot} in {worktree}'s worktree{}",
+                    if *partial {
+                        ", with the last attempt's work"
+                    } else {
+                        ""
+                    }
+                )),
                 Work::MoveFailed {
                     task, slot, error, ..
                 } => Some(format!("  {id} {task} → {slot} failed: {error}")),
@@ -3240,6 +3305,7 @@ fn merge_plan(dir: &Path, meta: &Meta, model: &Model, yes: bool) -> Result<Strin
             .filter(|t| {
                 t.slot.as_deref().is_some_and(|s| {
                     s == name
+                        || model.worktree_name(s).as_deref() == Some(name.as_str())
                         || team
                             .as_ref()
                             .is_some_and(|ws| model.role_of(s).is_some_and(|r| r.workspace == *ws))
@@ -3606,20 +3672,7 @@ pub fn restart(spec: Option<&str>) -> Result<String> {
     if is_up(&dir) {
         bail!("the fleet's hub is running; `belay fleet status` shows it");
     }
-    let exe = std::env::current_exe().context("find belay executable")?;
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("hub.log"))?;
-    Command::new(exe)
-        .args(["fleet", "hub", "--resume", "--dir"])
-        .arg(&dir)
-        .stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
-        .process_group(0)
-        .spawn()
-        .context("start the fleet hub")?;
+    supervise::start_hub(&dir, true)?;
     for _ in 0..200 {
         if is_up(&dir) {
             return status(dir.file_name().and_then(|n| n.to_str()));
@@ -3713,10 +3766,10 @@ mod tests {
                 cost_usd: 0.0035
             })
         );
-        assert!(limit_of(line, "w-1").is_none());
+        assert!(limit_of(line, "w-1", 0).is_none());
         let hit = r#"{"type":"result","is_error":true,"result":"Claude AI usage limit reached|1792630000"}"#;
         assert!(matches!(
-            limit_of(hit, "w-1"),
+            limit_of(hit, "w-1", 0),
             Some(FleetEvent::UsageLimit { .. })
         ));
         // An agent's long answer that mentions usage limits is not one.
@@ -3724,22 +3777,22 @@ mod tests {
             r#"{{"type":"result","result":"{}"}}"#,
             "the API has a usage limit; ".repeat(20)
         );
-        assert!(limit_of(&talk, "w-1").is_none());
+        assert!(limit_of(&talk, "w-1", 0).is_none());
         // A short answer that mentions a limit is not one either (dogfood review).
         let short =
             r#"{"type":"result","result":"Done. Note: the API has a usage limit of 100/min."}"#;
-        assert!(limit_of(short, "w-1").is_none());
+        assert!(limit_of(short, "w-1", 0).is_none());
         let reached = r#"{"type":"result","result":"You've hit your session limit · resets 4pm"}"#;
-        assert!(limit_of(reached, "w-1").is_some());
+        assert!(limit_of(reached, "w-1", 0).is_some());
         // Claude Code 2.1.316 names the window (dogfood 0.2: three attempts each were
         // lost to it as failures).
         let five_hour = include_str!("../../../fixtures/fleet/result_five_hour_limit.json");
-        assert!(limit_of(five_hour.trim(), "w-1").is_some());
+        assert!(limit_of(five_hour.trim(), "w-1", 0).is_some());
         let weekly = r#"{"type":"result","result":"You've hit your weekly limit · resets Mon"}"#;
-        assert!(limit_of(weekly, "w-1").is_some());
+        assert!(limit_of(weekly, "w-1", 0).is_some());
         let unrelated =
             r#"{"type":"result","result":"You've hit your stride; the limit test passes."}"#;
-        assert!(limit_of(unrelated, "w-1").is_none());
+        assert!(limit_of(unrelated, "w-1", 0).is_none());
     }
 
     #[test]

@@ -178,6 +178,10 @@ pub enum FleetEvent {
     UsageLimit {
         slot: SlotId,
         text: String,
+        /// When the message says the limit resets, as the hub read it (BG0). None: it
+        /// gave no time the hub could read; the user resumes.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resets_at_ms: Option<u64>,
     },
     /// Stop handing out work and starting sessions; running turns finish.
     Pause,
@@ -208,6 +212,10 @@ pub enum Command {
         workspace: Workspace,
         permission_mode: Option<String>,
         brief: String,
+        /// Work in this slot's worktree, not a new one: an earlier attempt of the slot's
+        /// task stopped there and left its work (BG0).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worktree_of: Option<SlotId>,
     },
     /// The user starts an attached role in a terminal; belay prints how.
     Attach {
@@ -252,6 +260,10 @@ pub enum Command {
     /// Give the task to a fresh session at `at_ms`. The hub only waits.
     TaskRetry {
         task: String,
+        at_ms: u64,
+    },
+    /// A usage-limit pause ends on its own at `at_ms` (BG0). The hub only waits.
+    ResumeAt {
         at_ms: u64,
     },
 }
@@ -300,6 +312,14 @@ pub enum Work {
     },
     /// A done part's work went up into its lead's worktree.
     Lifted { task: String, slot: String },
+    /// A task's next attempt started in `worktree`, where the last one stopped (BG0).
+    /// `partial`: it held changes past the base, and the session was told.
+    Resumed {
+        task: String,
+        slot: String,
+        worktree: String,
+        partial: bool,
+    },
     /// A move that could not be made; `up`: into a lead's worktree.
     MoveFailed {
         task: String,
@@ -358,6 +378,12 @@ pub struct Slot {
     /// A oneshot asked a question at this time, and waits for the answer (G2).
     #[serde(default)]
     pub awaiting: Option<u64>,
+    /// Its session hit the plan's usage limit: the end of its attempt does not count.
+    #[serde(default)]
+    pub limited: bool,
+    /// It works in this slot's worktree (an earlier attempt of its task stopped there).
+    #[serde(default)]
+    pub worktree_of: Option<SlotId>,
 }
 
 impl Slot {
@@ -392,6 +418,10 @@ pub struct Model {
     scaled: BTreeMap<(Option<SlotId>, String), (u32, bool)>,
     /// No new sessions or tasks (F5d): the user paused, a limit was hit.
     paused: bool,
+    /// A usage-limit pause ends on its own then (BG0): the stated reset, and a margin.
+    resume_at: Option<u64>,
+    /// The pause is a usage limit's, not the user's: a reset time may end it.
+    limit_paused: bool,
     /// Cost of sessions that ended, so the fleet's total survives them.
     spent_usd: f64,
     /// The task board (F5a), by id, and the ids in the order tasks were added.
@@ -401,6 +431,16 @@ pub struct Model {
     task_numbers: BTreeMap<String, u32>,
     /// Wake times per slot (C2), for the hourly limit.
     wakes: BTreeMap<SlotId, Vec<u64>>,
+}
+
+/// A usage-limit pause ends this long after the stated reset (BG0): the reset is given
+/// to the minute, and a clock a little off must not start sessions into the limit.
+pub const RESUME_MARGIN_MS: u64 = 2 * 60_000;
+
+/// `ms` (Unix time) as `HH:MM UTC`.
+pub fn clock_utc(ms: u64) -> String {
+    let m = ms / 60_000 % 1440;
+    format!("{:02}:{:02} UTC", m / 60, m % 60)
 }
 
 /// Wakes of one slot by commons messages, at most, in an hour (owner: rate-limited).
@@ -458,6 +498,8 @@ impl Model {
             told_limit: false,
             scaled: BTreeMap::new(),
             paused: false,
+            resume_at: None,
+            limit_paused: false,
             spent_usd: 0.0,
             tasks: BTreeMap::new(),
             task_order: Vec::new(),
@@ -579,34 +621,38 @@ impl Model {
                 tokens,
                 cost_usd,
             } => self.on_usage(&mut cx, &slot, tokens, cost_usd),
-            FleetEvent::UsageLimit { slot, text } => self.pause(
-                &mut cx,
-                &format!(
-                    "{slot} hit the plan's usage limit ({}). The fleet pauses; run `belay fleet resume` when the limit resets.",
-                    crate::text::truncate_chars(text.trim(), 120)
-                ),
-            ),
-            FleetEvent::Pause => self.pause(&mut cx, "The user paused the fleet."),
+            FleetEvent::UsageLimit {
+                slot,
+                text,
+                resets_at_ms,
+            } => self.on_usage_limit(&mut cx, &slot, &text, resets_at_ms),
+            FleetEvent::Pause => {
+                self.limit_paused = false;
+                if let Some(at) = self.resume_at.take() {
+                    self.cmd(
+                        &mut cx,
+                        Command::Notify {
+                            text: format!(
+                                "belay fleet: paused by the user; it no longer resumes on its own at {}.",
+                                clock_utc(at)
+                            ),
+                        },
+                        "The user's pause holds until the user resumes.",
+                    );
+                }
+                self.pause(&mut cx, "The user paused the fleet.")
+            }
             FleetEvent::HubRestarted => self.on_hub_restarted(&mut cx),
             FleetEvent::Attached {
                 role,
                 name,
                 session,
             } => self.on_attached(&mut cx, &role, name.as_deref(), session),
-            FleetEvent::Resume => {
-                if self.paused {
-                    self.paused = false;
-                    self.told_limit = false;
-                    self.cmd(
-                        &mut cx,
-                        Command::Notify {
-                            text: "belay fleet: resumed.".into(),
-                        },
-                        "The user resumed the fleet.",
-                    );
-                    self.retry_waiting(&mut cx);
-                }
-            }
+            FleetEvent::Resume => self.resume(
+                &mut cx,
+                "belay fleet: resumed.",
+                "The user resumed the fleet.",
+            ),
         }
         // Whatever changed, ready tasks may now have somewhere to go.
         self.dispatch(&mut cx);
@@ -727,6 +773,8 @@ impl Model {
                 cost_usd: 0.0,
                 started_ms: 0,
                 awaiting: None,
+                limited: false,
+                worktree_of: None,
             },
         );
         id
@@ -802,7 +850,9 @@ impl Model {
             s.retry_at = None;
             s.busy = false;
             s.stuck = 0;
+            s.limited = false;
         }
+        let worktree_of = self.slots.get(id).and_then(|s| s.worktree_of.clone());
         self.cmd(
             cx,
             Command::Spawn {
@@ -815,6 +865,7 @@ impl Model {
                 workspace: role.workspace,
                 permission_mode: role.permission_mode,
                 brief: role.brief,
+                worktree_of,
             },
             why,
         );
@@ -935,6 +986,14 @@ impl Model {
     }
 
     fn on_tick(&mut self, cx: &mut Cx) {
+        if let Some(at) = self.resume_at().filter(|at| cx.now >= *at) {
+            let text = "belay fleet: resumed: the usage limit has reset.";
+            let why = format!(
+                "The usage limit reset at {}; the pause ended on its own.",
+                clock_utc(at - RESUME_MARGIN_MS)
+            );
+            self.resume(cx, text, &why);
+        }
         self.retry_waiting(cx);
         // A session past its role's wall-time budget is stopped (F5d).
         let over: Vec<(SlotId, u64)> = self
@@ -1489,9 +1548,12 @@ impl Model {
                         .as_ref()
                         .and_then(|s| self.slots.get(s))
                         .map(|s| s.role.clone());
+                    // Its work stays where the session stopped, for the next attempt.
+                    let left_in = slot.as_deref().and_then(|sid| self.own_worktree(sid));
                     if let Some(t) = self.tasks.get_mut(&tid) {
                         t.state = TaskState::Queued;
                         t.slot = None;
+                        t.left_in = left_in.or(t.left_in.clone());
                         if t.target.is_none() || t.target == slot {
                             t.target = role.or(t.target.clone());
                         }
@@ -1596,6 +1658,8 @@ impl Model {
                     cost_usd: 0.0,
                     started_ms: 0,
                     awaiting: None,
+                    limited: false,
+                    worktree_of: None,
                 };
                 self.slots.insert(id.clone(), slot);
                 id
@@ -1724,6 +1788,88 @@ impl Model {
             },
             &format!("{id} {why}."),
         );
+    }
+
+    /// A session hit the plan's usage limit: every session would, so the fleet pauses.
+    /// With a reset time it resumes on its own, `RESUME_MARGIN_MS` after it, and never
+    /// before (BG0). The session's attempt does not count (`task_session_ended`).
+    fn on_usage_limit(&mut self, cx: &mut Cx, slot: &str, text: &str, resets_at_ms: Option<u64>) {
+        if let Some(s) = self.slots.get_mut(slot) {
+            s.limited = true;
+        }
+        let at = resets_at_ms.map(|r| r + RESUME_MARGIN_MS);
+        let said = crate::text::truncate_chars(text.trim(), 120);
+        if !self.paused {
+            self.limit_paused = true;
+            let then = match at {
+                Some(at) => format!(
+                    "The fleet pauses, and resumes on its own at {} (or run `belay fleet resume`).",
+                    clock_utc(at)
+                ),
+                None => "The fleet pauses; run `belay fleet resume` when the limit resets.".into(),
+            };
+            self.pause(
+                cx,
+                &format!("{slot} hit the plan's usage limit ({said}). {then}"),
+            );
+        }
+        // A pause the user made stays the user's to end. A later reset time wins: the
+        // fleet never resumes before any limit it was told of resets.
+        let Some(at) = at.filter(|_| self.limit_paused) else {
+            return;
+        };
+        if self.resume_at.is_some_and(|r| r >= at) {
+            return;
+        }
+        self.resume_at = Some(at);
+        self.cmd(
+            cx,
+            Command::ResumeAt { at_ms: at },
+            &format!(
+                "{slot}'s limit message says it resets at {}; the fleet resumes {} min after.",
+                clock_utc(at - RESUME_MARGIN_MS),
+                RESUME_MARGIN_MS / 60_000
+            ),
+        );
+    }
+
+    fn resume(&mut self, cx: &mut Cx, text: &str, why: &str) {
+        self.limit_paused = false;
+        self.resume_at = None;
+        if !self.paused {
+            return;
+        }
+        self.paused = false;
+        self.told_limit = false;
+        for s in self.slots.values_mut().filter(|s| s.live()) {
+            s.limited = false;
+        }
+        self.cmd(cx, Command::Notify { text: text.into() }, why);
+        self.retry_waiting(cx);
+    }
+
+    /// When a usage-limit pause ends on its own, if it does.
+    pub fn resume_at(&self) -> Option<u64> {
+        self.resume_at.filter(|_| self.paused)
+    }
+
+    /// The fleet is paused because a session hit the plan's usage limit.
+    pub fn limit_paused(&self) -> bool {
+        self.paused && self.limit_paused
+    }
+
+    /// The worktree a slot works in, by its directory name under `worktrees/`: its own,
+    /// an earlier attempt's (BG0), or its team's. None: the shared checkout.
+    pub fn worktree_name(&self, slot: &str) -> Option<String> {
+        let s = self.slots.get(slot);
+        match &self.role_of(slot)?.workspace {
+            Workspace::Shared => None,
+            Workspace::Team { name } => Some(format!("team-{name}")),
+            Workspace::WorktreePerWorker => Some(
+                s.and_then(|s| s.worktree_of.clone())
+                    .unwrap_or_else(|| slot.to_string()),
+            ),
+        }
     }
 
     fn pause(&mut self, cx: &mut Cx, why: &str) {
