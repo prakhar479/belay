@@ -37,6 +37,7 @@ jobs:
             exit 1
           fi
       - run: python3 -m py_compile scripts/*.py
+      - run: python3 scripts/changelog.py --check
 
   audit:
     # belay audit on this repo's own changes (experimental; reports, never fails).

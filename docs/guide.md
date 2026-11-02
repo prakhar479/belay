@@ -1,5 +1,9 @@
 # belay usage guide
 
+<!-- Contributors: each section is owned by its area (guard, memory, sandboxes, fleets, …).
+A change adds to its own section only, so parallel branches do not conflict here. Keep it one
+guide: do not split it into files. Changelog entries go in changelog.d/, not CHANGELOG.md. -->
+
 belay runs next to Claude Code and watches every tool call through its hooks. It keeps a record of each session. When you ask it to, it also steps in:
 
 - it summarizes long test output;

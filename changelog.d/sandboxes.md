@@ -1,0 +1,3 @@
+kind: added
+
+- **Sandboxes:** `belay sandbox run -- <cmd>` runs a command on a git worktree of the repo with a private home, under bubblewrap. It sees no other files of yours, no Docker socket or ssh agent, and on WSL no Windows. belay stops it past `sandbox_memory`, `sandbox_procs`, `sandbox_disk`, or `sandbox_wall`, and says why. Its changes are committed on `belay/sandbox/<id>` for you to merge. `belay sandbox list|show|diff|stop|rm|doctor`; `rm` is yours to run. With no way to build a sandbox, belay refuses and runs nothing. New config keys `sandbox_*`. New ledger events `sandbox_started` and `sandbox_stopped` (older belay versions skip them); the card has a `sandbox` field.

@@ -1,0 +1,3 @@
+kind: added
+
+- **Resuming continues tracking.** `belay claude --resume <id>`, `-c`, the picker, and `/resume` continue the earlier run's belay state: loop counts, open failure, blocked edits, pauses, shape levels, and the card's task. A restarted plugin daemon restores its own record. Ids go on across runs; `belay report`, `why`, `show`, and `undo` read the whole chain. The resumed agent gets the carry pack, not a fresh recall. `resume = fresh` (config) or `--belay-fresh` starts clean. New ledger entry kind `resumed` (additive); a resumed run's ledger starts with its `format` entry, numbered after the earlier run's last entry.

@@ -1,0 +1,3 @@
+kind: added
+
+- **Seeing what belay does.** When belay acts, Claude Code shows you a one-line note (`systemMessage`), at most one per hook; the model never sees it. `report = quiet` (the default) shows warnings, `normal` adds summaries and other actions, `verbose` adds minor notes. `belay watch` prints notes as they happen. `belay status` reads `belay · N blocked · K tokens kept out · M memories`. When the agent exits, belay prints what it did, the tokens it kept out, and the handoff left. `belay report` says "would have" only for what the agent could not take. Notices are a new ledger entry kind (`notice`), so older belay versions skip those lines with a warning.
