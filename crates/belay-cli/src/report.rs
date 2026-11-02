@@ -376,6 +376,9 @@ pub struct Did {
     pub handoff: Option<String>,
     /// Claude Code ran a command as written although belay rewrote it.
     pub rewrite_ignored: bool,
+    /// Applied actions the user was warned about (Warn notices), oldest first: what
+    /// `belay flag` asks about.
+    pub warnings: Vec<String>,
 }
 
 pub fn did(entries: &[Entry]) -> Did {
@@ -398,8 +401,11 @@ pub fn did(entries: &[Entry]) -> Did {
                 applied: true,
                 ..
             } if !late.contains(id.as_str()) => {
-                let (_, noun) = belay_core::notice_for(id, action, reason, false);
+                let (notice, noun) = belay_core::notice_for(id, action, reason, false);
                 *d.by_kind.entry(noun).or_default() += 1;
+                if notice.level == NoticeLevel::Warn {
+                    d.warnings.push(id.clone());
+                }
                 match action {
                     ActionKind::Guard {
                         decision: GuardDecision::Deny | GuardDecision::Ask,
@@ -463,6 +469,13 @@ pub fn exit_summary(id: &str, entries: &[Entry]) -> String {
     }
     if d.rewrite_ignored {
         out.push_str("  Claude Code ignored belay's rewrite (run scripts/conformance.py)\n");
+    }
+    if let Some(last) = d.warnings.last() {
+        let _ = writeln!(
+            out,
+            "  {} · flag any that were wrong: `belay flag {last}`",
+            count(d.warnings.len() as u64, "warnings")
+        );
     }
     out.push_str("  `belay report` for more");
     out
@@ -1652,6 +1665,10 @@ mod tests {
         assert!(status_line(&entries).starts_with("belay · 1 blocked · 4.6k"));
         let s = exit_summary("s1", &entries);
         assert!(s.contains("did: 1 blocked edit · 1 summary\n"), "{s}");
+        assert!(
+            s.contains("  1 warning · flag any that were wrong: `belay flag a-2`\n"),
+            "{s}"
+        );
         assert!(s.contains("handoff: done: x; next: y\n"), "{s}");
         assert_eq!(count(2, "retries"), "2 retries");
         assert_eq!(count(1, "retries"), "1 retry");
