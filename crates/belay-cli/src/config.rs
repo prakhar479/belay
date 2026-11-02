@@ -22,6 +22,7 @@
 //! recall_tokens = 600        # most tokens the start recall and the carry pack take
 //! awareness = on             # tell the agent what other belay sessions here did
 //! commons = off              # pass other sessions' messages to the agent
+//! agent_skill = on          # at a fresh start, one line points the agent at belay's routine
 //! report = quiet             # how much belay tells the user: quiet, normal, verbose
 //! sandbox_memory = 4G        # `belay sandbox`: most memory its processes use together
 //! sandbox_procs = 512        # most processes in a sandbox
@@ -465,7 +466,7 @@ fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
 }
 
 /// Every key of 0.2. The 0.1 names are in `RENAMED`.
-const KEYS: [&str; 32] = [
+const KEYS: [&str; 33] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -485,6 +486,7 @@ const KEYS: [&str; 32] = [
     "recall_tokens",
     "awareness",
     "commons",
+    "agent_skill",
     "report",
     "sandbox_memory",
     "sandbox_procs",
@@ -675,6 +677,7 @@ fn apply(
         "recall_tokens" => c.core.recall_tokens = int(0, 20_000)? as usize,
         "awareness" => c.core.awareness = on_off()?,
         "commons" => c.core.commons = on_off()?,
+        "agent_skill" => c.core.routine = on_off()?,
         "wrap_tests" => c.core.wrap_tests = boolean()?,
         "notify" => {
             c.notify = Notify::parse(value)

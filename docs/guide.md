@@ -96,7 +96,7 @@ belay install --launcher       # prints an alias so `claude` starts under belay
 
 `belay uninstall` removes the plugin and belay's status line. A status line that is not belay's stays. `belay doctor` says whether the plugin is installed and whether the status line is belay's.
 
-The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
+The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`. A fresh session also gets one line at its start that points the agent at that routine (`agent_skill = off` leaves it out).
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
 
@@ -177,6 +177,7 @@ belay always acts within what the agent supports, and records every action with 
 | `memory` | `on` | Handoffs between sessions, recall at the start and after a compaction, learned fixes, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
 | `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
+| `agent_skill` | `on` | At the start of a fresh session (not a resume or a compaction), adds one line to the agent's context that points it at the belay skill's routine: read the last handoff, say what it works on, run `belay brief` before it is done, leave a handoff before it stops. `off` leaves the line out |
 | `report` | `quiet` | How much belay tells you about what it did: `quiet` (warnings), `normal` (+ what it did), `verbose` (+ minor notes). See "Seeing what belay does" |
 
 A feature that is off takes no action. An action the agent cannot take is recorded as not applied.
@@ -902,6 +903,7 @@ memory = on                     # handoffs, recall at start, learned fixes, proj
 recall_tokens = 600             # most tokens the start recall and the carry pack take
 awareness = on                  # what other belay sessions here did
 commons = off                   # other sessions' messages and handoffs reach the agent
+agent_skill = on                # one line at a fresh start points the agent at belay's routine
 report = quiet                  # how much belay tells you: quiet, normal, verbose
 resume = continue               # a resumed conversation keeps belay's state; fresh starts clean
 experimental_audit = false      # audit each session's changes to tests and checks

@@ -63,12 +63,18 @@ pub struct Config {
     /// The commons (C1–C4): who else is here, handoffs, and other sessions' messages.
     /// The user's own messages reach the agent either way.
     pub commons: bool,
+    /// At a fresh start, one line points the agent at belay's routine (handoff, task,
+    /// brief). The CLI's `agent_skill` sets it.
+    pub routine: bool,
     /// How much the user hears about what belay did.
     pub report: ReportLevel,
     /// Settings the core does not read (the launcher's), as `name → value`. Only their
     /// overrides, so the session-start record names every setting the user changed.
     pub other_overrides: BTreeMap<String, String>,
 }
+
+/// The line a fresh session gets (see `Config::routine`).
+const ROUTINE_LINE: &str = "belay: this session runs under belay, which keeps memory and a record outside this conversation. Use it as the belay skill says: at the start, read the last handoff (handoff_get or `belay handoff`) and say what you work on (`belay card --task \"…\"`); before you say you are done, run `belay brief`; before you stop, leave `belay handoff \"done: …; open: …; next: …\"`.";
 
 impl Default for Config {
     fn default() -> Self {
@@ -87,6 +93,7 @@ impl Default for Config {
             recall_tokens: 600,
             awareness: true,
             commons: false,
+            routine: true,
             report: ReportLevel::Quiet,
             other_overrides: BTreeMap::new(),
         }
@@ -107,6 +114,7 @@ impl Config {
             ("memory", on_off(self.memory)),
             ("awareness", on_off(self.awareness)),
             ("commons", on_off(self.commons)),
+            ("agent_skill", on_off(self.routine)),
             ("report", self.report.name().to_string()),
             ("loop_threshold", self.loop_threshold.to_string()),
             ("max_summary_ratio", self.max_summary_ratio.to_string()),
@@ -1145,6 +1153,25 @@ impl Controller {
                         }
                     }
                 }
+                // The routine: one line, once, so the agent knows belay is there to use.
+                if fresh && self.cfg.routine {
+                    let text = ROUTINE_LINE.to_string();
+                    let applied = self.says();
+                    let reason =
+                        "A fresh session: the agent is pointed at belay's routine.".to_string();
+                    self.record(
+                        &mut d,
+                        now_ms,
+                        vec![ev],
+                        ActionKind::Routine { text: text.clone() },
+                        reason,
+                        applied,
+                        !self.caps.inject_context,
+                    );
+                    if applied {
+                        d.response.add_context.push(text);
+                    }
+                }
             }
             Event::CardSet {
                 name,
@@ -2111,6 +2138,7 @@ impl Controller {
             | ActionKind::Recall { .. }
             | ActionKind::Notes { .. }
             | ActionKind::Commons { .. }
+            | ActionKind::Routine { .. }
             | ActionKind::Handoff { .. } => self.caps.inject_context,
             ActionKind::MemoryRecalled { .. } => self.caps.start_inject,
             ActionKind::Guard { decision, .. } => match decision {

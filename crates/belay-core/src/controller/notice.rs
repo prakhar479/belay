@@ -154,6 +154,7 @@ pub fn notice_for(
             format!("gave the agent the handoff {from} left."),
             "handoffs",
         ),
+        ActionKind::Routine { .. } => (Info, "pointed the agent at belay's routine.".into(), "routine lines"),
         ActionKind::Commons { .. } => (Act, reason.trim_end_matches('.').to_string() + ".", "commons notes"),
         ActionKind::Verify { command, .. } => (
             Act,
