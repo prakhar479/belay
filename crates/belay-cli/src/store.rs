@@ -16,6 +16,8 @@ pub struct Store {
     dir: PathBuf,
     ledger: File,
     hooks: Option<File>,
+    /// The last ledger write failed, so the file may end mid-line.
+    torn: bool,
 }
 
 /// True when the file's last byte is not a newline. Reads one byte, not the file.
@@ -51,6 +53,7 @@ impl Store {
         Ok(Self {
             dir: dir.to_path_buf(),
             ledger,
+            torn: false,
             hooks: if capture {
                 Some(append_file(&dir.join("hooks.jsonl"))?)
             } else {
@@ -79,18 +82,34 @@ impl Store {
                         .join("blobs")
                         .join(format!(".{}.{}.tmp", b.hash, std::process::id()));
                 // Secrets never reach the disk; the hash still names the original.
-                fs::write(&tmp, redact(&b.content).as_bytes())?;
-                fs::rename(&tmp, &p)?;
+                let done = fs::write(&tmp, redact(&b.content).as_bytes())
+                    .and_then(|()| fs::rename(&tmp, &p));
+                if let Err(e) = done {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(e.into());
+                }
             }
         }
         // One write for all lines of a decision: entries never interleave or split.
         let mut lines = String::new();
+        // A failed write may have left half a line: end it first, so this one is not glued to it.
+        if self.torn {
+            lines.push('\n');
+        }
         for e in &d.entries {
             lines.push_str(&redact(&serde_json::to_string(e)?));
             lines.push('\n');
         }
-        self.ledger.write_all(lines.as_bytes())?;
-        Ok(())
+        match self.ledger.write_all(lines.as_bytes()) {
+            Ok(()) => {
+                self.torn = false;
+                Ok(())
+            }
+            Err(e) => {
+                self.torn = true;
+                Err(e.into())
+            }
+        }
     }
 }
 
@@ -308,6 +327,35 @@ mod tests {
         assert_eq!(read_entries(&d2).unwrap().len(), 2);
         let _ = fs::remove_dir_all(d);
         let _ = fs::remove_dir_all(d2);
+    }
+
+    /// A failed write (disk full) may leave half a line: the next persist starts a new one.
+    #[test]
+    fn write_after_a_failed_write_starts_a_new_line() {
+        let d = ledger(
+            "torn2",
+            r#"{"seq":0,"ts_ms":0,"body":{"kind":"format","version":1}}"#,
+        );
+        let mut store = Store::open(&d).unwrap();
+        let mut f = OpenOptions::new()
+            .append(true)
+            .open(d.join("ledger.jsonl"))
+            .unwrap();
+        f.write_all(br#"{"seq":2,"ts_ms":0,"bo"#).unwrap();
+        drop(f);
+        store.torn = true;
+        let entry: Entry = serde_json::from_str(
+            r#"{"seq":3,"ts_ms":0,"body":{"kind":"event","event":{"type":"turn_ended"}}}"#,
+        )
+        .unwrap();
+        let dec = Decision {
+            entries: vec![entry],
+            ..Default::default()
+        };
+        store.persist(&dec).unwrap();
+        let seqs: Vec<u64> = read_entries(&d).unwrap().iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, vec![0, 1, 3]);
+        let _ = fs::remove_dir_all(d);
     }
 
     /// R0.6: a torn last line (crash) does not swallow the next entry.

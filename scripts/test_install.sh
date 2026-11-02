@@ -44,4 +44,10 @@ if env PATH=/usr/bin:/bin sh -c "$(command -v env) BELAY_DOWNLOAD_BASE='file://$
 fi
 grep -q "no cargo" "$w/out3.txt" || { cat "$w/out3.txt"; echo "FAIL: no cargo message"; exit 1; }
 
-echo "install.sh: ok (release, bad checksum, missing release)"
+# 4. A version with odd characters is rejected before any download.
+for bad in 'v1/../x' 'v1;id' 'latest'; do
+    if run "$w/bin4" "$bad" > "$w/out4.txt" 2>&1; then cat "$w/out4.txt"; echo "FAIL: bad version '$bad' installed"; exit 1; fi
+    grep -q "BELAY_VERSION" "$w/out4.txt" || { cat "$w/out4.txt"; echo "FAIL: no version message for '$bad'"; exit 1; }
+done
+
+echo "install.sh: ok (release, bad checksum, missing release, bad version)"

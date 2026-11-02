@@ -35,9 +35,16 @@ fn home_from(get: &dyn Fn(&str) -> Option<PathBuf>) -> PathBuf {
     if let Some(x) = get("XDG_DATA_HOME") {
         return x.join("belay");
     }
-    get("HOME")
-        .unwrap_or_else(env::temp_dir)
-        .join(".local/share/belay")
+    match get("HOME") {
+        Some(h) => h.join(".local/share/belay"),
+        // No HOME: a directory of our own user's, never one other users share in /tmp.
+        // `ensure_private_dir` refuses it if another user made it.
+        None => {
+            // SAFETY: getuid has no preconditions and cannot fail.
+            let uid = unsafe { libc::getuid() };
+            env::temp_dir().join(format!("belay-{uid}"))
+        }
+    }
 }
 
 /// Where Claude Code keeps session transcripts.
@@ -287,6 +294,15 @@ mod tests {
         let get = |k: &str| (k == "XDG_DATA_HOME").then(|| PathBuf::from("/x"));
         assert_eq!(home_from(&get), PathBuf::from("/x/belay"));
         assert_eq!(env_path("BELAY_SURELY_UNSET_VAR"), None);
+        let none = |_: &str| None;
+        let h = home_from(&none);
+        assert!(
+            h.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("belay-"),
+            "{h:?}"
+        );
     }
 
     #[test]

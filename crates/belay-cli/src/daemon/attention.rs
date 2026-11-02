@@ -299,6 +299,9 @@ pub fn deliver(c: Channels, alerts: Vec<Alert>, now: u64) {
 /// A desktop notification: `notify-send` (Linux) or `osascript` (macOS). A missing tool
 /// is ignored.
 pub(crate) fn desktop(msg: &str) {
+    // Agent text must not leave belay with a secret in it.
+    let msg = belay_core::text::redact(msg);
+    let msg = msg.as_ref();
     let mut cmd = if cfg!(target_os = "macos") {
         let quoted = msg.replace('\\', "\\\\").replace('"', "\\\"");
         let mut c = Command::new("osascript");
@@ -354,7 +357,8 @@ pub fn run_command(cmd: &str, json: &serde_json::Value, timeout: Duration) -> bo
     // A command that never reads its stdin must not hold this thread: the line fits
     // the pipe's buffer, and a closed pipe is ignored.
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{json}\n").as_bytes());
+        let _ = stdin
+            .write_all(format!("{}\n", belay_core::text::redact(&json.to_string())).as_bytes());
     }
     let start = Instant::now();
     loop {

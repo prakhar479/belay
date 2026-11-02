@@ -29,6 +29,17 @@ say() { printf 'belay: %s\n' "$*"; }
 fail() { printf 'belay: %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# The tag goes into a URL and a cargo argument: letters, digits, dots and dashes only.
+if [ -n "${BELAY_VERSION:-}" ]; then
+    case "$BELAY_VERSION" in
+        v[0-9]* ) ;;
+        *) fail "BELAY_VERSION must look like v0.2.0 (got: $BELAY_VERSION)" ;;
+    esac
+    case "$BELAY_VERSION" in
+        *[!A-Za-z0-9.-]*) fail "BELAY_VERSION may hold only letters, digits, dots and dashes" ;;
+    esac
+fi
+
 target() {
     os=$(uname -s)
     arch=$(uname -m)
