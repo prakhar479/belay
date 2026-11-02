@@ -54,6 +54,13 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - **Old config and flags still work, with a warning:** a `look` value reads as `on`; `learn` and `fleet` map to `memory` and `awareness`; `plugin_mode`, `--belay-mode`, and `belay fleet up --mode` are ignored. `belay mode` says how to pause instead. Fleet sessions run with `guard = deny` and `commons = on`.
 - **Sandboxes, part 2:** a sandbox is now its own clone of the repo (`git clone --shared`), so git works inside; it no longer uses a git worktree. belay commits leftover work inside the sandbox and fetches the branch with git's sending side also inside, so nothing in the clone's `.git` (hooks, config, filters) runs on your machine; belay's undo snapshots and audits skip a sandbox's clone. `belay sandbox claude` runs a whole Claude Code session in a sandbox, supervised by belay from outside (`--id S --resume <id>` goes on in it). `belay sandbox task "<prompt>"` runs a headless follow-up there and prints its result, branch, files, audit, and limits; agents may run it too, at most `sandbox_tasks_per_hour` (4) per session, stopped past `sandbox_task_tokens` (2M). MCP tools `sandbox_run` and `sandbox_task`. `belay sandbox doctor` has a probe for code planted in the clone's `.git`. Sandboxes made by the earlier, worktree-based build are refused: `belay sandbox rm` them.
 - **Tokens kept out** in `belay report` (new line), `belay status`, and the exit summary is the sum of original − summary over summaries that reached the agent. Summaries whose reply came too late no longer count.
+- `belay --help` opens with the tagline and a "Start here" line. One-liners are short, and advanced commands (fleet, task, msg, inbox, card, mcp, retro, audit, launch) are out of the short list but still documented in their own `--help`.
+- Plainer help and report wording: brief, pause, mcp, skill, report lines, and `Fingerprint:` in a skill preview.
+- Empty states say what to do: "Nothing recorded yet. Run `belay claude` in a project, then try again.", `belay fleet`, and `belay usage` (no more `$-0.00`).
+- `belay watch` with no live session says so and exits 1 instead of waiting forever.
+- `belay doctor` is calmer: shorter lines, `~` for your home folder, one "Not set up with Claude Code yet" line on a fresh machine, and a short sleep warning (exact fix in `belay keep-awake --help`).
+- `belay memory add` from an agent says "Kept m-1. It waits for your OK: `belay memory approve m-1`."
+- Fleet control refusals say "yours to run: use your own terminal".
 
 ### Fixed
 
@@ -69,6 +76,11 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - **A session could hang on exit and lose its handoff.** When belay wrote the session card at the same moment the session ended (you quit Claude Code, the agent stopped, or an idle session timed out), the two could wait on each other forever. The next session then saw the old one as still running and got no handoff. Every exit path now takes the locks in one order.
 - Skills from `.tar.gz` archives are read on macOS (bsdtar's listing differs from GNU tar's); links, devices, and traversal are still refused before extracting.
 - Outside git, a project's root and its project key are spelled the same when the path goes through a symlink (macOS `/var`).
+- Notifications to `notify_command` and the desktop no longer carry secrets that appeared in agent text.
+- A failed ledger write no longer swallows the next entry, and failed blob writes leave no temp files.
+- Without HOME, belay uses a per-user directory in the temp dir, not one shared path.
+- A global flag before the verb (`belay --flag allow`) no longer hides user-only commands from the agent denial.
+- The install script rejects a BELAY_VERSION with odd characters.
 
 ## 0.1.0
 
