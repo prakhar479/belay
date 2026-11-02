@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use super::{Connector, ResumeTarget, TranscriptSource};
 use crate::paths::now_ms;
 
+mod native;
 mod transcript;
 
 const EDIT_TOOLS: [&str; 3] = ["Edit", "MultiEdit", "Write"];
@@ -575,6 +576,14 @@ impl Connector for ClaudeCode {
 
     fn conversation(&self) -> Option<String> {
         (!self.session_id.is_empty()).then(|| self.session_id.clone())
+    }
+
+    fn native_context(&self, cwd: &Path) -> Vec<super::NativeSource> {
+        let projects = crate::paths::claude_projects_dir();
+        match projects.parent() {
+            Some(config) => native::native_in(cwd, config),
+            None => Vec::new(),
+        }
     }
 
     fn set_policy(&mut self, policy: &belay_core::policy::Policy) {

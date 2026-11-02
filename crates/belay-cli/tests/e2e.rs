@@ -4228,12 +4228,33 @@ fn a_session_starts_with_the_last_sessions_handoff_memory() {
         thread::sleep(Duration::from_millis(50));
     }
 
+    // A memory the project's CLAUDE.md came to say (M1): the agent reads it there.
+    let o = Command::new(bin())
+        .args([
+            "memory",
+            "add",
+            "integration tests need DATABASE_URL for the local postgres",
+        ])
+        .current_dir(&shop)
+        .env("BELAY_HOME", &home)
+        .env("BELAY_TEST_TERMINAL", "1")
+        .env("CLAUDE_CONFIG_DIR", dir.join("claude"))
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    fs::write(
+        shop.join("CLAUDE.md"),
+        "- Integration tests need DATABASE_URL pointing at the local postgres instance.\n",
+    )
+    .unwrap();
+
     let (_b, sock_b, sess_b) = start_fleet_daemon(&home, "1000000002-2", &config);
     let got = hook(
         &sock_b,
         "SessionStart",
         &at_shop(load("session_start.json")),
     );
+    assert!(!got.contains("DATABASE_URL"), "{got}");
     assert!(
         got.contains("The last session's handoff (m-1")
             && got.contains("tests/test_api.py::test_get_order")
@@ -4244,7 +4265,8 @@ fn a_session_starts_with_the_last_sessions_handoff_memory() {
     assert_eq!(got.matches("handoff (").count(), 1, "one handoff: {got}");
     let ledger = fs::read_to_string(sess_b.join("ledger.jsonl")).unwrap();
     assert!(
-        ledger.contains(r#""type":"memory_recalled","ids":["m-1"]"#),
+        ledger.contains(r#""type":"memory_recalled","ids":["m-1"]"#)
+            && ledger.contains("1 memory was left out: CLAUDE.md already says it."),
         "{ledger}"
     );
 }
@@ -4823,7 +4845,10 @@ fn memory_add_search_approve_and_migrate() {
     // `agent`: a shell inside a belay session; else the user at their terminal.
     let run = |args: &[&str], agent: bool| {
         let mut c = Command::new(bin());
-        c.args(args).current_dir(&dir).env("BELAY_HOME", &home);
+        c.args(args)
+            .current_dir(&dir)
+            .env("BELAY_HOME", &home)
+            .env("CLAUDE_CONFIG_DIR", dir.join("claude"));
         if agent {
             c.env("BELAY_SESSION_DIR", home.join("sessions/1000000002-2"));
         } else {
@@ -4863,6 +4888,29 @@ fn memory_add_search_approve_and_migrate() {
         false,
     );
     assert!(said.contains("Kept m-2."), "{said}");
+
+    // What the project's CLAUDE.md says is the user's file's to say (M1).
+    std::fs::write(
+        dir.join("CLAUDE.md"),
+        "# Rules\n\n- Deploys go through `make release`, never by hand.\n",
+    )
+    .unwrap();
+    let c = Command::new(bin())
+        .args([
+            "memory",
+            "add",
+            "deploys go through make release, never by hand",
+        ])
+        .current_dir(&dir)
+        .env("BELAY_HOME", &home)
+        .env("CLAUDE_CONFIG_DIR", dir.join("claude"))
+        .env("BELAY_SESSION_DIR", home.join("sessions/1000000002-2"))
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&c.stderr);
+    assert_eq!(c.status.code(), Some(1), "{err}");
+    assert!(err.contains("already in CLAUDE.md (line 3)"), "{err}");
+    std::fs::remove_file(dir.join("CLAUDE.md")).unwrap();
 
     let (_, found) = run(&["memory", "search", "parser cache"], false);
     assert!(

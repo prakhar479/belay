@@ -1019,6 +1019,14 @@ fn decide_hook(
                 if controller.config().memory {
                     controller
                         .set_memories(crate::memorystore::recall_candidates(&project, &cards));
+                    // What the agent loads on its own (M1): not recalled twice.
+                    controller.set_host_context(
+                        connector
+                            .native_context(Path::new(cwd))
+                            .into_iter()
+                            .map(connector::NativeSource::host_text)
+                            .collect(),
+                    );
                 }
             }
             // Shared learning (F2): other sessions' fixes and this project's notes.

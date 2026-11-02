@@ -296,6 +296,14 @@ After a compaction, the agent gets a carry pack: its task, the open failure, the
 
 Notes, learned fixes, findings, and the handoffs of ended sessions show up in `belay memory` as they are, with ids `note-N`, `fix-…`, `f-N`, and `h-…`. `belay memory migrate` copies them into the store and backs up the old files first. Running it again copies nothing new. The old commands keep working.
 
+#### belay memory and the agent's own memory
+
+The agent has its own memory, and belay works around it. For Claude Code that is the CLAUDE.md files it loads (your `~/.claude/CLAUDE.md`, then `CLAUDE.md`, `.claude/CLAUDE.md`, and `CLAUDE.local.md` in the working directory and each parent) and its auto-memory index (`~/.claude/projects/<project>/memory/MEMORY.md`, for the main checkout). Those files are yours: belay reads them and never writes them.
+
+Put conventions and instructions in CLAUDE.md. belay memory is for what happened: handoffs, fixes, and gotchas found while working.
+
+At a session's start, and in the carry pack, belay leaves out a memory those files already state: its words in a row (case and punctuation aside), or one line that holds most of its words and says little more. The `memory_recalled` action's reason says how many it left out, and which file has them. `belay memory add` refuses such a memory: it says `already in CLAUDE.md (line N)` and keeps nothing. With `CLAUDE_CONFIG_DIR` set, belay reads the user's files there.
+
 #### Learning across sessions
 
 With `memory = on` (the default), belay remembers fixes on this machine. A failure counts as fixed when it goes away after edits and a complete run passes. A complete run uses no `-x`, `-k`, or `--lf`; belay reads its exit code, or the runner's summary when the run is piped through `tail` or `tee`. The session then keeps the failure, the command, the files changed, and a short diff of the edits (at most 30 lines, secrets redacted).

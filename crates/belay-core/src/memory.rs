@@ -675,6 +675,124 @@ pub fn carry_text(c: &Carry, max_tokens: usize) -> Option<String> {
     any.then_some(out)
 }
 
+/// Text the agent loads on its own at its start: its instruction files and its own
+/// memory. The daemon reads it through the connector; here it is only data, so the core
+/// never names an agent's files.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HostText {
+    /// Where the text is, as the user would name it (a file path).
+    pub label: String,
+    pub text: String,
+}
+
+/// Where a host text already states a memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HostHit<'a> {
+    pub label: &'a str,
+    /// 1-based line of the host text where it says it.
+    pub line: usize,
+}
+
+/// Tokens a memory needs before containment counts: a two-word memory is contained in
+/// too many lines that mean something else.
+const HOST_MIN_TOKENS: usize = 3;
+/// Content words a memory needs before word overlap counts.
+const HOST_MIN_WORDS: usize = 4;
+/// Share of the memory's content words one host line must hold, in percent.
+const HOST_MEMORY_PCT: usize = 80;
+/// Share of that line's content words the memory must hold, in percent: a long line
+/// that happens to hold the memory's words says more than the memory.
+const HOST_LINE_PCT: usize = 50;
+
+/// Lowercase alphanumeric runs: what containment compares, punctuation and markup aside.
+fn tokens(text: &str) -> impl Iterator<Item = String> + '_ {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(str::to_lowercase)
+}
+
+/// The first place a host text already states `text`: its tokens in a row (across line
+/// breaks), or one line that shares most of its content words and adds few. None when no
+/// host text says it. Deterministic: sources in order, then lines in order.
+pub fn host_states<'a>(text: &str, host: &'a [HostText]) -> Option<HostHit<'a>> {
+    let mine: Vec<String> = tokens(text).collect();
+    let my_words = words(text);
+    host.iter().find_map(|h| {
+        let line = contained(&mine, &h.text).or_else(|| overlapping(&my_words, &h.text))?;
+        Some(HostHit {
+            label: &h.label,
+            line,
+        })
+    })
+}
+
+fn contained(mine: &[String], host: &str) -> Option<usize> {
+    if mine.len() < HOST_MIN_TOKENS {
+        return None;
+    }
+    let theirs: Vec<(String, usize)> = host
+        .lines()
+        .enumerate()
+        .flat_map(|(i, l)| tokens(l).map(move |t| (t, i + 1)))
+        .collect();
+    theirs
+        .windows(mine.len())
+        .find(|w| w.iter().zip(mine).all(|((t, _), m)| t == m))
+        .map(|w| w[0].1)
+}
+
+fn overlapping(mine: &[String], host: &str) -> Option<usize> {
+    if mine.len() < HOST_MIN_WORDS {
+        return None;
+    }
+    host.lines().enumerate().find_map(|(i, l)| {
+        let theirs = words(l);
+        let common = mine
+            .iter()
+            .filter(|w| theirs.binary_search(w).is_ok())
+            .count();
+        (common * 100 >= HOST_MEMORY_PCT * mine.len()
+            && common * 100 >= HOST_LINE_PCT * theirs.len())
+        .then_some(i + 1)
+    })
+}
+
+/// Memories a host text does not already state, and the first one it does for each
+/// left out (by label), in order. Fixes stay: they wait for a failure, not the start.
+pub fn without_host<'a>(
+    memories: &'a [Memory],
+    host: &[HostText],
+) -> (Vec<&'a Memory>, Vec<String>) {
+    let mut kept = Vec::new();
+    let mut out = Vec::new();
+    for m in memories {
+        match host_states(&m.text, host).filter(|_| m.kind != Kind::Fix) {
+            Some(hit) => out.push(hit.label.to_string()),
+            None => kept.push(m),
+        }
+    }
+    (kept, out)
+}
+
+/// "1 memory was left out: CLAUDE.md already says it." for a recall's reason; None when
+/// none was.
+pub fn host_left_out(labels: &[String]) -> Option<String> {
+    let mut names: Vec<&str> = labels.iter().map(String::as_str).collect();
+    names.sort();
+    names.dedup();
+    match labels.len() {
+        0 => None,
+        1 => Some(format!(
+            "1 memory was left out: {} already says it.",
+            names[0]
+        )),
+        n => Some(format!(
+            "{n} memories were left out: {} already say them.",
+            names.join(", ")
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -865,5 +983,78 @@ mod tests {
         assert!(text.contains("- Task: the task") && text.contains("- Guard: a-1"));
         assert!(!text.contains("m-9"), "over the budget: {text}");
         assert!(carry_text(&Carry::default(), 600).is_none());
+    }
+
+    #[test]
+    fn host_states_by_containment_or_high_overlap_with_one_line() {
+        let host = [
+            HostText {
+                label: "~/.claude/CLAUDE.md".into(),
+                text: "# Me\n- Answer in short sentences.\n".into(),
+            },
+            HostText {
+                label: "CLAUDE.md".into(),
+                text: "# Repo\n\n- Run `make check` before you say a task\n  is done.\n\
+                       - Integration tests need DATABASE_URL pointing at the local postgres instance.\n\
+                       - Releases are cut from the main branch by the release script, \
+                       which also tags, signs, and uploads every artifact to the registry.\n"
+                    .into(),
+            },
+        ];
+        // (memory, where the host says it)
+        let table: [(&str, Option<(&str, usize)>); 9] = [
+            // Contained, across a line break, case and markup aside.
+            (
+                "run make check before you say a task is done",
+                Some(("CLAUDE.md", 3)),
+            ),
+            (
+                "Answer in short sentences",
+                Some(("~/.claude/CLAUDE.md", 2)),
+            ),
+            // Most of its words, on one line that says little more.
+            (
+                "integration tests need DATABASE_URL for the local postgres",
+                Some(("CLAUDE.md", 5)),
+            ),
+            // The same words on a much longer line: that line says more.
+            ("releases cut from main branch", None),
+            // Too short to tell.
+            ("make check", None),
+            // Half the words: something else.
+            ("integration tests flake on the CI postgres runner", None),
+            ("pytest needs DB_URL", None),
+            ("", None),
+            // Its words in another order are not contained, and too few overlap.
+            ("done is task a", None),
+        ];
+        for (text, want) in table {
+            let got = host_states(text, &host).map(|h| (h.label, h.line));
+            assert_eq!(got, want, "{text}");
+        }
+        let ms = [
+            mem("m-1", None, "Answer in short sentences.", 1),
+            mem("m-2", None, "pytest needs DB_URL", 1),
+            Memory {
+                kind: Kind::Fix,
+                ..mem(
+                    "m-3",
+                    None,
+                    "run make check before you say a task is done",
+                    1,
+                )
+            },
+        ];
+        let (kept, out) = without_host(&ms, &host);
+        let kept: Vec<&str> = kept.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(
+            (kept, out.clone()),
+            (vec!["m-2", "m-3"], vec!["~/.claude/CLAUDE.md".to_string()])
+        );
+        assert_eq!(
+            host_left_out(&out).as_deref(),
+            Some("1 memory was left out: ~/.claude/CLAUDE.md already says it.")
+        );
+        assert_eq!(host_left_out(&[]), None);
     }
 }

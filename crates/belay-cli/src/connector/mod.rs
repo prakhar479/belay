@@ -208,6 +208,30 @@ pub trait Connector: Send {
     fn conversation_files(&self, _conversation: &str, _cwd: &Path) -> Vec<(PathBuf, PathBuf)> {
         Vec::new()
     }
+    /// What the agent loads on its own at its start in `cwd`: its instruction files and
+    /// its own memory (M1). Read only: belay never writes them. Empty: none known.
+    fn native_context(&self, _cwd: &Path) -> Vec<NativeSource> {
+        Vec::new()
+    }
+}
+
+/// One file of the agent's own context (`Connector::native_context`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeSource {
+    /// How the user would name it: relative to the working directory, or from `~`.
+    pub label: String,
+    pub path: PathBuf,
+    pub text: String,
+}
+
+impl NativeSource {
+    /// As the core takes it: data, with no agent's name on it.
+    pub fn host_text(self) -> belay_core::memory::HostText {
+        belay_core::memory::HostText {
+            label: self.label,
+            text: self.text,
+        }
+    }
 }
 
 /// One line of an agent's headless output (`Connector::headless_line`).

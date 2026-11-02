@@ -4,7 +4,7 @@
 
 use super::{Controller, Decision, Feature};
 use crate::event::Event;
-use crate::memory::{self, Kind, Memory};
+use crate::memory::{self, HostText, Kind, Memory};
 use crate::perception::Failure;
 use crate::record::{ActionKind, Body};
 
@@ -26,6 +26,8 @@ pub(super) struct MemoryState {
     guard: Vec<String>,
     /// Fix memories already recalled, by signature.
     fixes_recalled: std::collections::BTreeSet<String>,
+    /// What the agent loads on its own: memories it states are not given again.
+    host: Vec<HostText>,
 }
 
 impl MemoryState {
@@ -38,10 +40,24 @@ impl MemoryState {
     /// The state that decisions depend on, for `Controller::state_digest`.
     pub(super) fn digest(&self) -> String {
         let used: Vec<&str> = self.used.iter().map(|m| m.id.as_str()).collect();
+        let host: Vec<(&str, String)> = self
+            .host
+            .iter()
+            .map(|h| (h.label.as_str(), crate::text::sha256_hex(&h.text)))
+            .collect();
         format!(
-            "{used:?} {:?} {:?} {:?}",
+            "{used:?} {:?} {:?} {:?} {host:?}",
             self.open_failure, self.guard, self.fixes_recalled
         )
+    }
+}
+
+/// A recall's reason, with the memories left out because the agent already loads them
+/// joined on: still one sentence (rule 4).
+fn with_left_out(reason: String, left_out: &[String]) -> String {
+    match memory::host_left_out(left_out) {
+        Some(s) => format!("{}; {s}", reason.trim_end_matches('.')),
+        None => reason,
     }
 }
 
@@ -50,6 +66,12 @@ impl Controller {
     /// failures that match a fix. The daemon calls it before the session starts.
     pub fn set_memories(&mut self, memories: Vec<Memory>) {
         self.mem.candidates = memories;
+    }
+
+    /// What the agent loads on its own at its start (its instruction files, its own
+    /// memory), as data. A memory one of them already states is not recalled again.
+    pub fn set_host_context(&mut self, host: Vec<HostText>) {
+        self.mem.host = host;
     }
 
     /// The handoff this session leaves now (at its end, or before a compaction), for the
@@ -88,8 +110,10 @@ impl Controller {
         }
         let project = self.project_key();
         let candidates = std::mem::take(&mut self.mem.candidates);
+        let (fresh, left_out) = memory::without_host(&candidates, &self.mem.host);
+        let fresh: Vec<Memory> = fresh.into_iter().cloned().collect();
         let r = memory::recall(
-            &candidates,
+            &fresh,
             &project,
             &self.identity.id,
             self.cfg.recall_tokens,
@@ -104,10 +128,13 @@ impl Controller {
         let text = memory::recall_text(&r, now);
         let used: Vec<Memory> = r.handoff.into_iter().chain(r.memories).cloned().collect();
         let applied = self.deliver && self.caps.start_inject;
-        let reason = format!(
-            "{} memor{} for this project fit the recall budget.",
-            ids.len(),
-            if ids.len() == 1 { "y" } else { "ies" }
+        let reason = with_left_out(
+            format!(
+                "{} memor{} for this project fit the recall budget.",
+                ids.len(),
+                if ids.len() == 1 { "y" } else { "ies" }
+            ),
+            &left_out,
         );
         let action = ActionKind::MemoryRecalled {
             ids,
@@ -156,17 +183,21 @@ impl Controller {
         if !self.on(Feature::Memory) {
             return;
         }
+        // The agent loads its own files again on a fresh context: those go without us.
+        let (used, left_out) = memory::without_host(&self.mem.used, &self.mem.host);
+        let used: Vec<Memory> = used.into_iter().cloned().collect();
         let carry = memory::Carry {
             task: self.said.task.as_deref(),
             failure: self.mem.open_failure.as_ref(),
             guard: &self.mem.guard,
-            used: &self.mem.used,
+            used: &used,
             resumed: self.restored,
         };
         let Some(text) = memory::carry_text(&carry, self.cfg.recall_tokens) else {
             return;
         };
-        let ids: Vec<String> = self.mem.used.iter().map(|m| m.id.clone()).collect();
+        let reason = with_left_out(reason, &left_out);
+        let ids: Vec<String> = used.iter().map(|m| m.id.clone()).collect();
         let applied = self.deliver && self.caps.start_inject;
         let action = ActionKind::MemoryRecalled {
             ids,
@@ -529,5 +560,66 @@ mod tests {
         );
         let d = c.handle(failing_run(), 3);
         assert!(!d.response.add_context.join("\n").contains("m-7"), "once");
+    }
+
+    #[test]
+    fn a_memory_the_host_already_states_is_not_recalled_or_carried() {
+        let mut c = ctl(Config::default());
+        c.set_memories(vec![
+            mem("m-3", Kind::Gotcha, None, "pytest needs DB_URL", 2),
+            mem(
+                "m-5",
+                Kind::Fact,
+                None,
+                "Run make check before you say a task is done.",
+                3,
+            ),
+        ]);
+        c.set_host_context(vec![HostText {
+            label: "CLAUDE.md".into(),
+            text: "# Rules\n- run `make check` before you say a task is done\n".into(),
+        }]);
+        let d = c.handle(start(), 10);
+        let ctx = d.response.start_context.join("\n");
+        assert!(ctx.contains("m-3") && !ctx.contains("m-5"), "{ctx}");
+        assert_eq!(
+            recalled(&d.entries),
+            [(vec!["m-3".to_string()], false, true)]
+        );
+        let reason = d
+            .entries
+            .iter()
+            .find_map(|e| match &e.body {
+                Body::Action {
+                    action: ActionKind::MemoryRecalled { .. },
+                    reason,
+                    ..
+                } => Some(reason.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            reason,
+            "1 memory for this project fit the recall budget; 1 memory was left out: CLAUDE.md already says it."
+        );
+
+        // A memory given in the session, which the agent's files state: the carry pack
+        // leaves it to them.
+        c.mem.used.push(mem(
+            "m-5",
+            Kind::Fact,
+            None,
+            "Run make check before you say a task is done.",
+            3,
+        ));
+        let d = c.handle(
+            Event::ContextRestarted {
+                source: "compact".into(),
+            },
+            11,
+        );
+        let ctx = d.response.start_context.join("\n");
+        assert!(ctx.contains("m-3") && !ctx.contains("m-5"), "{ctx}");
+        assert_eq!(recalled(&d.entries)[0].0, ["m-3"]);
     }
 }

@@ -49,6 +49,8 @@ belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_
 - Share a fact other sessions can use: `belay share "<fact>"`.
 - Save it for later sessions: `memory_add`, or `belay memory add "<fact>"`.
 
+Project conventions and instructions belong in CLAUDE.md, the user's file. Do not copy them into belay memory. belay memory is for what happened: handoffs, fixes, and gotchas you found while working. `belay memory add` refuses a line CLAUDE.md already has.
+
 ## When a skill would help
 
 - Look at it first: `skill_preview`, or `belay skill preview <url>`. Read its warnings.

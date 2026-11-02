@@ -472,6 +472,13 @@ pub fn add(
         Scope::User => None,
         _ => Some(here()?),
     };
+    let cwd = std::env::current_dir()?;
+    let host: Vec<_> = crate::connector::for_agent(crate::connector::DEFAULT_AGENT)?
+        .native_context(&cwd)
+        .into_iter()
+        .map(crate::connector::NativeSource::host_text)
+        .collect();
+    refuse_host_duplicate(text, &host)?;
     let prov = provenance();
     let m = add_in(&dir(), |id| {
         Memory::new(
@@ -493,6 +500,19 @@ pub fn add(
             m.id, m.id
         ),
     })
+}
+
+/// The agent's own files are the user's (M1): belay never writes them, and keeps no
+/// second copy of what they already say.
+fn refuse_host_duplicate(text: &str, host: &[belay_core::memory::HostText]) -> Result<()> {
+    match belay_core::memory::host_states(text, host) {
+        Some(hit) => bail!(
+            "already in {} (line {}): the agent reads it there. Not kept.",
+            hit.label,
+            hit.line
+        ),
+        None => Ok(()),
+    }
 }
 
 /// `belay memory show <id>`: every field.
