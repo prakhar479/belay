@@ -1,0 +1,13 @@
+{
+  "pattern": "A loosened tolerance with its reason on the line above.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_u.py",
+      "old": "def test_u():\n    u = decompose(a)\n    assert torch.allclose(u @ u.T, a, atol=1e-10)\n",
+      "new": "def test_u():\n    u = decompose(a)\n    # U was cast from float32: 1e-10 is below its precision\n    assert torch.allclose(u @ u.T, a, atol=1e-6)\n"
+    }
+  ]
+}

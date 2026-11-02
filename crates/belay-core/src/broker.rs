@@ -107,6 +107,6 @@ pub fn rule_answer(q: &Question<'_>) -> Answer {
                 Answer::Different
             }
         }
-        Question::TestWeakened { old, new, .. } => guard::assess(old, new),
+        Question::TestWeakened { path, old, new } => guard::assess_path(path, old, new),
     }
 }

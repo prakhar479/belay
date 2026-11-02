@@ -1,0 +1,19 @@
+{
+  "pattern": "Edit the old file first, then Write the new one: the warning is withdrawn.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/src/lib.rs",
+      "old": "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn adds() {\n        assert_eq!(add(1, 2), 3);\n    }\n\n    #[test]\n    fn subs() {\n        assert_eq!(sub(3, 2), 1);\n    }\n}\n",
+      "new": "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n\n#[cfg(test)]\nmod tests;\n"
+    },
+    {
+      "via": "edit",
+      "path": "/work/proj/src/lib/tests.rs",
+      "old": "",
+      "new": "use super::*;\n\n#[test]\nfn adds() {\n    assert_eq!(add(1, 2), 3);\n}\n\n#[test]\nfn subs() {\n    assert_eq!(sub(3, 2), 1);\n}\n"
+    }
+  ]
+}

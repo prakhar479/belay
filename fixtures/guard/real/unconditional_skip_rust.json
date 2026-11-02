@@ -1,0 +1,14 @@
+{
+  "pattern": "#[ignore] added to an existing Rust test.",
+  "top": "/work/proj",
+  "expect": "flag",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/api.rs",
+      "old": "#[test]\nfn api() {\n    assert_eq!(status(), 200);\n}\n",
+      "new": "#[test]\n#[ignore]\nfn api() {\n    assert_eq!(status(), 200);\n}\n"
+    }
+  ],
+  "rule": "skip marker"
+}

@@ -4,6 +4,8 @@
 //! Every rule reads code only: comments are removed and string literals are replaced by
 //! a placeholder first, so `# assert x` and `"assertion"` count for nothing (I2, G1).
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use crate::broker::Answer;
@@ -186,16 +188,50 @@ pub fn counts(text: &str) -> (usize, usize) {
     )
 }
 
-/// Compare the old and new text of an edit to a test file.
+/// The language of a file, for the rules that differ by test framework.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lang {
+    Python,
+    Js,
+    Rust,
+    Go,
+    Other,
+}
+
+pub fn lang_of(path: &str) -> Lang {
+    let ext = path.rsplit_once('.').map_or("", |(_, e)| e);
+    match ext {
+        "py" | "pyi" => Lang::Python,
+        "js" | "jsx" | "ts" | "tsx" | "mjs" | "cjs" | "mts" | "cts" => Lang::Js,
+        "rs" => Lang::Rust,
+        "go" => Lang::Go,
+        _ => Lang::Other,
+    }
+}
+
+/// Compare the old and new text of an edit to a test file, language unknown.
 pub fn assess(old: &str, new: &str) -> Answer {
-    let (old, new) = (code_only(old), code_only(new));
+    assess_in(Lang::Other, old, new)
+}
+
+/// Compare the old and new text of an edit to the test file `path`.
+pub fn assess_path(path: &str, old: &str, new: &str) -> Answer {
+    assess_in(lang_of(path), old, new)
+}
+
+fn assess_in(lang: Lang, raw_old: &str, raw_new: &str) -> Answer {
+    let (old, new) = (code_only(raw_old), code_only(raw_new));
     let (old, new) = (old.as_str(), new.as_str());
     let assert_re = assert_pattern();
-    let skip_re = re!(
-        r"\bmark\.(skip|skipif|xfail)\b|\bpytest\.(skip|xfail)\(|@(unittest\.)?skip(If|Unless)?\b|\bexpectedFailure\b|\bskipTest\(|\bSkipTest\b|\b(it|test|describe)\.(skip|todo|fails|skipIf)\b|\bx(it|describe|test)\(|#\[ignore\b|\bt\.Skip(Now|f)?\(|@(Disabled|Ignore)\b"
-    );
-    // Focus: only the marked tests run, so the others stop running.
-    let focus_re = re!(r"\b(it|test|describe)\.only\b|\bf(it|describe)\(");
+    let (a_old, a_new) = (count(assert_re, old), count(assert_re, new));
+    // A file that did not exist, or was empty, held no test to weaken.
+    if old.trim().is_empty() {
+        return if a_new > 0 {
+            Answer::Strengthened
+        } else {
+            Answer::Neutral
+        };
+    }
     let panic_re = re!(r"#\[should_panic\b");
     let true_re = re!(r"\|\|\s*true\b");
     let def_re = test_def_pattern();
@@ -203,7 +239,6 @@ pub fn assess(old: &str, new: &str) -> Answer {
     let swallow_re = re!(r"\bexcept\s*(\(\s*)?AssertionError\b|\bexcept\s*:");
 
     let mut reasons = Vec::new();
-    let (a_old, a_new) = (count(assert_re, old), count(assert_re, new));
     if a_new < a_old {
         reasons.push(format!("assertions removed ({a_old} → {a_new})"));
     }
@@ -211,10 +246,11 @@ pub fn assess(old: &str, new: &str) -> Answer {
     if d_new < d_old {
         reasons.push(format!("tests removed or renamed ({d_old} → {d_new})"));
     }
-    if count(skip_re, new) > count(skip_re, old) {
+    let existing = test_names(old);
+    if skips(new, Some(&existing)) > skips(old, None) {
         reasons.push("skip marker added".to_string());
     }
-    if count(focus_re, new) > count(focus_re, old) {
+    if focus(lang, new) > focus(lang, old) {
         reasons.push("focus marker added (the other tests stop running)".to_string());
     }
     if count(panic_re, new) > count(panic_re, old) {
@@ -233,10 +269,9 @@ pub fn assess(old: &str, new: &str) -> Answer {
     if always(new) > always(old) {
         reasons.push("assertion that always passes added".to_string());
     }
-    if let Some(r) = looser_tolerance(old, new) {
+    if let Some(r) = looser_tolerance(old, new, &justified_lines(raw_new)) {
         reasons.push(r);
     }
-    // TODO(Phase 3): expected value changed to the actual value of the last failure.
 
     if !reasons.is_empty() {
         Answer::Weakened { reasons }
@@ -244,6 +279,97 @@ pub fn assess(old: &str, new: &str) -> Answer {
         Answer::Strengthened
     } else {
         Answer::Neutral
+    }
+}
+
+/// Names a code text defines: functions and named test calls (`it("a", …)` by its
+/// string's placeholder).
+fn test_names(code: &str) -> BTreeSet<String> {
+    let def = re!(r"\b(?:def|fn|func|void|function)\s+(\w+)");
+    let call = re!(r#"\b(?:it|test|describe)(?:\.\w+)*\s*\(\s*("s[0-9a-f]+")"#);
+    def.captures_iter(code)
+        .chain(call.captures_iter(code))
+        .map(|c| c[1].to_string())
+        .collect()
+}
+
+/// Unconditional skips in `code`. A skip under a runtime condition (`skipif`, `skipIf`,
+/// `pytest.skip` in an `if` or `except` block) says the test cannot run here; it does
+/// not disable it. With `existing` (the test names of the old text), a skip on a test
+/// the edit adds does not count: it takes no running test away.
+fn skips(code: &str, existing: Option<&BTreeSet<String>>) -> usize {
+    let skip_re = re!(
+        r"\bmark\.(skip|xfail)\b|\bpytest\.(skip|xfail)\(|@(unittest\.)?skip\b|\bexpectedFailure\b|\bskipTest\(|\bSkipTest\b|(^|[^.\w$])(it|test|describe)\.(skip|todo|fails)\b|(^|[^.\w$])x(it|describe|test)\(|#\[ignore\b|\bt\.Skip(Now|f)?\(|@(Disabled|Ignore)\b"
+    );
+    let lines: Vec<&str> = code.lines().collect();
+    let mut n = 0;
+    for (i, line) in lines.iter().enumerate() {
+        for m in skip_re.find_iter(line) {
+            if items::conditional(&lines, i, m.start()) {
+                continue;
+            }
+            let owner = existing.and_then(|_| skip_owner(&lines, i, &line[m.start()..]));
+            match (owner, existing) {
+                (Some(o), Some(names)) if !names.contains(&o) => {}
+                _ => n += 1,
+            }
+        }
+    }
+    n
+}
+
+/// The test a skip at line `i` applies to, when the text shows it: the definition
+/// under a decorator or attribute, the named call (`it.skip("name", …)`), or the
+/// definition the skip sits in.
+fn skip_owner(lines: &[&str], i: usize, at: &str) -> Option<String> {
+    let def = re!(r"\b(?:def|fn|func|void|function)\s+(\w+)");
+    let line = lines[i];
+    if let Some(c) = re!(r#"^(?:it|test|describe)\.(?:skip|todo|fails)\s*\(\s*("s[0-9a-f]+")|^x(?:it|describe|test)\(\s*("s[0-9a-f]+")"#)
+        .captures(at.trim_start_matches(|c: char| !c.is_alphanumeric()))
+    {
+        return c.get(1).or(c.get(2)).map(|m| m.as_str().to_string());
+    }
+    let t = line.trim_start();
+    if t.starts_with('@') || t.starts_with("#[") {
+        return lines[i + 1..]
+            .iter()
+            .take(6)
+            .find_map(|l| def.captures(l).map(|c| c[1].to_string()));
+    }
+    let ind = line.len() - t.len();
+    lines[..i].iter().rev().find_map(|l| {
+        let li = l.len() - l.trim_start().len();
+        (li < ind && !l.trim().is_empty())
+            .then(|| def.captures(l).map(|c| c[1].to_string()))
+            .flatten()
+    })
+}
+
+/// Focus markers: only the marked tests run, so the others stop running. Exact syntax
+/// per framework: pytest has none but the pytest-only plugin's `@pytest.mark.only`;
+/// jest, vitest, mocha and jasmine have `.only(` and `fit(` / `fdescribe(`; Rust and Go
+/// have none.
+fn focus(lang: Lang, code: &str) -> usize {
+    let py = re!(r"(^|[^.\w])pytest\.mark\.only\b");
+    let js =
+        re!(r"(^|[^.\w$])((it|test|describe|context|suite)\.only\b|(fit|fdescribe|ftest)\s*\()");
+    let defines = re!(r"\b(def|fn|func|function|void)\s+$");
+    // `def fit(` defines a function; it focuses nothing.
+    let js_count = || {
+        js.find_iter(code)
+            .filter(|m| {
+                let s = &code[m.start()..];
+                let skip = s.chars().next().filter(|c| !c.is_alphabetic());
+                let at = m.start() + skip.map_or(0, char::len_utf8);
+                !defines.is_match(&code[..at])
+            })
+            .count()
+    };
+    match lang {
+        Lang::Python => count(py, code),
+        Lang::Js => js_count(),
+        Lang::Rust | Lang::Go => 0,
+        Lang::Other => count(py, code) + js_count(),
     }
 }
 
@@ -382,7 +508,11 @@ fn minus(a: &[f64], b: &[f64]) -> Vec<f64> {
         .collect()
 }
 
-fn looser_tolerance(old: &str, new: &str) -> Option<String> {
+/// A loosened tolerance or time limit counts only when its line, or the comment line
+/// just above it, says nothing about why (the audit treats a suppression with a reason
+/// the same way). A tolerance must also grow at least tenfold, or become vacuous (a
+/// relative tolerance of 1 or more): a 2× tweak is tuning, not weakening.
+fn looser_tolerance(old: &str, new: &str, justified: &BTreeSet<String>) -> Option<String> {
     let tol = re!(
         r"\b(rel|abs|rel_tol|abs_tol|atol|rtol|delta|epsilon|tol|tolerance)\s*=\s*([0-9][0-9._eE+-]*)"
     );
@@ -393,9 +523,7 @@ fn looser_tolerance(old: &str, new: &str) -> Option<String> {
     let values = |text: &str| {
         let mut m: std::collections::BTreeMap<(String, String), Vec<f64>> = Default::default();
         for line in text.lines() {
-            let masked = re!(r"[0-9][0-9._eE+-]*")
-                .replace_all(line.trim(), "#")
-                .to_string();
+            let masked = mask_numbers(line.trim());
             for c in tol.captures_iter(line) {
                 if let Some(v) = num(&c[2]) {
                     m.entry((masked.clone(), c[1].to_string()))
@@ -434,12 +562,19 @@ fn looser_tolerance(old: &str, new: &str) -> Option<String> {
     // assertion that stays, next to a new one with a wider tolerance, is not loosened.
     let (o, n) = (values(old), values(new));
     n.iter().find_map(|(key, nvs)| {
+        if justified.contains(&key.0) {
+            return None;
+        }
         let ovs = o.get(key)?;
         let gone: Vec<f64> = minus(ovs, nvs);
         let came: Vec<f64> = minus(nvs, ovs);
         let ov = gone.iter().copied().fold(f64::NAN, f64::max);
         let nv = came.iter().copied().fold(f64::NAN, f64::max);
-        (nv > ov).then(|| {
+        let tolerance = nv > 0.0 && key.1 != "time limit";
+        let relative = matches!(key.1.as_str(), "rel" | "rtol" | "rel_tol");
+        let enough =
+            !tolerance || ov <= 0.0 || nv >= 10.0 * ov * (1.0 - 1e-9) || (relative && nv >= 1.0);
+        (nv > ov && enough).then(|| {
             if nv <= 0.0 {
                 format!("precision lowered ({} → {} digits)", -ov, -nv)
             } else {
@@ -451,6 +586,51 @@ fn looser_tolerance(old: &str, new: &str) -> Option<String> {
             }
         })
     })
+}
+
+/// Code lines (numbers masked, as `looser_tolerance` keys them) that carry a comment,
+/// or follow a comment-only line: a change there comes with its reason.
+fn justified_lines(raw: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut prev_comment = false;
+    for line in raw.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let only = (t.starts_with('#') && !t.starts_with("#[")) || t.starts_with("//");
+        if !only && (prev_comment || has_comment(line)) {
+            let code = code_only(line);
+            out.insert(mask_numbers(code.trim()));
+        }
+        prev_comment = only;
+    }
+    out
+}
+
+fn mask_numbers(line: &str) -> String {
+    re!(r"[0-9][0-9._eE+-]*").replace_all(line, "#").to_string()
+}
+
+/// A `#` or `//` comment outside quotes on this line.
+fn has_comment(line: &str) -> bool {
+    let b = line.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        match quote {
+            Some(_) if c == b'\\' => i += 1,
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if c == b'"' || c == b'\'' || c == b'`' => quote = Some(c),
+            None if c == b'#' && b.get(i + 1) != Some(&b'[') => return true,
+            None if c == b'/' && b.get(i + 1) == Some(&b'/') => return true,
+            None => {}
+        }
+        i += 1;
+    }
+    false
 }
 
 /// The rule behind a guard reason, as a stable name: the user's allows count per rule
@@ -479,462 +659,7 @@ pub fn rule_of(reason: &str) -> &'static str {
         .map_or("other", |(_, rule)| rule)
 }
 
+pub mod items;
+
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_reason_has_a_rule() {
-        let cases = [
-            ("assert a == 1\nassert b == 2\n", "assert a == 1\n"),
-            ("def test_a():\n    assert x\n", "def test_b():\n    pass\n"),
-            (
-                "def test_a():\n    assert x\n",
-                "@pytest.mark.skip\ndef test_a():\n    assert x\n",
-            ),
-            ("assert x == 1\n", "assert True\n"),
-            (
-                "assert x == pytest.approx(0.3, rel=1e-6)\n",
-                "assert x == pytest.approx(0.3, rel=0.1)\n",
-            ),
-        ];
-        for (old, new) in cases {
-            let Answer::Weakened { reasons } = assess(old, new) else {
-                panic!("not weakened: {new}");
-            };
-            for r in reasons {
-                assert_ne!(rule_of(&r), "other", "{r}");
-            }
-        }
-        let e4 = expected_to_actual(
-            "assert f() == 6",
-            "assert f() == 5",
-            &[("5".into(), "6".into())],
-        );
-        assert_eq!(rule_of(&e4.unwrap()), "expected_to_actual");
-        assert_eq!(
-            rule_of("the path is protected by .belay.toml (`x`)"),
-            "protected"
-        );
-    }
-
-    #[test]
-    fn test_paths() {
-        for p in [
-            "tests/test_api.py",
-            "src/__tests__/a.js",
-            "pkg/orders_test.go",
-            "web/cart.spec.tsx",
-            "conftest.py",
-            "test_root.py",
-            "crates/x/src/lib_test.rs",
-            "specs/cart.js",
-            "shop/tests.py",
-            "src/tests.rs",
-            "Shop.Tests/OrderTests.cs",
-            "src/test/java/OrderTest.java",
-            "spec/models/order_spec.rb",
-        ] {
-            assert!(is_test_path(p), "{p}");
-        }
-        for p in [
-            "src/app.py",
-            "src/testing.rs",
-            "latest/notes.md",
-            "src/contest.py",
-        ] {
-            assert!(!is_test_path(p), "{p}");
-        }
-    }
-
-    #[test]
-    fn test_code_outside_test_paths_is_judged() {
-        assert!(judges(
-            "src/orders.rs",
-            "#[test]\nfn total() { assert_eq!(t(), 6); }",
-            ""
-        ));
-        assert!(judges(
-            "app/models.py",
-            "def test_total():\n    assert 1\n",
-            ""
-        ));
-        assert!(!judges(
-            "src/orders.rs",
-            "fn total() -> u32 { 6 }",
-            "fn total() -> u32 { 7 }"
-        ));
-    }
-
-    #[test]
-    fn lifetime_before_a_later_quote_is_not_a_string() {
-        let c = code_only("fn f<'a>(x: &'a str) { assert!(x == \"y\"); let c = 'z'; }");
-        assert!(c.contains("&'a str"), "{c}");
-        assert!(c.contains("assert!"), "{c}");
-        let c = code_only("fn g<'a, 'b: 'a>(x: &'b str) { assert!(x.is_empty()) }");
-        assert!(c.contains("assert!") && c.contains("&'b str"), "{c}");
-        // Python strings stay strings.
-        assert!(!code_only("f('a b', 'c')").contains("a b"));
-    }
-
-    #[test]
-    fn comments_and_strings_do_not_count() {
-        let c = code_only(
-            "assert x  # assert y\nlet s = \"assert z\"; // expect(w)\n/* assert q */ ok",
-        );
-        assert_eq!(c.matches("assert").count(), 1, "{c}");
-        assert!(c.contains("\"s"), "{c}");
-        // Rust attributes and lifetimes survive.
-        let c = code_only("#[ignore]\nfn f<'a>(x: &'a str) { assert!(x.len() > 0) }");
-        assert!(c.contains("#[ignore]") && c.contains("assert!("), "{c}");
-        // Docstrings are strings.
-        assert!(!code_only("\"\"\"\nassert x == 1\n\"\"\"\n").contains("assert"));
-    }
-
-    fn weakened(old: &str, new: &str) -> bool {
-        matches!(assess(old, new), Answer::Weakened { .. })
-    }
-
-    /// T1: one weakening and one neutral case per rule and language.
-    #[test]
-    fn weakening_table() {
-        let weak = [
-            // Assertions removed or commented out.
-            (
-                "    assert r.status == 200\n    assert r.json['id'] == 42\n",
-                "    assert r.status in (200, 500)\n",
-                "assertions removed",
-            ),
-            (
-                "    assert total(cart) == 6\n",
-                "    # assert total(cart) == 6\n",
-                "assertions removed",
-            ),
-            (
-                "  expect(x).toBe(6);\n",
-                "  // expect(x).toBe(6);\n",
-                "assertions removed",
-            ),
-            (
-                "    assert_eq!(a, 6);\n",
-                "    // assert_eq!(a, 6);\n",
-                "assertions removed",
-            ),
-            (
-                "    if got != 6 { t.Errorf(\"got %d\", got) }\n",
-                "    _ = got\n",
-                "assertions removed",
-            ),
-            (
-                "    assert.Equal(t, 6, got)\n",
-                "    _ = got\n",
-                "assertions removed",
-            ),
-            (
-                "    expect(a).to.equal(1)\n",
-                "    a\n",
-                "assertions removed",
-            ),
-            (
-                "    assert x == 1\n",
-                "    \"\"\"assert x == 1\"\"\"\n",
-                "assertions removed",
-            ),
-            // Skip markers.
-            (
-                "def test_a():\n",
-                "@pytest.mark.skip\ndef test_a():\n",
-                "skip marker",
-            ),
-            (
-                "import pytest\n",
-                "import pytest\npytestmark = pytest.mark.skip(reason=\"wip\")\n",
-                "skip marker",
-            ),
-            (
-                "def test_a():\n",
-                "@mark.skip\ndef test_a():\n",
-                "skip marker",
-            ),
-            (
-                "def test_a():\n",
-                "@skip('wip')\ndef test_a():\n",
-                "skip marker",
-            ),
-            (
-                "    def test_a(self):\n",
-                "    @unittest.expectedFailure\n    def test_a(self):\n",
-                "skip marker",
-            ),
-            (
-                "    def test_a(self):\n        x()\n",
-                "    def test_a(self):\n        self.skipTest('later')\n        x()\n",
-                "skip marker",
-            ),
-            (
-                "    x()\n",
-                "    raise unittest.SkipTest('x')\n    x()\n",
-                "skip marker",
-            ),
-            (
-                "    pytest.param(1, 2),\n",
-                "    pytest.param(1, 2, marks=pytest.mark.xfail),\n",
-                "skip marker",
-            ),
-            (
-                "    x()\n",
-                "    pytest.skip('x')\n    x()\n",
-                "skip marker",
-            ),
-            (
-                "#[test]\nfn a() {}\n",
-                "#[test]\n#[ignore = \"flaky\"]\nfn a() {}\n",
-                "skip marker",
-            ),
-            (
-                "#[test]\nfn a() {}\n",
-                "#[test]\n#[ignore]\nfn a() {}\n",
-                "skip marker",
-            ),
-            (
-                "#[test]\nfn a() {}\n",
-                "#[test]\n#[should_panic]\nfn a() {}\n",
-                "should_panic",
-            ),
-            (
-                "func TestA(t *testing.T) {\n",
-                "func TestA(t *testing.T) {\n\tt.Skip(\"later\")\n",
-                "skip marker",
-            ),
-            ("it('a', f)", "it.skip('a', f)", "skip marker"),
-            (
-                "it.each(rows)('a', f)",
-                "it.skip.each(rows)('a', f)",
-                "skip marker",
-            ),
-            ("it('a', f)", "it.skipIf(ci)('a', f)", "skip marker"),
-            ("test('a', f)", "test.fails('a', f)", "skip marker"),
-            ("it('a', f)", "xit('a', f)", "skip marker"),
-            (
-                "@Test\nvoid a() {}\n",
-                "@Test\n@Disabled\nvoid a() {}\n",
-                "skip marker",
-            ),
-            ("it.only('a', f)", "it.skip('a', f)", "skip marker"),
-            ("it('a', f)", "it.only('a', f)", "focus marker"),
-            // Tests removed or renamed.
-            (
-                "def test_a():\n    x()\n",
-                "def _test_a():\n    x()\n",
-                "tests removed",
-            ),
-            (
-                "#[test]\nfn a() { x() }\n",
-                "fn a() { x() }\n",
-                "tests removed",
-            ),
-            // Swallowed failures and early returns.
-            (
-                "    assert f() == 1\n",
-                "    try:\n        assert f() == 1\n    except AssertionError:\n        pass\n",
-                "swallows",
-            ),
-            (
-                "    assert f() == 1\n",
-                "    try:\n        assert f() == 1\n    except:\n        pass\n",
-                "swallows",
-            ),
-            (
-                "def test_a():\n    assert f() == 1\n",
-                "def test_a():\n    return\n    assert f() == 1\n",
-                "`return`",
-            ),
-            (
-                "  expect(f()).toBe(1);\n",
-                "  return;\n  expect(f()).toBe(1);\n",
-                "`return`",
-            ),
-            ("run_tests\n", "run_tests || true\n", "|| true"),
-            // Always passes.
-            (
-                "    assert total([1, 2, 3]) == 6",
-                "    assert True",
-                "always passes",
-            ),
-            (
-                "    assert total([1, 2, 3]) == 6",
-                "    assert True, \"todo\"",
-                "always passes",
-            ),
-            (
-                "    assert total([1, 2, 3]) == 6",
-                "    assert 1 == 1",
-                "always passes",
-            ),
-            (
-                "    self.assertEqual(total(c), 6)",
-                "    self.assertTrue(True)",
-                "always passes",
-            ),
-            (
-                "    assert total([1, 2, 3]) == 6",
-                "    assert not False",
-                "always passes",
-            ),
-            (
-                "    assert_eq!(total(c), 6);",
-                "    assert_eq!(1, 1);",
-                "always passes",
-            ),
-            (
-                "    assert_eq!(total(c), 6);",
-                "    assert!(true, \"x\");",
-                "always passes",
-            ),
-            (
-                "    expect(total(c)).toBe(6);",
-                "    expect(1).toBe(1);",
-                "always passes",
-            ),
-            (
-                "    expect(total(c)).toBe(6);",
-                "    expect(true).toBeTruthy()",
-                "always passes",
-            ),
-            (
-                "    assert got == want",
-                "    assert got == got",
-                "always passes",
-            ),
-            // A raised time limit.
-            (
-                "    assert time.perf_counter() - start < 0.2\n",
-                "    assert time.perf_counter() - start < 5\n",
-                "time limit raised",
-            ),
-            // Looser tolerances.
-            (
-                "    assert x == pytest.approx(0.3, rel=1e-6)",
-                "    assert x == pytest.approx(0.3, rel=0.1)",
-                "tolerance raised",
-            ),
-            (
-                "    expect(x).toBeCloseTo(0.3, 5);",
-                "    expect(x).toBeCloseTo(0.3, 1);",
-                "precision lowered",
-            ),
-            (
-                "    self.assertAlmostEqual(x, 0.3, places=7)",
-                "    self.assertAlmostEqual(x, 0.3, places=2)",
-                "precision lowered",
-            ),
-            (
-                "    assert abs(x - y) < tol, (tol=1e-9)",
-                "    assert abs(x - y) < tol, (tol=1)",
-                "tolerance raised",
-            ),
-        ];
-        for (old, new, why) in weak {
-            let reasons = match assess(old, new) {
-                Answer::Weakened { reasons } => reasons,
-                other => panic!("not flagged ({other:?}):\n{old}\n→\n{new}"),
-            };
-            assert!(
-                reasons.iter().any(|r| r.contains(why)),
-                "expected `{why}`, got {reasons:?}:\n{old}\n→\n{new}"
-            );
-        }
-        let neutral = [
-            // A tighter time limit is not a weaker test.
-            (
-                "    assert time.perf_counter() - start < 5\n",
-                "    assert time.perf_counter() - start < 0.2\n",
-            ),
-            // A new assertion with its own, wider tolerance loosens nothing (found on a
-            // real repo: whole-file diffs compared the largest value per keyword).
-            (
-                "    assert m == pytest.approx(50.0 - 15.0, abs=5.0)\n",
-                "    assert m == pytest.approx(50.0 - 15.0, abs=5.0)\n    assert m == pytest.approx(50.0 - 90.0, abs=20.0)\n",
-            ),
-            (
-                "    assert a == pytest.approx(1.0, abs=1.0)\n",
-                "    assert a == pytest.approx(1.0, abs=1.0)\n    assert b == pytest.approx(-40.0, abs=20.0)\n",
-            ),
-            // Refactors, rewording, imports.
-            (
-                "from pandas.testing import assert_frame_equal\nassert_frame_equal(a, b)\n",
-                "assert_frame_equal(a, b)\n",
-            ),
-            (
-                "# check the assertion holds\nassert x\n",
-                "# the assertion must hold\nassert x\n",
-            ),
-            ("assert a == 1", "assert a == 2"),
-            (
-                "    assert r.json['msg'] == \"assert ok\"\n",
-                "    assert r.json['msg'] == \"assert fine\"\n",
-            ),
-            (
-                "def test_a():\n    x()\n",
-                "def test_a_renamed_clearly():\n    x()\n",
-            ),
-            ("it('a', f)", "it('a better name', f)"),
-            ("    assert ok is True", "    assert ok is True and done"),
-            ("    assert y", "    assert flag == True_value"),
-            ("    assert y", "assert x"),
-            (
-                "    assert x == pytest.approx(0.3, rel=0.1)",
-                "    assert x == pytest.approx(0.3, rel=1e-6)",
-            ),
-            (
-                "    if x:\n        return\n    do()\n",
-                "    if x:\n        return\n    do_more()\n",
-            ),
-            ("fn helper() -> u32 { 6 }\n", "fn helper() -> u32 { 7 }\n"),
-        ];
-        for (old, new) in neutral {
-            assert!(
-                !weakened(old, new),
-                "flagged:\n{old}\n→\n{new}\n{:?}",
-                assess(old, new)
-            );
-        }
-    }
-
-    #[test]
-    fn expected_value_changed_to_actual() {
-        let pairs = value_pairs("FAILED tests/t.py::test_total - assert 0 == 1");
-        assert_eq!(pairs, [("0".to_string(), "1".to_string())]);
-        let old = "def test_total():\n    assert total([]) == 1\n";
-        let new = "def test_total():\n    assert total([]) == 0\n";
-        assert!(expected_to_actual(old, new, &pairs)
-            .unwrap()
-            .contains("(1 → 0)"));
-        // A different fix (the code, or another value) is not flagged.
-        assert!(expected_to_actual(
-            old,
-            "def test_total():\n    assert total([]) == 1\n    assert x\n",
-            &pairs
-        )
-        .is_none());
-        let jest = value_pairs("expect(received).toBe(expected); Expected: 6; Received: 5");
-        assert_eq!(jest, [("5".to_string(), "6".to_string())]);
-        assert!(
-            expected_to_actual("expect(t()).toBe(6);", "expect(t()).toBe(5);", &jest).is_some()
-        );
-        let rust = value_pairs("assertion `left == right` failed; left: 5; right: 6");
-        assert!(expected_to_actual("assert_eq!(t(), 6);", "assert_eq!(t(), 5);", &rust).is_some());
-        let s = value_pairs("AssertionError: assert 'EUR' == 'USD'");
-        assert!(expected_to_actual("assert c == 'USD'", "assert c == 'EUR'", &s).is_some());
-        assert!(value_pairs("KeyError: 'total'").is_empty());
-    }
-
-    #[test]
-    fn neutral_and_strengthened() {
-        assert_eq!(assess("assert a == 1", "assert a == 2"), Answer::Neutral);
-        assert_eq!(
-            assess("assert a", "assert a\nassert b"),
-            Answer::Strengthened
-        );
-    }
-}
+mod tests;

@@ -173,11 +173,25 @@ A feature that is off takes no action. An action the agent cannot take is record
 Before an Edit or Write lands in a test file, belay compares the old and new text. It flags changes that make tests easier to pass:
 
 - assertions removed;
-- skip markers added (`@pytest.mark.skip`, `it.skip`, `#[ignore]`, …);
+- skip markers added to an existing test (`@pytest.mark.skip`, `it.skip`, `#[ignore]`, …);
+- focus markers added (`it.only`, `describe.only`, `fit`, `fdescribe`; pytest's `@pytest.mark.only` plugin);
 - an expected value changed to the failing run's actual value;
-- tolerances raised;
+- tolerances raised tenfold or more, or a relative tolerance raised to 1 or more;
 - assertions that always pass;
 - commands that rewrite snapshot or golden files (`jest -u`, `--update-snapshots`, `cargo insta accept`, `UPDATE_GOLDEN=1`, …).
+
+It does not flag:
+
+- a new file, or one that was empty: it had no tests to weaken;
+- files outside the project (the worktree's top), such as a draft in `/tmp`;
+- a skip under a runtime condition: `@pytest.mark.skipif`, `unittest.skipIf` and `skipUnless`, `it.skipIf`, and `pytest.skip` or `t.Skip` inside an `if`, `else`, `except`, or `try` block;
+- a skip on a test the same edit adds;
+- a loosened tolerance with a comment on its line or the line above that says why (`atol=1e-6  # cast from float32`), or one raised less than tenfold;
+- tests moved to another file: within one shell command, or within one turn (between two of your prompts), a test that leaves one file and appears in another with the same body counts as moved.
+
+Comments and strings never count, and focus markers match each framework's exact syntax: `model.fit(` is not `fit(`.
+
+An edit that only removes whole tests is not denied, since the tests may be on their way to another file. belay warns instead. If a later edit in the same turn adds them elsewhere, belay withdraws the warning (a `guard_withdrawn` judgment in the ledger). A shell command's removals wait for the command to end, so a move within one command raises nothing.
 
 With `guard = deny` (the default) the edit is denied, and the agent reads why:
 

@@ -1642,7 +1642,10 @@ fn removing_a_test_this_session_added_is_not_weakening() {
     assert!(!warned(&c.handle(changed(orig, &added), 1)));
     let d2 = c.handle(changed(&added, orig), 2);
     assert!(!warned(&d2), "its own probe");
-    assert!(warned(&c.handle(changed(orig, ""), 3)), "an original test");
+    // A removed test may have moved to another file of the same command: the warning
+    // waits for the command's end.
+    assert!(!warned(&c.handle(changed(orig, ""), 3)));
+    assert!(warned(&c.handle(bash("rm", ""), 4)), "an original test");
 }
 
 #[test]

@@ -1,0 +1,13 @@
+{
+  "pattern": "Words like clean_only, model.fit( and allclose(atol=) are not focus markers.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_fit.py",
+      "old": "import torch\n\ndef test_identity():\n    u = torch.eye(3)\n    assert torch.allclose(u @ u, u, atol=1e-8)\n",
+      "new": "import torch\n\ndef test_identity():\n    u = torch.eye(3)\n    assert torch.allclose(u @ u, u, atol=1e-8)\n\n\ndef fit(model, x):\n    return model.fit(x, mode=\"clean_only\")\n\n\ndef test_fit():\n    m = fit(Model(), torch.ones(3))\n    assert torch.allclose(m.w, torch.ones(3), atol=1e-6)\n"
+    }
+  ]
+}

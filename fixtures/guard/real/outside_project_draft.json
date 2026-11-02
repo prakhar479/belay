@@ -1,0 +1,14 @@
+{
+  "pattern": "A scratch draft outside the project is not one of its tests.",
+  "top": "/work/proj",
+  "expect": "ok",
+  "steps": [
+    {
+      "via": "shell",
+      "tool_use_id": "b1",
+      "path": "/tmp/agent-1/scratchpad/test_x_draft.py",
+      "old": "def test_draft():\n    assert f(0) == 0\n    assert f(1) == 1\n    assert f(2) == 2\n    assert f(3) == 3\n    assert f(4) == 4\n    assert f(5) == 5\n    assert f(6) == 6\n    assert f(7) == 7\n    assert f(8) == 8\n    assert f(9) == 9\n    assert f(10) == 10\n    assert f(11) == 11\n    assert f(12) == 12\n    assert f(13) == 13\n    assert f(14) == 14\n    assert f(15) == 15\n    assert f(16) == 16\n    assert f(17) == 17\n    assert f(18) == 18\n    assert f(19) == 19\n    assert f(20) == 20\n    assert f(21) == 21\n    assert f(22) == 22\n    assert f(23) == 23\n    assert f(24) == 24\n    assert f(25) == 25\n",
+      "new": ""
+    }
+  ]
+}

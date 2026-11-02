@@ -1,0 +1,14 @@
+{
+  "pattern": "A relative tolerance of 1: the assertion holds for nearly anything.",
+  "top": "/work/proj",
+  "expect": "flag",
+  "steps": [
+    {
+      "via": "edit",
+      "path": "/work/proj/tests/test_v.py",
+      "old": "def test_v():\n    assert v() == pytest.approx(3.0, rel=0.5)\n",
+      "new": "def test_v():\n    assert v() == pytest.approx(3.0, rel=1.0)\n"
+    }
+  ],
+  "rule": "tolerance raised"
+}
