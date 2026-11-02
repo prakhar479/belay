@@ -125,7 +125,7 @@ scripts/capture_fixtures.py hooks <hooks.jsonl> --event PostToolUse --match pyte
 5. Run `make check` before you say a task is done. It is the only gate.
 6. Commit each task on its own, with a message that says what changed and why. Tick it in `docs/dev/TASKS.md` when that file exists. Add a short note if behavior changed.
 7. Keep ledger formats backward-compatible, or bump the format and say so.
-8. Keep `docs/guide.md` and `CHANGELOG.md` in step with any change a user can see, in the same commit.
+8. Keep `docs/guide.md` and the changelog in step with any change a user can see, in the same commit. For the changelog, add a fragment `changelog.d/<short-name>.md` (first line `kind: added|changed|fixed|removed`, then bullets); do not edit `CHANGELOG.md`. `scripts/changelog.py --check` validates it. In the guide, add to your area's section only.
 
 ### Fast loop
 
