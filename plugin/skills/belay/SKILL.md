@@ -7,7 +7,7 @@ description: How to work with belay, the local supervisor that records this sess
 
 belay records what you do in this session. It may summarize long outputs, warn you about loops, and deny edits that weaken tests. Every action it takes has a reason you can look up. Run the commands below with your shell tool.
 
-belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `skill_preview`, `skill_stage`, `sandbox_run`, and `sandbox_task`. When they are present, use them instead of the matching commands.
+belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `brief`, `skill_preview`, `skill_stage`, `sandbox_run`, and `sandbox_task`. When they are present, use them instead of the matching commands.
 
 ## When you start
 
@@ -28,11 +28,21 @@ belay also has MCP tools: `memory_search`, `memory_add`, `handoff_get`, `output_
 - Fix the code under test instead. If you think the test itself is wrong, explain why to the user.
 - If the user agrees, ask them to run `! belay allow`. Then retry the same edit.
 
+## When a belay warning is wrong
+
+- belay can be wrong. If you think a warning or a block is wrong, say so in one line: `belay flag a-N "why"`, with the id from the warning.
+- This only records your view for the user to review. It does not lift the block or allow the edit. Do not retry the edit because you flagged it.
+
 ## When an output is summarized
 
 - belay keeps every failure line, but may cut passing lines. The summary names an id like `o-3`.
 - To read the full original: `output_show` with `o-3`, or `belay show o-3`.
 - To see why belay did something (an action `a-N`): `why` with `a-N`, or `belay why a-N`.
+
+## When you summarize your work
+
+- Before you tell the user what you did, read `brief` (or `belay brief`). It lists the files changed, each test command and whether it passed after your last edit, and what a reviewer should look at.
+- Say what it says. If a check is ⚠ (not run since the last edit) or ✗ (failing), say so, or run it first.
 
 ## When you learn something useful
 

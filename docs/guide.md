@@ -73,7 +73,7 @@ belay install --launcher       # prints an alias so `claude` starts under belay
 
 `belay uninstall` removes the plugin and belay's status line. A status line that is not belay's stays. `belay doctor` says whether the plugin is installed and whether the status line is belay's.
 
-The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and four slash commands: `/belay:report`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
+The plugin also gives the agent a `belay` skill (when to check handoffs and findings, what a denied edit means, how to read a summarized output) and five slash commands: `/belay:report`, `/belay:brief`, `/belay:handoff`, `/belay:recall`, and `/belay:remember`.
 
 For one session from a clone, use `claude --plugin-dir ./plugin`.
 
@@ -337,7 +337,7 @@ Only you can undo. belay refuses `belay undo` from an agent's shell, and denies 
 
 belay tells you what it does. It never tells the model: these notes go only to you.
 
-- **In Claude Code.** When belay acts, a one-line note appears under the hook, for example `belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: belay allow a-3.` A hook gets at most one note. If belay did more in that hook, the note counts the rest: `(+2 more summaries)`.
+- **In Claude Code.** When belay acts, a one-line note appears under the hook, for example `belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: belay allow a-3. Wrong? belay flag a-3`. Every warning ends with that `Wrong?` hint (see [When belay is wrong](#when-belay-is-wrong)). A hook gets at most one note. If belay did more in that hook, the note counts the rest: `(+2 more summaries)`.
 - **`report` decides what you see there.** `quiet` (the default) shows warnings: blocked edits and commands, guard warnings, and loops. `normal` adds what belay did for the agent: summaries, recalled fixes, notes, handoffs, and fleet notices. `verbose` adds minor notes: wrapped test runs, retries, and the tokens each summary kept out.
 - **The status line.** `belay status` prints `belay · 2 blocked · 14k tokens kept out · 1 memory`. Memories are fixes the session learned or was told about.
 - **`belay watch`** prints each note as it happens, in another terminal. It follows the newest live session, or the one you name with `--session`, and stops when the session ends or you press Ctrl-C. It shows every note, whatever `report` says; `--verbose` adds the minor ones. It reads only the ledger, so it works with any agent.
@@ -345,13 +345,58 @@ belay tells you what it does. It never tells the model: these notes go only to y
 
 ```text
 belay: session 1793507424-19739 ended.
-  did: 3 summaries · 1 blocked edit · 1 loop warning
+  Changed: 3 files (+48 −6)
+  Checked: ⚠ pytest (not run since the last edit)
+  Look at: 2 items
   kept out: 14.2k tokens of tool output
   handoff: done: the order API; next: the cart tests
-  `belay report` for more
+  2 warnings · flag any that were wrong: `belay flag a-7`
+  `belay brief` for the rest · `belay report` for more
 ```
 
+The first three lines are the session brief's (see [The session brief](#the-session-brief)).
+
 Every note is in the ledger, shown or not. `belay report` says "blocked" or "steered" for what belay did, and "would have" only for what the agent could not take, and for `belay retro`.
+
+### The session brief
+
+After a session, the question is what the agent actually did, and whether you can trust it before you commit or merge. The agent's own summary can be wrong. `belay brief` answers from belay's ledger and git only:
+
+```sh
+belay brief                      # the newest session started here
+belay brief --session -2         # the one before it
+belay brief --markdown           # a "## Summary by belay" section for a pull request
+belay brief --json               # stable keys, for scripts
+```
+
+```text
+Session 1793507424-19739 · 12 min · 340.0k prompt tokens, 12.0k output
+Changed: 3 files (+48 −6)
+Checked: ⚠ pytest (not run since the last edit) · ✓ ruff check .
+Look at: 2 items
+
+Changed
+  Cargo.toml  +1 −0
+  src/app.py  +40 −5
+  tests/test_app.py  +7 −1
+
+Checked
+  ⚠ pytest: not run since the last edit (3 runs, o-7)
+  ✓ ruff check .: passed after the last edit (1 run, o-9)
+
+Look at
+  1. dependency manifest changed: Cargo.toml (added leftpad) [41]
+  2. src/app.py changed after the last passing run [44]
+
+belay: 2 summaries (9.2k tokens kept out) · 0 guard blocks · 0 loop nudges · 1 memory recalled
+```
+
+- **Changed:** the files the session edited, by tool or by shell, and, in a git repo, the diff from the session's start snapshot (`t-0`, see [Undo](#undo)) to the working tree, with lines added and removed. That diff includes any change you made yourself meanwhile.
+- **Checked:** each test or check command the session ran, with its last result. ✓ passed after the last edit. ⚠ passed once, but source files changed after it. ✗ its last run failed. `?` its result is not known. "After the last edit" means what it means for [verify before done](#verify-before-done): a docs edit does not count. With more than three commands, the first lines count them by state.
+- **Look at**, most important first, each with its evidence: an action `a-N`, an entry number, or `git` (`belay why <id>` follows it). Guard actions, and whether you allowed them; verify-before-done nudges; test changes that may weaken tests; CI and check config changed; dependency manifests changed, with the names added (Cargo.toml, package.json, pyproject.toml, requirements*.txt, go.mod, Gemfile); suppressions added (`# noqa`, `#[allow]`, …); and source files changed after the last passing run. These are the [audit](#audit-experimental)'s rules, over the session's changes.
+- **belay:** what belay did: summaries and the tokens they kept out, guard blocks, loop nudges, and memories recalled.
+
+The exit summary shows the first three lines. The agent can ask for the brief through the MCP tool `brief`, and the plugin's `/belay:brief` asks it to summarize the session for review.
 
 ### Reading the record
 
@@ -371,14 +416,33 @@ belay also sees what the agent reads: each Read, Grep, and Glob is recorded afte
 
 "Tokens kept out" (in the report, `belay status`, and the exit summary) adds up, for each summary that reached the agent, the original's tokens minus the summary's. A summary the agent could not take, or whose reply came too late, counts nothing. Tokens are estimated at 4 characters each.
 
-If belay got something wrong, note it where it happened. The notes collect in one list:
-
-```sh
-belay flag a-2 "summary hid the error"
-belay review                     # every flag, with what it points at
-```
+If belay got something wrong, flag it: see [When belay is wrong](#when-belay-is-wrong).
 
 To report a bug, `belay export --session -1 > s.json` writes one session with paths, your user name, and secrets replaced.
+
+### When belay is wrong
+
+belay learns its false positives only from flags. A flag takes one command, and the note is optional:
+
+```sh
+belay flag                       # the newest warning of the newest session here
+belay flag a-3                   # that action
+belay flag a-3 "the test name changed, not the test"
+belay flag "too eager"           # the newest warning, with a note
+belay flag o-4 "summary hid the error"   # also an output, an entry number, or `session`
+```
+
+`belay report` lists the session's flags and counts the warnings nobody flagged.
+
+`belay review` lists every flag across sessions. Flags are grouped by rule: the guard rule (`guard: tests_removed`, `guard: skip`, …), `loop`, `cycle`, `verify`, or the kind of action. The newest come first. Each flag shows the action's reason and two commands: one to look closer, and one to save it as a fixture:
+
+```sh
+belay export --action a-3 --fixture flagged-a-3 --session <id>
+```
+
+That writes what led to the action into a new directory: the edit's before and after (`before.py`, `after.py`, `path.txt`), or the outputs (`output-o-N.txt`), with `action.json` and a `README.md`. The text is cleaned like `belay export`: paths, your home, your user name, and secrets are replaced. It still comes from your project, so review it before you commit it anywhere public.
+
+**The agent can flag too.** When it thinks a belay warning is wrong, the plugin's skill tells it to say so in one line with `belay flag a-N "why"`. A flag run anywhere but your own terminal is recorded as the agent's. `belay review` shows the agent's flags apart from yours, and `belay report` marks them `[agent]`. A flag changes nothing: it lifts no guard and allows no edit. Only `belay allow` does that, from your terminal.
 
 ## Sandboxes
 
@@ -743,12 +807,14 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay sandbox rm S [--branch]` | Remove a sandbox's clone and home (yours to run) |
 | `belay sandbox doctor` | Try to escape a fresh sandbox; exit 1 if a probe gets out |
 | `belay report [--session S] [--full]` | What happened in a session |
+| `belay brief [--session S] [--markdown\|--json]` | What a session changed, checked, and what to look at |
 | `belay why a-N` | The cause chain of an action |
 | `belay show o-N` | The full original of a summarized output |
 | `belay status` | One line for the status line |
 | `belay watch [--session S] [--verbose]` | Print what belay does as it happens |
 | `belay retro <transcript> \| --all [--summary]` | What belay would have done in past transcripts |
-| `belay flag <target> "note"` · `belay review` | Note and list where belay got it wrong |
+| `belay flag [target] ["note"]` · `belay review` | Note and list where belay got it wrong |
+| `belay export --action a-N --fixture <dir>` | Save what led to an action as fixture files |
 | `belay sessions [--all\|--json\|--history]` | The board of live sessions |
 | `belay card [--task …] [--name …] [--join …]` | This session's card |
 | `belay msg <to> "text"` · `belay inbox` | Messages between sessions and you |
@@ -757,7 +823,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay note "…"` · `belay notes` · `belay fixes` | Project notes and learned fixes |
 | `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
 | `belay skill [preview\|add\|list\|update\|approve\|reject\|remove]` | Skills from URLs: checked, pinned, approved by you |
-| `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, and why |
+| `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, why, and the brief |
 | `belay fleet up\|status\|report\|merge\|down` | Start a fleet, watch it, merge its work, stop it |
 | `belay fleet pause\|resume\|restart\|replay` | Hold or go on handing out work; start a stopped hub again; replay its records |
 | `belay fleet stop\|spawn\|scale\|prune` | Stop or add sessions; remove worktrees of fleets that are down (`--branches`: also their merged branches) |

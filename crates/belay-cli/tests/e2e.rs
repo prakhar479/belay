@@ -234,7 +234,7 @@ fn a_default_session_shapes_and_guards() {
     assert!(why.contains("caused by"), "{why}");
 }
 
-/// U2b: the exit summary says what belay did, in a few lines.
+/// U2b, V1: the exit summary says what the session did, in a few lines.
 #[test]
 fn launcher_prints_an_exit_summary() {
     let (dir, _session) = run_session("exitsum", "", &[]);
@@ -242,15 +242,115 @@ fn launcher_prints_an_exit_summary() {
     let start = err.find("belay: session ").expect(&err);
     let summary: Vec<&str> = err[start..].lines().take_while(|l| !l.is_empty()).collect();
     assert!(summary[0].ends_with(" ended."), "{err}");
-    assert!(
-        summary[1].starts_with("  did: ") && summary[1].contains("1 blocked edit"),
-        "{err}"
-    );
+    // V1: the brief's three lines in place of the counts.
+    assert!(summary[1].starts_with("  Changed: "), "{err}");
+    assert!(summary[2].starts_with("  Checked: "), "{err}");
+    assert!(summary[3].starts_with("  Look at: "), "{err}");
     assert!(
         summary.iter().any(|l| l.starts_with("  kept out: ")),
         "{err}"
     );
-    assert!(summary.contains(&"  `belay report` for more"), "{err}");
+    assert!(
+        summary.contains(&"  `belay brief` for the rest · `belay report` for more"),
+        "{err}"
+    );
+}
+
+/// P0.2: a warning says how to flag it; `belay flag` alone takes the newest warning;
+/// `belay review` groups flags by rule, the agent's apart; a flagged action exports as
+/// a fixture.
+#[test]
+fn a_warning_can_be_flagged_reviewed_and_exported() {
+    let (dir, session) = run_session("flagflow", "", &[]);
+    let err = fs::read_to_string(dir.join("launcher-err.txt")).unwrap();
+    assert!(
+        err.contains("1 warning · flag any that were wrong: `belay flag a-"),
+        "{err}"
+    );
+    let run = |args: &[&str], user: bool| {
+        let mut c = Command::new(bin());
+        c.args(args)
+            .env("BELAY_HOME", dir.join("home"))
+            .env_remove("BELAY_SESSION_DIR")
+            .env_remove("CLAUDECODE");
+        if user {
+            c.env("BELAY_TEST_TERMINAL", "1");
+        } else {
+            c.env("CLAUDECODE", "1");
+        }
+        let out = c.arg("--session").arg(&session).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let said = run(&["flag"], true);
+    assert!(
+        said.starts_with("Flagged a-") && said.contains("(guard: "),
+        "{said}"
+    );
+    let id = said["Flagged ".len()..]
+        .split(' ')
+        .next()
+        .unwrap()
+        .to_string();
+    let said = run(&["flag", &id, "the test was wrong"], false);
+    assert!(said.contains("as the agent's view"), "{said}");
+    let report = run(&["report"], true);
+    assert!(
+        report.contains(&format!("Flags: 2\n  - {id} (guard: ")),
+        "{report}"
+    );
+    assert!(report.contains("[agent]: the test was wrong"), "{report}");
+
+    let mut c = Command::new(bin());
+    let out = c
+        .arg("review")
+        .env("BELAY_HOME", dir.join("home"))
+        .output()
+        .unwrap();
+    let review = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        review.starts_with("2 flags in 1 sessions (1 from the agent)"),
+        "{review}"
+    );
+    assert!(review.contains("\nguard: "), "{review}");
+    assert!(review.find("From the agent").is_some(), "{review}");
+    assert!(
+        review.contains(&format!(
+            "belay export --action {id} --fixture flagged-{id}"
+        )),
+        "{review}"
+    );
+
+    let out_dir = dir.join("fixture");
+    let said = run(
+        &[
+            "export",
+            "--action",
+            &id,
+            "--fixture",
+            out_dir.to_str().unwrap(),
+        ],
+        true,
+    );
+    assert!(
+        said.contains("Review it before you commit it anywhere public."),
+        "{said}"
+    );
+    let readme = fs::read_to_string(out_dir.join("README.md")).unwrap();
+    assert!(readme.contains("Rule: guard: "), "{readme}");
+    assert!(out_dir.join("action.json").exists());
+    assert!(
+        fs::read_dir(&out_dir).unwrap().any(|f| f
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with("before")),
+        "the edit before and after"
+    );
 }
 
 /// U2b (rule 5): what belay did reaches the user as `systemMessage`, never the model's
@@ -793,8 +893,9 @@ fn flags_and_review() {
 
     let report = belay(&["report"], &session);
     assert!(report.contains("Flags: 2"), "{report}");
+    // Not run from a terminal: the flags are recorded as the agent's.
     assert!(
-        report.contains("a-1: this summary hid the failure"),
+        report.contains("a-1 (shape) [agent]: this summary hid the failure"),
         "{report}"
     );
 
@@ -906,6 +1007,54 @@ fn verify_before_done_blocks_stop_until_the_tests_pass() {
     assert!(!out.contains("block"), "{out}");
     let report = belay(&["report"], &session);
     assert!(report.contains("Verify before done: 1"), "{report}");
+}
+
+/// V1: the session brief. Edit, a passing run, then another edit: the brief says the
+/// tests were not run since the last edit, and names the file changed after the pass.
+#[test]
+fn brief_says_tests_were_not_run_since_the_last_edit() {
+    let dir = tmp("brief");
+    let session = dir.join("session");
+    let (_daemon, sock) = start_daemon(&session, "shape = off\n");
+    let repo = dir.join("repo");
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/app.py"), "def f():\n    return 2\n").unwrap();
+    let read = |name: &str| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(fixture(name)).unwrap()).unwrap()
+    };
+    let mut pytest = read("post_tool_use_bash.json");
+    pytest["cwd"] = repo.display().to_string().into();
+    pytest["tool_input"]["command"] = "pytest".into();
+    pytest["tool_response"]["stdout"] = "===== 3 passed in 0.10s =====\n".into();
+    pytest["tool_response"]["stderr"] = "".into();
+    let mut edit = read("post_tool_use_edit.json");
+    edit["cwd"] = repo.display().to_string().into();
+    edit["tool_input"]["file_path"] = repo.join("src/app.py").display().to_string().into();
+
+    edit["tool_use_id"] = "toolu_e1".into();
+    hook(&sock, "PostToolUse", &edit);
+    hook(&sock, "PostToolUse", &pytest);
+    let brief = belay(&["brief"], &session);
+    assert!(brief.contains("Checked: ✓ pytest\n"), "{brief}");
+
+    fs::write(repo.join("src/app.py"), "def f():\n    return 3\n").unwrap();
+    edit["tool_use_id"] = "toolu_e2".into();
+    hook(&sock, "PostToolUse", &edit);
+    let brief = belay(&["brief"], &session);
+    assert!(
+        brief.contains("Checked: ⚠ pytest (not run since the last edit)"),
+        "{brief}"
+    );
+    assert!(
+        brief.contains("changed after the last passing run"),
+        "{brief}"
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&belay(&["brief", "--json"], &session)).unwrap();
+    assert_eq!(json["checked"][0]["status"], "not_run_since_last_edit");
+    assert_eq!(json["checked"][0]["runs"], 1);
+    let md = belay(&["brief", "--markdown"], &session);
+    assert!(md.starts_with("## Summary by belay"), "{md}");
 }
 
 /// R3.7: auto mode denies a wrapped call; belay says the agent may retry, and the retry

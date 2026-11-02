@@ -147,6 +147,13 @@ fn tools() -> Value {
             "inputSchema": schema(json!({ "id": { "type": "string", "description": "a-N, o-N, or an entry number" } }), &["id"]),
         },
         {
+            "name": "brief",
+            "description": "Summarize this session for review: files changed, each test or check command and whether it passed after the last edit, and what to look at (guard actions, CI and dependency changes, suppressions), each with its evidence id. From belay's ledger and git, not the agent's claims.",
+            "inputSchema": schema(json!({
+                "format": { "type": "string", "enum": ["text", "markdown", "json"], "description": "Default: text. markdown: a pull request section." },
+            }), &[]),
+        },
+        {
             "name": "sandbox_run",
             "description": "Run a command in a sandbox: a clone of this repo with a private home, limits, and no access to the rest of the machine (the network is the host's). Its changes land on branch belay/sandbox/<id> for the user to merge. For risky commands and experiments.",
             "inputSchema": schema(json!({
@@ -187,6 +194,7 @@ fn call(params: &Value) -> Result<Value, (i64, String)> {
             let opt = |k: &str| args.get(k).and_then(Value::as_str);
             skillstore::stage(url, opt("scope"), opt("name"))
         }),
+        "brief" => brief(&args),
         "sandbox_run" => sandbox_run(&args),
         "sandbox_task" => sandbox_task(&args),
         _ => return Err((INVALID_PARAMS, format!("no tool {name}"))),
@@ -373,6 +381,20 @@ fn why(dir: &Path, id: &str) -> Result<String> {
     report::why_across(&entries, id, &fleet::peer_entry)
 }
 
+fn brief(args: &Value) -> Result<String> {
+    use crate::brief::Format;
+    let format = match args.get("format").and_then(Value::as_str) {
+        None | Some("text") => Format::Text,
+        Some("markdown") => Format::Markdown,
+        Some("json") => Format::Json,
+        Some(f) => bail!("unknown format {f}: use text, markdown, or json"),
+    };
+    Ok(crate::brief::render(
+        &crate::brief::of_session(&session()?)?,
+        format,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -425,6 +447,7 @@ mod tests {
                 "skill_preview",
                 "skill_stage",
                 "why",
+                "brief",
                 "sandbox_run",
                 "sandbox_task"
             ]

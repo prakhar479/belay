@@ -284,7 +284,7 @@ fn finish(s: &mut Session) {
         return;
     }
     let audit = finish_audit(&s.dir);
-    eprintln!("{}", crate::report::exit_summary(&s.id, &entries));
+    eprintln!("{}", exit_summary(&s.id, &s.dir, &entries));
     if let Some(line) = audit {
         eprintln!("belay: {line}");
     }
@@ -298,6 +298,29 @@ fn finish(s: &mut Session) {
             s.dir.join("daemon.log").display()
         );
     }
+}
+
+/// The exit summary: the brief's three lines (Changed, Checked, Look at) in place of
+/// the action counts, then the report's other lines (kept out, handoff, warnings).
+fn exit_summary(id: &str, dir: &Path, entries: &[belay_core::Entry]) -> String {
+    let full = crate::report::exit_summary(id, entries);
+    let Ok(brief) = crate::brief::of_session(dir) else {
+        return full;
+    };
+    with_brief(&full, &crate::brief::exit_lines(&brief))
+}
+
+fn with_brief(full: &str, brief: &[String]) -> String {
+    let mut lines = full.lines();
+    let mut out: Vec<String> = lines.next().into_iter().map(str::to_string).collect();
+    out.extend(brief.iter().cloned());
+    out.extend(
+        lines
+            .filter(|l| !l.starts_with("  did: ") && *l != "  `belay report` for more")
+            .map(str::to_string),
+    );
+    out.push("  `belay brief` for the rest · `belay report` for more".into());
+    out.join("\n")
 }
 
 /// The session audit (experimental): the working tree's state before the agent starts,
@@ -662,6 +685,20 @@ mod tests {
 
     fn strings(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_exit_summary_puts_the_brief_in_place_of_the_counts() {
+        let full = "belay: session s1 ended.\n  did: 1 blocked edit\n  kept out: 9k tokens of tool output\n  `belay report` for more";
+        let brief = strings(&[
+            "  Changed: 1 file",
+            "  Checked: ✓ pytest",
+            "  Look at: 1 item",
+        ]);
+        assert_eq!(
+            with_brief(full, &brief),
+            "belay: session s1 ended.\n  Changed: 1 file\n  Checked: ✓ pytest\n  Look at: 1 item\n  kept out: 9k tokens of tool output\n  `belay brief` for the rest · `belay report` for more"
+        );
     }
 
     #[test]

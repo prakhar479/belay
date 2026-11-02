@@ -6,6 +6,7 @@
 compile_error!("belay supports Unix (Linux, macOS) only for now");
 
 mod audit;
+mod brief;
 mod commons;
 mod config;
 mod connector;
@@ -13,6 +14,7 @@ mod daemon;
 mod doctor;
 mod export;
 mod findings;
+mod flags;
 mod fleet;
 mod hub;
 mod install;
@@ -124,6 +126,19 @@ enum Cmd {
         #[arg(long)]
         full: bool,
     },
+    /// What a session changed, what it checked, and what to look at before a commit or
+    /// merge. From the ledger and git, never the agent's own summary.
+    Brief {
+        /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
+        #[arg(long, allow_hyphen_values = true)]
+        session: Option<String>,
+        /// A pull request section (## Summary by belay).
+        #[arg(long, conflicts_with = "json")]
+        markdown: bool,
+        /// Stable keys, for scripts.
+        #[arg(long)]
+        json: bool,
+    },
     /// Print the full original of a summarized output (o-N).
     Show {
         id: String,
@@ -138,17 +153,18 @@ enum Cmd {
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// Note that belay got something wrong: an action (a-N), an output (o-N), an entry
-    /// number, or `session`. `belay review` lists the notes.
+    /// Say belay got something wrong: an action (a-N), an output (o-N), an entry number,
+    /// or `session`; with no id, the newest warning. The note is optional. A flag lifts
+    /// nothing. `belay review` lists flags.
     Flag {
-        target: String,
-        #[arg(required = true, num_args = 1..)]
-        note: Vec<String>,
+        /// `[TARGET] [NOTE…]`: a first word that is not an id starts the note.
+        words: Vec<String>,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// List flags across all sessions, with what each one points at.
+    /// List flags across all sessions by rule, newest first: what each points at, and
+    /// commands to look closer and to save it as a fixture. The agent's flags come apart.
     Review,
     /// Install belay into Claude Code: the plugin (default), the status line, or the
     /// launcher alias. Shows each change and asks first.
@@ -191,6 +207,13 @@ enum Cmd {
         /// Leave out the stored tool outputs (keep only the ledger).
         #[arg(long)]
         no_outputs: bool,
+        /// One action (a-N): write what led to it into the `--fixture` directory.
+        #[arg(long, requires = "fixture")]
+        action: Option<String>,
+        /// A new directory for the action's fixture: the edit before and after, or the
+        /// outputs, cleaned like the bundle.
+        #[arg(long, requires = "action")]
+        fixture: Option<PathBuf>,
     },
     /// Delete recorded sessions (their ledgers and stored outputs). Live sessions are
     /// kept.
@@ -847,48 +870,6 @@ fn arg_value(argv: &[String], name: &str) -> Option<String> {
     })
 }
 
-/// Every flag, grouped by session, with the flagged entry and how to look closer.
-fn review(sessions: &[PathBuf]) -> String {
-    use std::fmt::Write as _;
-    let mut out = String::new();
-    let (mut flags, mut with) = (0, 0);
-    for dir in sessions {
-        let list = store::read_flags(dir);
-        if list.is_empty() {
-            continue;
-        }
-        flags += list.len();
-        with += 1;
-        let entries = store::read_entries(dir).unwrap_or_default();
-        let label = dir
-            .file_name()
-            .map(|s| s.to_string_lossy())
-            .unwrap_or_default();
-        let _ = writeln!(out, "Session {label}");
-        for f in &list {
-            let what = match report::find_target(&entries, &f.target) {
-                Some(e) => report::describe_entry(e),
-                None => format!("{} (whole session)", f.target),
-            };
-            let _ = writeln!(out, "  - {}", short(&what));
-            let _ = writeln!(out, "    note: {}", f.note);
-            let look = if f.target.starts_with("o-") {
-                format!("belay show {} --session {}", f.target, dir.display())
-            } else if f.target == "session" {
-                format!("belay report --session {}", dir.display())
-            } else {
-                format!("belay why {} --session {}", f.target, dir.display())
-            };
-            let _ = writeln!(out, "    look: {look}");
-        }
-    }
-    format!("{flags} flags in {with} sessions\n{out}")
-}
-
-fn short(s: &str) -> String {
-    belay_core::text::truncate_chars(s, 200)
-}
-
 fn run(cli: Cli) -> Result<i32> {
     match cli.cmd {
         Cmd::Claude { mode, args } => {
@@ -955,14 +936,24 @@ fn run(cli: Cli) -> Result<i32> {
                     a.one_line()
                 );
             }
-            let flags = store::read_flags(&dir);
-            if full || !flags.is_empty() {
-                println!("Flags: {}", flags.len());
-            }
-            for f in &flags {
-                println!("  - {}: {}", f.target, f.note);
-            }
+            let entries: Vec<_> = runs.into_iter().flat_map(|r| r.entries).collect();
+            print!(
+                "{}",
+                flags::report_lines(&entries, &store::read_flags(&dir), full)
+            );
             Ok(0)
+        }
+        Cmd::Brief {
+            session,
+            markdown,
+            json,
+        } => {
+            let format = match (markdown, json) {
+                (true, _) => brief::Format::Markdown,
+                (_, true) => brief::Format::Json,
+                _ => brief::Format::Text,
+            };
+            brief::run(session.as_deref(), format)
         }
         Cmd::Show { id, session } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
@@ -976,25 +967,8 @@ fn run(cli: Cli) -> Result<i32> {
             print!("{}", store::read_blob(&run.dir, &hash)?);
             Ok(0)
         }
-        Cmd::Flag {
-            target,
-            note,
-            session,
-        } => {
-            let dir = sessions::resolve(session.as_deref(), false)?;
-            if target != "session" {
-                let entries = store::read_entries(&dir)?;
-                if report::find_target(&entries, &target).is_none() {
-                    bail!("no entry `{target}` in {}", dir.display());
-                }
-            }
-            let flag = store::Flag {
-                ts_ms: paths::now_ms(),
-                target: target.clone(),
-                note: note.join(" "),
-            };
-            store::append_flag(&dir, &flag)?;
-            println!("Flagged {target}. `belay review` lists all flags.");
+        Cmd::Flag { words, session } => {
+            println!("{}", flags::flag(words, session.as_deref())?);
             Ok(0)
         }
         Cmd::Watch { session, verbose } => {
@@ -1084,9 +1058,18 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Export {
             session,
             no_outputs,
+            action,
+            fixture,
         } => {
             let dir = sessions::resolve(session.as_deref(), false)?;
-            println!("{}", export::export(&dir, !no_outputs)?);
+            if let (Some(id), Some(out)) = (action, fixture) {
+                for f in export::fixture(&dir, &id, &out)? {
+                    println!("wrote {}", f.display());
+                }
+                println!("{}", export::FIXTURE_WARNING);
+            } else {
+                println!("{}", export::export(&dir, !no_outputs)?);
+            }
             Ok(0)
         }
         Cmd::Purge {
@@ -1151,7 +1134,7 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(code)
         }
         Cmd::Review => {
-            print!("{}", review(&paths::list_sessions()));
+            print!("{}", flags::review(&paths::list_sessions()));
             Ok(0)
         }
         Cmd::Why { id, session } => {
