@@ -1,3 +1,5 @@
+<p align="center"><img src="site/brand/icon.svg" width="96" height="96" alt="belay"></p>
+
 <p align="center"><sub>CLAUDE CODE, UPGRADED</sub></p>
 
 <h1 align="center">belay</h1>

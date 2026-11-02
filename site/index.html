@@ -25,7 +25,7 @@
 <meta name="twitter:description" content="Your coding agent, with everything it can't give itself: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record.">
 <meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
 <meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b4f8dc'/%3E%3Cstop offset='.5' stop-color='%233ee6b4'/%3E%3Cstop offset='1' stop-color='%231fb8d6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='%23071012'/%3E%3Cg transform='rotate(30 16 16)'%3E%3Cpath d='M22 11.8A6 6 0 0 0 10 11.8V20.2A6 6 0 0 0 22 20.2' fill='none' stroke='url(%23g)' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M22 19.4V14' stroke='%23eef5f3' stroke-width='2.4' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="brand/icon.svg">
 <script>
   (function () {
     var d = document.documentElement;
@@ -40,6 +40,10 @@
 /* ---------- Tokens ---------- */
 :root {
   color-scheme: light;
+  /* The mark: deeper on light backgrounds, so its pale end still reads. */
+  --mark-1: #2fcf9c;
+  --mark-2: #13b386;
+  --mark-3: #0b8fb3;
   --bg: #ffffff;
   --bg-soft: #f5f8f7;
   --panel: #ffffff;
@@ -94,6 +98,9 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --mark-1: #b4f8dc;
+    --mark-2: #3ee6b4;
+    --mark-3: #1fb8d6;
     color-scheme: dark;
     --bg: #050708;
     --bg-soft: #080b0c;
@@ -131,6 +138,9 @@
   }
 }
 :root[data-theme="dark"] {
+  --mark-1: #b4f8dc;
+  --mark-2: #3ee6b4;
+  --mark-3: #1fb8d6;
   color-scheme: dark;
   --bg: #050708;
   --bg-soft: #080b0c;
@@ -921,15 +931,17 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
     <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#b4f8dc"/>
-      <stop offset=".5" stop-color="#3ee6b4"/>
-      <stop offset="1" stop-color="#1fb8d6"/>
+      <stop offset="0" style="stop-color: var(--mark-1)"/>
+      <stop offset=".5" style="stop-color: var(--mark-2)"/>
+      <stop offset="1" style="stop-color: var(--mark-3)"/>
     </linearGradient>
     <symbol id="mark" viewBox="0 0 32 32">
-      <g transform="rotate(30 16 16)">
-        <path d="M22.5 11.5A6.5 6.5 0 0 0 9.5 11.5V20.5A6.5 6.5 0 0 0 22.5 20.5" fill="none" stroke="url(#bg-grad)" stroke-width="3" stroke-linecap="round"/>
-        <path d="M22.5 19.5V13.8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-      </g>
+      <mask id="mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+        <rect width="32" height="32" fill="#fff"/>
+        <path d="M13.2 16.3 C11 17.8 9 20.5 7.5 23.5" fill="none" stroke="#000" stroke-width="5.6" stroke-linecap="round"/>
+      </mask>
+      <path mask="url(#mark-gap)" d="M11.5 3 V22 C11.5 27.5 16.5 29.5 20.5 28 C25 26.3 26 20 22.5 16.5 C19 13 13.5 14 10.5 18.5" fill="none" stroke="url(#bg-grad)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M13.2 16.3 C11 17.8 9 20.5 7.5 23.5" fill="none" stroke="url(#bg-grad)" stroke-width="3.2" stroke-linecap="round"/>
     </symbol>
     <symbol id="ridge" viewBox="0 0 1600 420" preserveAspectRatio="xMidYMax slice">
       <path style="fill: var(--ridge-1)" d="M0 262 L60 236 L120 249 L190 197 L240 214 L300 150 L338 178 L372 167 L430 222 L500 201 L560 169 L610 187 L680 112 L720 128 L760 70 L800 104 L836 97 L890 151 L950 139 L1010 177 L1070 151 L1130 156 L1180 120 L1220 140 L1262 133 L1320 191 L1380 179 L1440 201 L1500 171 L1550 189 L1600 181 L1600 420 L0 420 Z"/>
