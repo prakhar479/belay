@@ -35,13 +35,13 @@ Your coding agent only knows what's in front of it right now:
 
 None of that is a flaw in the model. These are things a single conversation simply can't hold.
 
-**belay is the part of your setup that lives outside the conversation.** It sees across sessions, across time, and across agents, and it answers to you, not to the agent. It works with Claude Code today, and it's built for any coding agent, with more on the way.
+**belay is the part of your setup that lives outside the conversation.** It sees across sessions and across time, and it answers to you, not to the agent. It works with Claude Code today, and it's built for any coding agent, with more on the way.
 
 ## What your agent gets
 
 ### It remembers. *Work never starts from zero.*
 
-Open a new session tomorrow and the agent already knows what it was doing, which files it changed, and which test was still failing. The same goes after Claude Code compacts a long conversation, or when you `--resume` one. A fix found once is remembered for next time. And when you leave for the day, the work can carry on in the background without you (`belay bg start "…"`).
+Open a new session tomorrow and the agent already knows what it was doing, which files it changed, and which test was still failing. The same goes after Claude Code compacts a long conversation, or when you `--resume` one. A fix found once is remembered for next time. And when you leave for the day, the work can carry on in the background without you (`belay bg start "…"`), as long as your machine stays awake; belay tells you if it can't.
 
 ```text
 belay: memory for this project (`belay memory list` shows it all; check that each still fits):
@@ -82,7 +82,7 @@ You don't learn anything new. Keep typing `claude`. belay stays quiet until some
 
 ## The deal
 
-- **It never gets in the way.** It adds about 2 milliseconds to each step. If belay ever has a problem, Claude Code carries on without it.
+- **It never gets in the way.** It adds a couple of milliseconds to each step. If belay ever has a problem, Claude Code carries on without it.
 - **Your machine, your data.** No telemetry, and no AI calls. Passwords and keys are blanked out before anything is saved.
 - **You're in charge.** Pause it, overrule it, flag it when it's wrong, or remove it, each with one command.
 - **Open source.** MIT or Apache-2.0, and tested against real Claude Code releases.
@@ -115,7 +115,7 @@ Then run `belay doctor` to make sure everything's in place. [Read the script fir
 ## Where it stands
 
 belay 0.2 is young, so here's exactly where it stands:
-- **Agents:** it works with Claude Code, tested on versions 2.1.303 to 2.1.316, and `belay doctor` checks yours. It's built for other coding agents too, and those are on the way.
+- **Agents:** it works with Claude Code, tested on versions 2.1.303, 2.1.304, 2.1.308 and 2.1.316, and `belay doctor` checks yours. It's built for other coding agents too, and those are on the way.
 - **Platforms:** Linux and Windows through WSL are tested. Mac builds compile and pass CI, but haven't been used on a real Mac yet. Sandboxes need Linux.
 
 ## Learn more

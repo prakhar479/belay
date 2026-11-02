@@ -3,7 +3,7 @@ description: Summarize this session for review, from belay's record
 allowed-tools: Bash(belay brief:*)
 ---
 
-Run `belay brief` and read its output. It comes from belay's ledger and git, not from what you said you did.
+Run `belay brief` and read its output. It comes from belay's own record and git, not from what you said you did.
 
 Then tell the user, in a few plain sentences:
 

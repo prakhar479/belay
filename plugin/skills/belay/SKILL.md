@@ -1,6 +1,6 @@
 ---
 name: belay
-description: How to work with belay, the local supervisor that records this session. Use at the start of work in a repo, when a test failure repeats, when belay denies an edit or summarizes an output, and before you stop.
+description: How to work with belay, the layer outside the conversation that remembers, checks, and records this session. Use at the start of work in a repo, when a test failure repeats, when belay denies an edit or summarizes an output, and before you stop.
 ---
 
 # Working with belay

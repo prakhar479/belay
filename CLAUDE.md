@@ -14,7 +14,7 @@ Do not break these. If a task needs you to, stop and ask.
 4. **Every action is recorded** with a one-sentence reason and its causes.
 5. **Reporting never reaches the model.** Notices go to the user through user-only channels (status line, `systemMessage`, `belay watch`, the exit summary). Only actions reach the agent.
 6. **Deterministic.** Use `sha256_hex` for hashes. Do not let `HashMap` order reach output or the ledger.
-7. **Shim stays thin.** It only forwards. Target p95 < 20 ms (measured: ~5 ms).
+7. **Shim stays thin.** It only forwards. Target p95 < 20 ms (measured 2026-11-02: p50 ~2 ms, p95 ~3 ms).
 8. **Capability-honest.** Plan only with `Capabilities`. Downgrade; do not fail.
 9. **No new dependency** in belay-core without a reason in the commit message.
 10. **Parsers need fixtures.** Every parser change adds a file in `fixtures/` and a test.

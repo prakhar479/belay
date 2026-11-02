@@ -5,6 +5,16 @@ instruction cannot reach past the work it was given. This page says what a sandb
 protects, what it does not, and how it is built. The usage is in the
 [guide](guide.md#sandboxes).
 
+**In short:**
+- A sandbox is a walled-off copy of your project.
+- What runs inside can't see your SSH keys, your cloud logins, your other projects, or Docker. It can't take your machine down either: memory, processes, disk and time are limited.
+- It does use your normal internet connection.
+- Its work comes back to you as a git branch, which you read and merge.
+- If a proper sandbox can't be built on your machine, nothing runs.
+- `belay sandbox doctor` tries to break out and tells you what it found.
+
+The rest of this page is the technical detail.
+
 ## The rule: fail closed
 
 A sandbox is built as specified, or nothing runs. Most of belay fails open: a hook that
@@ -61,7 +71,7 @@ supervising daemon that does not start.
 
 ## What it does not protect
 
-- **The network.** The sandbox shares the host's network (owner decision, 2026-11-01).
+- **The network.** The sandbox shares the host's network.
   Anything the host reaches, the command reaches. That includes services on localhost:
   databases, a Docker daemon on a TCP port, dev servers, cloud metadata endpoints.
 - **Abstract Unix sockets.** Linux ties abstract-namespace sockets (names that start
@@ -134,7 +144,7 @@ settings there). The agent's program is resolved on the host and bound at its re
 path. The hooks' `cwd` is the clone's path, which is the same inside and out, so the
 ledger and `belay why` read as in any session. belay runs no git in the clone from
 outside: undo snapshots and the session audit skip it (`belay sandbox show` audits the
-branch instead). `[Verify]` Claude Code's terminal UI under `--new-session`: bwrap
+branch instead). Not yet confirmed: Claude Code's terminal UI under `--new-session`: bwrap
 puts the sandbox in a new session, so it has no controlling terminal (this stops
 `TIOCSTI` input injection into your shell). The UI reads keys from stdin in raw mode,
 which works without one, but a resize signal may not reach it.
@@ -212,7 +222,7 @@ The doctor exits 1 if any probe escapes.
   kernel opens its interpreter, `/init`, when the program runs. A `.exe` run inside the
   sandbox still reaches WSL's `/init`, which prints an error and exits 1 without
   starting the Windows program. It cannot reach the interop socket in `/run/WSL`, and
-  `WSL_INTEROP` is unset. `[Verify]` on newer WSL builds with `belay sandbox doctor`. A
+  `WSL_INTEROP` is unset. Not yet confirmed on newer WSL builds; `belay sandbox doctor` checks yours. A
   binfmt entry with flag `F` would keep `/init` open across namespaces.
 - `systemd-run --user --scope` fails on WSL without systemd ("Failed to connect to
   bus"). The `/proc` watchdog is then the only limit on memory and processes.

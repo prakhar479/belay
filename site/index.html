@@ -19,12 +19,12 @@
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
+<meta property="og:image:alt" content="belay: Your coding agent, with everything it can't give itself. Claude Code, upgraded. It remembers. It's honest. It's safe. It's clear.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="belay · Claude Code, upgraded">
 <meta name="twitter:description" content="Your coding agent, with everything it can't give itself: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record.">
 <meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
-<meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
+<meta name="twitter:image:alt" content="belay: Your coding agent, with everything it can't give itself. Claude Code, upgraded. It remembers. It's honest. It's safe. It's clear.">
 <link rel="icon" type="image/svg+xml" href="brand/icon.svg">
 <script>
   (function () {
@@ -1184,7 +1184,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <p>The agent runs commands as you. Your SSH keys, your cloud logins, your other projects: all one command away.</p>
       </article>
     </div>
-    <p class="moments-close reveal">None of that is the model's fault: a single conversation simply can't hold it. <strong>belay is the part of your setup that lives outside the conversation.</strong> It sees across sessions, across time, and across agents, and it answers to you.</p>
+    <p class="moments-close reveal">None of that is the model's fault: a single conversation simply can't hold it. <strong>belay is the part of your setup that lives outside the conversation.</strong> It sees across sessions and across time, and it answers to you.</p>
   </div>
 </section>
 
@@ -1310,7 +1310,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <article class="card c-sum reveal" style="--rd:.12s" aria-labelledby="f-sum">
         <p class="kicker">Faithful summaries</p>
         <h3 id="f-sum">Every failure line kept. The noise cut.</h3>
-        <p class="body">A real test run, before and after. Hundreds of "passed" lines become a count; every failure stays word for word. The full output is always one command away: <code class="inline-code">belay show o-3</code>.</p>
+        <p class="body">A sample test run, before and after. Hundreds of "passed" lines become a count; every failure stays word for word. The full output is always one command away: <code class="inline-code">belay show o-3</code>.</p>
         <div class="demo sumviz" id="sumviz">
           <div class="srow">
             <div class="top"><span class="k">Lines</span><span class="v"><s>334</s><span>93</span></span></div>
@@ -1404,7 +1404,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <div class="win">
           <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay sandbox</div></div>
 <pre tabindex="0" role="region" aria-label="belay sandbox commands"><span class="ps">$</span> belay sandbox run -- make test         <span class="dm"># a command; its changes land on a branch</span>
-<span class="ps">$</span> belay sandbox claude                   <span class="dm"># a whole Claude Code session, supervised from outside</span>
+<span class="ps">$</span> belay sandbox claude                   <span class="dm"># a whole Claude Code session, watched from outside</span>
 <span class="ps">$</span> belay sandbox task "add tests for parse_size"   <span class="dm"># a headless follow-up</span>
 <span class="ps">$</span> belay sandbox show fix                 <span class="dm"># branch, commits, audit, limit stops</span>
 <span class="ps">$</span> belay sandbox diff fix                 <span class="dm"># what the branch changed</span>
@@ -1463,7 +1463,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="pipe reveal" role="group" aria-label="Data flow: hook, shim, daemon, core, ledger">
       <div class="node"><p class="nk">1 · The agent</p><h3>Claude Code</h3><p>Checks in with belay before and after each step.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:0s"></i></div>
-      <div class="node"><p class="nk">2 · The messenger</p><h3>belay hook</h3><p>Passes the question along. If anything goes wrong, it simply stays out of the way.</p></div>
+      <div class="node"><p class="nk">2 · The messenger</p><h3>belay</h3><p>Passes the question along. If anything goes wrong, it simply stays out of the way.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:.6s"></i></div>
       <div class="node"><p class="nk">3 · The watcher</p><h3>one per session</h3><p>Keeps track of how the session is going.</p></div>
       <div class="wire" aria-hidden="true"><i class="pkt" style="--pd:1.2s"></i></div>
@@ -1611,7 +1611,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <p class="lbl">Local</p>
         <p class="big" aria-hidden="true">0</p>
         <h3><span class="sr-only">0 </span>model calls.</h3>
-        <p>No AI calls, no telemetry. belay only goes online when you ask it to, like fetching a skill. Everything it keeps stays on your machine, with passwords and keys blanked out.</p>
+        <p>No AI calls, no telemetry. belay only goes online when you install it or ask it to fetch a skill. Everything it keeps stays on your machine, with passwords and keys blanked out.</p>
       </div>
       <div class="stat">
         <p class="lbl">Prompt cache</p>
@@ -1703,17 +1703,17 @@ Loops (13 s in loops): 1
     <div class="status-card reveal">
       <div class="status-top">
         <div>
-          <h3>belay 0.2 is a prototype.</h3>
+          <h3>belay 0.2 is young.</h3>
           <p>It's young. Here's exactly where it stands, so you know what to expect.</p>
         </div>
-        <span class="badge-proto"><i aria-hidden="true"></i> Prototype</span>
+        <span class="badge-proto"><i aria-hidden="true"></i> Early release</span>
       </div>
       <div class="status-grid">
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other coding agents are on the way; belay is built so they can plug in.</span><p class="st">Supported</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>We test belay against real Claude Code sessions on each of these versions:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code><code>2.1.316</code></span><p class="st">Checked</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Linux and WSL</b><span>Where it is tested.</span><p class="st">Tested</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Builds exist. They are untested.</span><p class="st">Untested</p></div></div>
-        <div class="srow2 no"><span class="si" aria-hidden="true">✕</span><div><b>Windows</b><span>Not supported.</span><p class="st">Not supported</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Windows</b><span>Works through WSL. Native Windows isn't supported.</span><p class="st">WSL only</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only for now. Uses your normal internet connection.</span><p class="st">Linux only</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They keep working. No new features for now.</span><p class="st">Frozen</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Audit</b><span><code>belay audit</code> is under test. Its output may change.</span><p class="st">Experimental</p></div></div>

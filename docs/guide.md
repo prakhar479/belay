@@ -277,7 +277,7 @@ tests/test_api.py:11: AssertionError
 [belay: 334 lines → 93 lines · full output: belay show o-3]
 ```
 
-That pytest run went from 6,407 to 1,576 tokens. belay uses a summary only when it is at most `max_summary_ratio` (default 0.7) of the original. When the agent never re-opens the full output with `belay show`, later summaries get tighter. Re-opens loosen them again.
+In this sample run (from belay's test fixtures), the output went from 6,407 to 1,576 tokens. belay uses a summary only when it is at most `max_summary_ratio` (default 0.7) of the original. When the agent never re-opens the full output with `belay show`, later summaries get tighter. Re-opens loosen them again.
 
 The full original is always kept: `belay show o-3` prints it, for you or for the agent.
 
@@ -586,9 +586,9 @@ git merge belay/sandbox/fix          # take the work, once you have read it
 
 The command starts in the same subdirectory of the clone as yours in the repo. Its output streams, and belay returns its exit code. The sandbox starts from your HEAD commit: uncommitted changes are not in it. A sandbox whose branch is already there (from an earlier run with the same id) starts from that branch.
 
-**A whole session.** `belay sandbox claude [--id S] [claude args…]` runs Claude Code inside a sandbox. belay's daemon runs outside and supervises it: the agent's hooks reach it through the session socket, so the guard, loops, and the ledger work as in `belay claude`. The agent cannot see or signal belay. The card shows `sandbox: <id>`. At the end belay prints the session's summary and the branch. The sandbox is kept, so `--id S --resume <conversation>` goes on in it, with belay's state (see [Resuming](#resuming)). Only you start one. Claude Code's own files inside the sandbox (`~/.claude.json`, settings, credentials) are read-only copies.
+**A whole session.** `belay sandbox claude [--id S] [claude args…]` runs Claude Code inside a sandbox. belay runs outside and watches it: the agent's hooks reach it through the session socket, so the guard, loops, and the ledger work as in `belay claude`. The agent cannot see or signal belay. The card shows `sandbox: <id>`. At the end belay prints the session's summary and the branch. The sandbox is kept, so `--id S --resume <conversation>` goes on in it, with belay's state (see [Resuming](#resuming)). Only you start one. Claude Code's own files inside the sandbox (`~/.claude.json`, settings, credentials) are read-only copies.
 
-**A follow-up task.** `belay sandbox task "<prompt>" [--id S] [--resume <conversation>] [--model m] [--keep]` runs the agent headless (`claude -p`) in a sandbox, supervised by a belay session of its own, and prints a short result: the agent's final message, the branch and the files changed, the audit, the tokens used, and any limit that stopped it. The agent runs without permission prompts there: the sandbox is the boundary, and belay's guard still applies. `--resume` gives it a copy of that conversation, so it starts with its context; the original is not changed. You or an agent may start one. An agent may start at most `sandbox_tasks_per_hour` (4) per session. A task that uses more than `sandbox_task_tokens` (2M: input, output, and cache writes) is stopped.
+**A follow-up task.** `belay sandbox task "<prompt>" [--id S] [--resume <conversation>] [--model m] [--keep]` runs the agent headless (`claude -p`) in a sandbox, watched by a belay session of its own, and prints a short result: the agent's final message, the branch and the files changed, the audit, the tokens used, and any limit that stopped it. The agent runs without permission prompts there: the sandbox is the boundary, and belay's guard still applies. `--resume` gives it a copy of that conversation, so it starts with its context; the original is not changed. You or an agent may start one. An agent may start at most `sandbox_tasks_per_hour` (4) per session. A task that uses more than `sandbox_task_tokens` (2M: input, output, and cache writes) is stopped.
 
 Inside, the command sees the system dirs read-only, your toolchains read-only (`sandbox_ro`), the repo's object store read-only (so git finds the history), the clone, and a private home. It does not see the rest of your home (`~/.ssh`, cloud credentials, other repos), `/mnt`, the Docker socket, your ssh agent, or your display. On WSL it cannot run Windows programs. The network is the host's. The environment is cleared, then a short list is passed: `PATH`, locale, `TERM`, `USER`, `SHELL`, `TZ`, `BELAY_*`, and the agent's API keys. `BELAY_SANDBOX` is set to the sandbox id, and `belay sandbox` refuses to nest.
 
@@ -639,7 +639,7 @@ An id takes a unique prefix, or `-1` for the newest.
 
 **Where it runs.** In a sandbox when one can be built here (see [Sandboxes](#sandboxes)): the work lands on `belay/sandbox/<id>` for you to merge. Otherwise it runs in this checkout, with the guard on, and `bg start` says so in one line. `--sandbox` or `--here` chooses. In the checkout the agent runs with `--permission-mode auto`; in a sandbox without prompts, as a sandbox task does. Either way it is a belay session, so the guard, loops, verify before done, and the ledger work as in `belay claude`.
 
-**It keeps going.** The supervisor is detached (as a fleet hub is): closing the terminal or a SIGHUP to its shell does not stop it. When the agent hits the plan's usage limit, it waits, and goes on by itself 2 minutes after the reset the limit message gives, in the same conversation. `status` shows `waiting for the usage limit to reset, until 23:02`. A limit message with no reset time stops it, and it needs you.
+**It keeps going.** The background runner is detached (as a fleet hub is): closing the terminal or a SIGHUP to its shell does not stop it. When the agent hits the plan's usage limit, it waits, and goes on by itself 2 minutes after the reset the limit message gives, in the same conversation. `status` shows `waiting for the usage limit to reset, until 23:02`. A limit message with no reset time stops it, and it needs you.
 
 **It stops cleanly.** `--budget` takes tokens (`2M`, `500K`: input, output, and cache writes) or dollars (`$5`). `--until` takes a local time (`18:30`) or a duration (`2h`). Past either, belay stops the agent at the next step: after the tool call it is in returns, so the conversation resumes cleanly. Claude Code reports the cost at the end of a run, so a dollar budget stops a long run late; a token budget is checked at every step. `belay bg stop` stops at the next step as well; `--now` at once.
 
@@ -653,7 +653,7 @@ An id takes a unique prefix, or `-1` for the newest.
 
 **Agents.** An agent may start one, through the MCP tool `bg_start` or `belay bg start`, when you say you are leaving. Its background session always runs in a sandbox, never past `sandbox_task_tokens`, and counts toward `sandbox_tasks_per_hour`. `belay bg stop` and `attach` are yours: belay refuses them outside your terminal, and denies them to the agent.
 
-Its files are in `<belay home>/bg/<id>/`: `meta.json` (what was asked), `state.json` (where it is), `log.jsonl` (what the supervisor did and why), `out.jsonl` (the agent's headless output), and `runner.log`.
+Its files are in `<belay home>/bg/<id>/`: `meta.json` (what was asked), `state.json` (where it is), `log.jsonl` (what the runner did and why), `out.jsonl` (the agent's headless output), and `runner.log`.
 
 ## Skills
 
@@ -685,7 +685,7 @@ Where skills go (Claude Code): `--scope user` (the default) is `~/.claude/skills
 
 belay keeps a record of each stage, approval, install, rejection, and removal in `<data dir>/skills/log.jsonl`, with the session when there is one.
 
-A skill added while Claude Code runs may not be seen until the session restarts. [Verify]
+A skill added while Claude Code runs may not be seen until the session restarts.
 
 ## Sessions that know about each other
 
@@ -959,7 +959,7 @@ Fleet sessions always run with `guard = deny` and `commons = on`.
 
 ## Data and privacy
 
-Everything stays on your machine. belay makes no model calls. It goes to the network only when you ask it to fetch a skill (`belay skill`, or the agent's `skill_preview` and `skill_stage` MCP tools).
+Everything belay keeps stays on your machine. belay makes no model calls. It goes to the network only when you install it, or ask it to fetch a skill (`belay skill`, or the agent's `skill_preview` and `skill_stage` MCP tools).
 
 - Session data lives in `~/.local/share/belay/sessions/<id>/`: the ledger, stored outputs, and the card.
 - Stored outputs keep a copy of what tools printed. Before it writes, belay replaces secrets it recognizes with `[redacted]`: API keys and tokens, private keys, passwords in URLs, and values of variables named like secrets.
@@ -1002,7 +1002,7 @@ Everything stays on your machine. belay makes no model calls. It goes to the net
 | `belay undo [t-N] [--yes]` | List snapshots, or roll the files back to one (yours to run) |
 | `belay sandbox run [--id S] [--keep] -- <cmd…>` | Run a command in a sandbox; its changes land on `belay/sandbox/<id>` |
 | `belay sandbox list \| show S \| diff S \| stop S` | The sandboxes, one in detail, its changes; stop a running one |
-| `belay sandbox claude [--id S] [args…]` | A whole Claude Code session in a sandbox, supervised from outside |
+| `belay sandbox claude [--id S] [args…]` | A whole Claude Code session in a sandbox, watched from outside |
 | `belay sandbox task "<prompt>" [--id S] [--resume C] [--model M]` | A headless follow-up in a sandbox; prints its result and branch |
 | `belay sandbox rm S [--branch]` | Remove a sandbox's clone and home (yours to run) |
 | `belay sandbox doctor` | Try to escape a fresh sandbox; exit 1 if a probe gets out |
