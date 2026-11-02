@@ -31,9 +31,28 @@ This guide goes from install to fleets. Each section stands alone, so skip to wh
 
 ## Install
 
-belay is one binary with no runtime dependencies. It supports Claude Code on Linux and WSL; macOS builds exist but are not yet tested. Windows is not supported.
+belay is one binary with no runtime dependencies. It supports Claude Code on Linux and WSL; macOS builds exist but are not yet tested. Windows is not supported outside WSL.
 
-**Prebuilt** (Linux x86_64 and aarch64, macOS arm64 and x86_64), from the [releases](https://github.com/prakhar479/belay/releases):
+**One command** (recommended):
+
+```sh
+curl -fsSL https://prakhar479.github.io/belay/install.sh | sh
+```
+
+What it does:
+1. Downloads the binary for your machine from the latest release and checks its SHA-256. If there is no release for your machine, it builds belay with cargo.
+2. Puts the binary in `~/.local/bin`, with no sudo.
+3. Runs `belay install --yes` when Claude Code is on your PATH (see [Into Claude Code](#into-claude-code)).
+
+Settings, as environment variables before `sh`:
+- `BELAY_VERSION=v0.2.0` picks a release.
+- `BELAY_INSTALL_DIR=<dir>` picks the directory.
+- `BELAY_NO_SETUP=1` installs the binary only.
+- `BELAY_FROM_SOURCE=1` builds with cargo.
+
+The script is [`site/install.sh`](../site/install.sh). Read it first if you like: `curl -fsSL https://prakhar479.github.io/belay/install.sh | less`.
+
+**Prebuilt, by hand** (Linux x86_64 and aarch64, macOS arm64 and x86_64), from the [releases](https://github.com/prakhar479/belay/releases):
 
 ```sh
 curl -L https://github.com/prakhar479/belay/releases/latest/download/belay-<version>-<target>.tar.gz | tar xz

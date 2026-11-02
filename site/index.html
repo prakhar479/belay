@@ -991,21 +991,19 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 
     <div class="install" data-tabs>
       <div class="install-tabs" role="tablist" aria-label="Install method">
-        <button class="itab" role="tab" id="it-cargo" aria-controls="ip-cargo" aria-selected="true" tabindex="0" type="button">cargo</button>
-        <button class="itab" role="tab" id="it-bin" aria-controls="ip-bin" aria-selected="false" tabindex="-1" type="button">binary</button>
+        <button class="itab" role="tab" id="it-one" aria-controls="ip-one" aria-selected="true" tabindex="0" type="button">one command</button>
+        <button class="itab" role="tab" id="it-cargo" aria-controls="ip-cargo" aria-selected="false" tabindex="-1" type="button">cargo</button>
       </div>
-      <div class="ibox" role="tabpanel" id="ip-cargo" aria-labelledby="it-cargo">
+      <div class="ibox" role="tabpanel" id="ip-one" aria-labelledby="it-one">
+        <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>curl -fsSL https://prakhar479.github.io/belay/install.sh | sh</pre>
+        <button class="copy" type="button" data-copy="curl -fsSL https://prakhar479.github.io/belay/install.sh | sh" aria-label="Copy the install command"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+      </div>
+      <div class="ibox" role="tabpanel" id="ip-cargo" aria-labelledby="it-cargo" hidden>
         <pre tabindex="0" role="region" aria-label="Install commands, with cargo"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli
 <span class="ps">$ </span>belay install</pre>
         <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli&#10;belay install" aria-label="Copy the install commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
       </div>
-      <div class="ibox" role="tabpanel" id="ip-bin" aria-labelledby="it-bin" hidden>
-        <pre tabindex="0" role="region" aria-label="Install commands, from a release"><span class="ps">$ </span>curl -L https://github.com/prakhar479/belay/releases/latest/download/belay-&lt;version&gt;-&lt;target&gt;.tar.gz | tar xz
-<span class="ps">$ </span>mv belay-*/belay ~/.local/bin/
-<span class="ps">$ </span>belay install</pre>
-        <button class="copy" type="button" data-copy="mv belay-*/belay ~/.local/bin/&#10;belay install" aria-label="Copy the last two commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
-      </div>
-      <p class="install-note">Rust 1.87+, or a binary from <a href="https://github.com/prakhar479/belay/releases">Releases</a>. <code>belay install</code> adds the Claude Code plugin. It shows each change and asks first. Then keep typing <code>claude</code>.</p>
+      <p class="install-note">The script checks the download's checksum, puts <code>belay</code> in <code>~/.local/bin</code>, and adds the Claude Code plugin. Then keep typing <code>claude</code>. <a href="install.sh">Read the script</a> · <code>belay uninstall</code> undoes it.</p>
     </div>
 
     <div class="cta-row">
@@ -1477,21 +1475,26 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       </div>
       <div class="modes-panel reveal" style="--rd:.08s">
         <div class="toasts">
-          <div class="toast"><p class="when"><i></i> In Claude Code, only to you</p><p>belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: `belay allow a-3`.</p></div>
+          <div class="toast"><p class="when"><i></i> In Claude Code, only to you</p><p>belay: blocked an edit that may weaken tests in tests/test_api.py. To let it through once: `belay allow a-3`. Wrong? `belay flag a-3`</p></div>
           <div class="toast"><p class="when"><i></i> The status line · <code>belay status</code></p><p>belay · 2 blocked · 14k tokens kept out · 1 memory</p></div>
         </div>
         <div class="win see-win">
           <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">when the agent exits</div></div>
 <pre tabindex="0" role="region" aria-label="The summary belay prints when the agent exits">belay: session 1793507424-19739 ended.
-  did: 3 summaries · 1 blocked edit · 1 loop warning
+  Changed: 3 files (+48 −6)
+  Checked: ⚠ pytest (not run since the last edit)
+  Look at: 2 items
   kept out: 14.2k tokens of tool output
   handoff: done: the order API; next: the cart tests
-  `belay report` for more</pre>
+  `belay brief` for the rest · `belay report` for more</pre>
         </div>
         <ul class="facts">
+          <li><code>belay brief</code><span>Before you commit: what changed, what was tested after the last edit, and what to look at. <code>--markdown</code> for a pull request.</span></li>
+          <li><b>Notifications</b><span>A desktop notification when the agent is blocked, looping, or done. <code>notify_command</code> sends it anywhere you like.</span></li>
+          <li><code>belay usage</code><span>Where your tokens went, by day, project, or session.</span></li>
           <li><code>belay watch</code><span>Every note as it happens, in another terminal.</span></li>
           <li><code>belay report</code><span>What happened in a session, and why.</span></li>
-          <li><code>belay why a-3</code><span>The cause chain of one action.</span></li>
+          <li><code>belay why a-3</code><span>The cause chain of one action. <code>belay flag a-3</code> if it was wrong.</span></li>
           <li><code>belay pause guard</code><span>Pause one feature. <code>belay resume</code> turns it back on.</span></li>
           <li><code>belay undo t-2</code><span>Roll the files back to the end of a turn, also what shell commands changed.</span></li>
         </ul>
@@ -1627,35 +1630,33 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <div class="l5 reveal">
         <p class="eyebrow"><span class="n">08</span> Quick start</p>
         <h2 class="h2" id="start-title">Try it in a minute.</h2>
-        <p class="sec-lede">Install the binary, then <code class="inline-code">belay install</code>. Your next <code class="inline-code">claude</code> runs with belay. <code class="inline-code">belay retro --all</code> shows what it would have caught in sessions you already ran.</p>
+        <p class="sec-lede">One command installs belay and adds it to Claude Code. Then keep working as you do: belay speaks up only when it has something to say, and each message names the command you might want next.</p>
         <div data-tabs>
           <div class="qs-tabs" role="tablist" aria-label="Install with">
-            <button role="tab" type="button" id="qt-cargo" aria-controls="qp-cargo" aria-selected="true" tabindex="0">cargo</button>
-            <button role="tab" type="button" id="qt-bin" aria-controls="qp-bin" aria-selected="false" tabindex="-1">Release binary</button>
+            <button role="tab" type="button" id="qt-one" aria-controls="qp-one" aria-selected="true" tabindex="0">One command</button>
+            <button role="tab" type="button" id="qt-cargo" aria-controls="qp-cargo" aria-selected="false" tabindex="-1">cargo</button>
           </div>
         </div>
       </div>
       <div class="r7 reveal" style="--rd:.08s">
         <div class="win">
           <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">quick start</div></div>
-          <div class="qs-panel" role="tabpanel" id="qp-cargo" aria-labelledby="qt-cargo" data-label="With cargo">
+          <div class="qs-panel" role="tabpanel" id="qp-one" aria-labelledby="qt-one" data-label="One command">
             <ol class="steps">
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</code><span>Rust 1.87 or newer.</span></div><button class="mini-copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy: cargo install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>curl -fsSL https://prakhar479.github.io/belay/install.sh | sh</code><span>Checks the download, installs to ~/.local/bin, adds the Claude Code plugin. <a href="install.sh">Read it first</a>.</span></div><button class="mini-copy" type="button" data-copy="curl -fsSL https://prakhar479.github.io/belay/install.sh | sh" aria-label="Copy: install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
             </ol>
           </div>
-          <div class="qs-panel" role="tabpanel" id="qp-bin" aria-labelledby="qt-bin" data-label="Or a release binary" hidden>
+          <div class="qs-panel" role="tabpanel" id="qp-cargo" aria-labelledby="qt-cargo" data-label="With cargo" hidden>
             <ol class="steps">
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>curl -L https://github.com/prakhar479/belay/releases/latest/download/belay-&lt;version&gt;-&lt;target&gt;.tar.gz | tar xz</code><span>Linux x86_64 and aarch64, macOS arm64 and x86_64. See <a href="https://github.com/prakhar479/belay/releases">Releases</a>.</span></div><span aria-hidden="true"></span></li>
-              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>mv belay-*/belay ~/.local/bin/</code><span>Any directory on your PATH.</span></div><button class="mini-copy" type="button" data-copy="mv belay-*/belay ~/.local/bin/" aria-label="Copy: mv belay"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli</code><span>Rust 1.87 or newer.</span></div><button class="mini-copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli" aria-label="Copy: cargo install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay install</code><span>The Claude Code plugin. It shows each change and asks first.</span></div><button class="mini-copy" type="button" data-copy="belay install" aria-label="Copy: belay install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
             </ol>
           </div>
           <ol class="steps steps-then">
-            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay install</code><span>The Claude Code plugin: hooks, a skill, slash commands, the MCP server. It asks first.</span></div><button class="mini-copy" type="button" data-copy="belay install" aria-label="Copy: belay install"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay install --statusline</code><span>Optional: <code>belay status</code> as the status line, with a backup.</span></div><button class="mini-copy" type="button" data-copy="belay install --statusline" aria-label="Copy: belay install --statusline"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay doctor</code><span>Check the setup, and your Claude Code version.</span></div><button class="mini-copy" type="button" data-copy="belay doctor" aria-label="Copy: belay doctor"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay retro --all</code><span>What belay would have caught in sessions you already ran.</span></div><button class="mini-copy" type="button" data-copy="belay retro --all" aria-label="Copy: belay retro --all"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude</code><span>Your next session, with belay. Or <code>belay claude</code>: it takes every <code>claude</code> argument.</span></div><button class="mini-copy" type="button" data-copy="claude" aria-label="Copy: claude"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
-            <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay report</code><span>What happened, and why belay did what it did.</span></div><button class="mini-copy" type="button" data-copy="belay report" aria-label="Copy: belay report"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay doctor</code><span>Is everything in place? One line per check, with the fix.</span></div><button class="mini-copy" type="button" data-copy="belay doctor" aria-label="Copy: belay doctor"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>claude</code><span>Work as usual. belay is there when it matters.</span></div><button class="mini-copy" type="button" data-copy="claude" aria-label="Copy: claude"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay brief</code><span>Before you commit: what changed, what was tested after the last edit, what to look at.</span></div><button class="mini-copy" type="button" data-copy="belay brief" aria-label="Copy: belay brief"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
+              <li><span class="num" aria-hidden="true"></span><div class="cmd"><code tabindex="0"><span class="ps">$ </span>belay usage</code><span>Where your tokens went, by day or project.</span></div><button class="mini-copy" type="button" data-copy="belay usage" aria-label="Copy: belay usage"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg></button></li>
           </ol>
         </div>
         <div class="qs-out" id="start-out">
@@ -1726,9 +1727,8 @@ Loops (13 s in loops): 1
     <p class="sub reveal">Install it once. Your next session starts where the last one stopped.</p>
     <div class="install reveal">
       <div class="ibox">
-        <pre tabindex="0" role="region" aria-label="Install commands"><span class="ps">$ </span>cargo install --git https://github.com/prakhar479/belay belay-cli
-<span class="ps">$ </span>belay install</pre>
-        <button class="copy" type="button" data-copy="cargo install --git https://github.com/prakhar479/belay belay-cli&#10;belay install" aria-label="Copy the install commands"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
+        <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>curl -fsSL https://prakhar479.github.io/belay/install.sh | sh</pre>
+        <button class="copy" type="button" data-copy="curl -fsSL https://prakhar479.github.io/belay/install.sh | sh" aria-label="Copy the install command"><svg class="ic cp" aria-hidden="true"><use href="#i-copy"/></svg><svg class="ic ck" aria-hidden="true"><use href="#i-check"/></svg><span class="lbl">Copy</span></button>
       </div>
     </div>
     <div class="cta-row reveal">
