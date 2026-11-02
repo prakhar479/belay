@@ -50,7 +50,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(
     name = "belay",
     version,
-    about = "Local supervisor for command-line coding agents"
+    about = "belay: your coding agent, with everything it can't give itself (memory, honesty, safe boundaries, a clear record)"
 )]
 struct Cli {
     #[command(subcommand)]

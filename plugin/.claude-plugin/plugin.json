@@ -1,7 +1,7 @@
 {
   "name": "belay",
   "version": "0.2.0",
-  "description": "Local supervisor for Claude Code: records what the agent does, guards test edits, finds fix loops. Needs the belay binary on PATH.",
+  "description": "Your coding agent, with everything it can't give itself: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record. Needs the belay program: curl -fsSL https://prakhar479.github.io/belay/install.sh | sh",
   "homepage": "https://github.com/prakhar479/belay",
   "author": {
     "name": "prakhar479"

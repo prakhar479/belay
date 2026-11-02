@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>belay · a safety net and a memory for your coding agent</title>
-<meta name="description" content="belay is a free, open-source companion for Claude Code. It remembers what your last session was doing, stops the agent from quietly bending your tests, and lets you try risky work somewhere safe. Everything stays on your machine.">
+<title>belay · Claude Code, upgraded</title>
+<meta name="description" content="belay upgrades Claude Code with everything a coding agent can't give itself: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record. Free, open source, and everything stays on your machine.">
 <link rel="canonical" href="https://prakhar479.github.io/belay/">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -13,16 +13,16 @@
 <meta property="og:site_name" content="belay">
 <meta property="og:locale" content="en_US">
 <meta property="og:url" content="https://prakhar479.github.io/belay/">
-<meta property="og:title" content="belay: your agent climbs, belay holds the rope">
-<meta property="og:description" content="A safety net and a memory for your coding agent. It remembers where you left off, keeps your tests honest, and lets you try risky things somewhere safe.">
+<meta property="og:title" content="belay · Claude Code, upgraded">
+<meta property="og:description" content="Your coding agent, with everything it can't give itself: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record.">
 <meta property="og:image" content="https://prakhar479.github.io/belay/og.png">
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="belay: your agent climbs, belay holds the rope">
-<meta name="twitter:description" content="A safety net and a memory for your coding agent. It remembers where you left off, keeps your tests honest, and lets you try risky things somewhere safe.">
+<meta name="twitter:title" content="belay · Claude Code, upgraded">
+<meta name="twitter:description" content="Your coding agent, with everything it can't give itself: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record.">
 <meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
 <meta name="twitter:image:alt" content="The belay logo and the line: Your agent climbs. belay holds the rope. Below it: One install upgrades Claude Code. Beside it, a terminal shows belay denying an edit that weakens a test.">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23b4f8dc'/%3E%3Cstop offset='.5' stop-color='%233ee6b4'/%3E%3Cstop offset='1' stop-color='%231fb8d6'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='8' fill='%23071012'/%3E%3Cg transform='rotate(30 16 16)'%3E%3Cpath d='M22 11.8A6 6 0 0 0 10 11.8V20.2A6 6 0 0 0 22 20.2' fill='none' stroke='url(%23g)' stroke-width='3.2' stroke-linecap='round'/%3E%3Cpath d='M22 19.4V14' stroke='%23eef5f3' stroke-width='2.4' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
@@ -954,11 +954,10 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       belay
     </a>
     <nav class="nav-links" aria-label="Sections">
-      <a href="#memory">Memory</a>
-      <a href="#features">Honesty</a>
-      <a href="#sandbox">Sandboxes</a>
-      <a href="#how">What you see</a>
-      <a href="#sessions">Sessions</a>
+      <a href="#memory">Remembers</a>
+      <a href="#features">Honest</a>
+      <a href="#sandbox">Safe</a>
+      <a href="#how">Clear</a>
       <a href="#status">Status</a>
     </nav>
     <div class="nav-right">
@@ -982,12 +981,12 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="cols"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
   </div>
   <div class="wrap hero-inner">
-    <a class="pill" href="#status"><span class="tag">0.2</span> Free and open source · works with Claude Code <span class="go" aria-hidden="true">→</span></a>
+    <a class="pill" href="#status"><span class="tag">0.2</span> Claude Code, upgraded · free and open source <span class="go" aria-hidden="true">→</span></a>
     <h1 class="hero-title" id="hero-title">
-      <span class="line">Your agent climbs.</span>
-      <span class="line grad-text">belay holds the rope.</span>
+      <span class="line">Your coding agent,</span>
+      <span class="line grad-text">with everything it can't give itself.</span>
     </h1>
-    <p class="hero-lede"><strong>A safety net and a memory for your coding agent.</strong> belay remembers what yesterday's session was doing, stops the agent from quietly bending your tests, and lets you try risky things somewhere safe. When it steps in, it tells you why, in one line.</p>
+    <p class="hero-lede">A memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record. <strong>Install once; nothing about how you work changes.</strong></p>
 
     <div class="install" data-tabs>
       <div class="install-tabs" role="tablist" aria-label="Install method">
@@ -1147,9 +1146,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec" id="moments" aria-labelledby="moments-title">
   <div class="wrap">
     <div class="sec-head center reveal">
-      <p class="eyebrow"><span class="n">01</span> The problem</p>
-      <h2 class="h2" id="moments-title">You have watched this happen.</h2>
-      <p class="sec-lede">Coding agents are brilliant and fast. They are also forgetful, a little too eager to see green tests, and happy to run things you never looked at.</p>
+      <p class="eyebrow"><span class="n">01</span> The gap</p>
+      <h2 class="h2" id="moments-title">Brilliant inside one conversation. <span class="mute">Blind outside it.</span></h2>
+      <p class="sec-lede">Your coding agent only knows what's in front of it right now. So it forgets yesterday, grades its own work, runs whatever it decides to, and keeps no record. You've probably watched each of these happen.</p>
     </div>
     <div class="g12 moments">
       <article class="moment reveal" style="--rd:.0s">
@@ -1173,7 +1172,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <p>The agent runs commands as you. Your SSH keys, your cloud logins, your other projects: all one command away.</p>
       </article>
     </div>
-    <p class="moments-close reveal"><strong>belay catches each of these.</strong> It nudges the agent while there is still time, and lets you know it did.</p>
+    <p class="moments-close reveal">None of that is the model's fault: a single conversation simply can't hold it. <strong>belay is the part of your setup that lives outside the conversation.</strong> It sees across sessions, across time, and across agents, and it answers to you.</p>
   </div>
 </section>
 
@@ -1181,8 +1180,8 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule" id="memory" aria-labelledby="memory-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">02</span> Memory and handoffs</p>
-      <h2 class="h2" id="memory-title">Pick up the rope <span class="mute">where it was dropped.</span></h2>
+      <p class="eyebrow"><span class="n">02</span> It remembers</p>
+      <h2 class="h2" id="memory-title">Work never <span class="mute">starts from zero.</span></h2>
       <p class="sec-lede">Close your laptop tonight, open a new session tomorrow, and the agent already knows where things stand. The same goes for a long conversation that gets compacted, or one you <code class="inline-code">--resume</code>.</p>
     </div>
 
@@ -1232,9 +1231,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule" id="features" aria-labelledby="features-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">03</span> Honesty</p>
-      <h2 class="h2" id="features-title">It watches every move. <span class="mute">It catches the fall.</span></h2>
-      <p class="sec-lede">belay sees each step the agent takes, and what came back, before the agent does. That is how it keeps the agent honest about your tests.</p>
+      <p class="eyebrow"><span class="n">03</span> It's honest</p>
+      <h2 class="h2" id="features-title">Done means <span class="mute">actually done.</span></h2>
+      <p class="sec-lede">An agent can't grade its own work. belay sees each step, and what came back, before the agent does, so a bent test, a loop, or an unchecked "done" doesn't slip past.</p>
     </div>
 
     <div class="g12 bento">
@@ -1371,8 +1370,8 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule" id="sandbox" aria-labelledby="sandbox-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">04</span> Sandboxes and skills</p>
-      <h2 class="h2" id="sandbox-title">Climb on a short rope.</h2>
+      <p class="eyebrow"><span class="n">04</span> It's safe</p>
+      <h2 class="h2" id="sandbox-title">Bold work, <span class="mute">safely.</span></h2>
       <p class="sec-lede">Try the risky thing somewhere it can't hurt you. And when you add a skill from the internet, see what it says before your agent does.</p>
     </div>
 
@@ -1444,9 +1443,9 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule how" id="how" aria-labelledby="how-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">05</span> What you see</p>
-      <h2 class="h2" id="how-title">Quietly, at every step.</h2>
-      <p class="sec-lede">Each time the agent is about to do something, Claude Code checks in with belay. belay answers in a couple of milliseconds, usually with "carry on". Either way, it keeps a note of what happened.</p>
+      <p class="eyebrow"><span class="n">05</span> It's clear</p>
+      <h2 class="h2" id="how-title">You always know <span class="mute">what happened, and why.</span></h2>
+      <p class="sec-lede">Each time the agent is about to do something, Claude Code checks in with belay. belay answers in a couple of milliseconds, usually with "carry on", and keeps a record of everything it did, so you can always ask why.</p>
     </div>
 
     <div class="pipe reveal" role="group" aria-label="Data flow: hook, shim, daemon, core, ledger">
@@ -1508,7 +1507,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec rule" id="sessions" aria-labelledby="sessions-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">06</span> Many sessions</p>
+      <p class="eyebrow"><span class="n">06</span> It remembers, together</p>
       <h2 class="h2" id="sessions-title">Many sessions. <span class="mute">One rope.</span></h2>
       <p class="sec-lede">Running a few agents at once? belay lets them know about each other, so they don't trip over the same files.</p>
     </div>
@@ -1578,7 +1577,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 <section class="sec" id="principles" aria-labelledby="principles-title">
   <div class="wrap">
     <div class="sec-head reveal">
-      <p class="eyebrow"><span class="n">07</span> Principles</p>
+      <p class="eyebrow"><span class="n">07</span> The deal</p>
       <h2 class="h2" id="principles-title">Built to stay out of the way.</h2>
       <p class="sec-lede">A safety net should never be the thing that trips you up.</p>
     </div>
@@ -1629,7 +1628,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
   <div class="wrap">
     <div class="g12 qs">
       <div class="l5 reveal">
-        <p class="eyebrow"><span class="n">08</span> Quick start</p>
+        <p class="eyebrow"><span class="n">08</span> Get started</p>
         <h2 class="h2" id="start-title">Try it in a minute.</h2>
         <p class="sec-lede">One command sets everything up. After that, just use Claude Code the way you already do. belay stays quiet until it has something worth saying, and when it does, it tells you exactly what you can do about it. There's nothing to memorize.</p>
         <div data-tabs>
@@ -1725,7 +1724,7 @@ Loops (13 s in loops): 1
     </svg>
     <p class="call reveal">On belay?</p>
     <h2 class="reveal" id="final-title"><span class="grad-text">Belay on.</span></h2>
-    <p class="sub reveal">Install it once. Your next session starts where the last one stopped.</p>
+    <p class="sub reveal">Install it once. Your agent remembers, stays honest, works safely, and shows you what happened.</p>
     <div class="install reveal">
       <div class="ibox">
         <pre tabindex="0" role="region" aria-label="Install command"><span class="ps">$ </span>curl -fsSL https://prakhar479.github.io/belay/install.sh | sh</pre>
@@ -1745,7 +1744,7 @@ Loops (13 s in loops): 1
     <div class="g12 foot-grid">
       <div class="foot-brand">
         <a class="brand" href="#top"><svg aria-hidden="true"><use href="#mark"/></svg> belay</a>
-        <p>A safety net and a memory for your coding agent. The name comes from climbing: the person on belay holds the rope, so a slip never becomes a fall.</p>
+        <p>Your coding agent, with everything it can't give itself. The name comes from climbing: the person on belay holds the rope, so a slip never becomes a fall.</p>
       </div>
       <div class="foot-col">
         <h2>Project</h2>
@@ -1759,10 +1758,11 @@ Loops (13 s in loops): 1
       <div class="foot-col">
         <h2>On this page</h2>
         <ul>
-          <li><a href="#memory">Memory</a></li>
-          <li><a href="#features">Honesty</a></li>
-          <li><a href="#sandbox">Sandboxes and skills</a></li>
-          <li><a href="#how">What you see</a></li>
+          <li><a href="#moments">The gap</a></li>
+          <li><a href="#memory">It remembers</a></li>
+          <li><a href="#features">It's honest</a></li>
+          <li><a href="#sandbox">It's safe</a></li>
+          <li><a href="#how">It's clear</a></li>
           <li><a href="#status">Status</a></li>
         </ul>
       </div>

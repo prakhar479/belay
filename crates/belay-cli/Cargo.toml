@@ -1,6 +1,6 @@
 [package]
 name = "belay-cli"
-description = "Local supervisor for command-line coding agents."
+description = "Claude Code, upgraded: a memory that outlasts the conversation, honesty about its own work, safe boundaries, and a clear record."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

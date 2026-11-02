@@ -4,30 +4,46 @@
 A change adds to its own section only, so parallel branches do not conflict here. Keep it one
 guide: do not split it into files. Changelog entries go in changelog.d/, not CHANGELOG.md. -->
 
-belay runs next to Claude Code and watches every tool call through its hooks. It keeps a record of each session. When you ask it to, it also steps in:
+**belay upgrades your coding agent with everything it can't give itself.** Your agent is brilliant inside one conversation, and blind outside it: it can't remember yesterday, check its own work, protect you from what it runs, or keep a record. belay is the part of your setup that lives outside the conversation. It works with Claude Code today, and it's built for any coding agent.
 
-- it summarizes long test output;
-- it blocks edits that weaken tests;
-- it tells the agent when it is stuck in a loop.
+This guide covers every feature and setting. Each section stands on its own, so jump to what you need.
 
-Every step it takes is written down with a one-sentence reason.
-
-This guide goes from install to fleets. Each section stands alone, so skip to what you need.
-
+**Start here**
 - [Install](#install)
 - [Five minutes with belay](#five-minutes-with-belay)
-- [What belay does for one session](#what-belay-does-for-one-session)
-- [Seeing what belay does](#seeing-what-belay-does)
+
+**It remembers.** *Work never starts from zero.*
+- [Memory](#memory): handoffs, recall, and nothing lost to compaction
+- [Resuming](#resuming)
+- [Background sessions](#background-sessions) and [keeping the machine awake](#keeping-the-machine-awake)
+- [Sessions that know about each other](#sessions-that-know-about-each-other)
+
+**It's honest.** *Done means actually done.*
+- [The test guard](#the-test-guard)
+- [Loops](#loops)
+- [Verify before done](#verify-before-done)
+- [Test output, summarized](#test-output-summarized)
+
+**It's safe.** *Bold work, safely.*
 - [Sandboxes](#sandboxes)
 - [Skills](#skills)
-- [Sessions that know about each other](#sessions-that-know-about-each-other)
-- [Fleets](#fleets)
+- [Undo](#undo)
 - [Repo policy](#repo-policy)
-- [Audit (experimental)](#audit-experimental)
+
+**It's clear.** *You always know what happened, and why.*
+- [Seeing what belay does](#seeing-what-belay-does), including [notifications](#getting-told-when-you-are-needed)
+- [The session brief](#the-session-brief)
+- [Usage](#usage)
+- [When belay is wrong](#when-belay-is-wrong)
+
+**Reference**
+- [Features](#features) (turning each one on or off)
 - [Config](#config)
 - [Data and privacy](#data-and-privacy)
 - [Troubleshooting](#troubleshooting)
 - [Command reference](#command-reference)
+- [Fleets](#fleets) (teams of agents; working, but not getting new features for now)
+- [Audit (experimental)](#audit-experimental)
 
 ## Install
 

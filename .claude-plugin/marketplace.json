@@ -7,7 +7,7 @@
     {
       "name": "belay",
       "source": "./plugin",
-      "description": "belay hooks for Claude Code (needs the belay binary on PATH)"
+      "description": "Claude Code, upgraded: belay remembers across sessions, keeps the agent honest about its tests, works safely, and shows you what happened."
     }
   ]
 }
