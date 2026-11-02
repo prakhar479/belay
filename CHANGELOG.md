@@ -67,6 +67,8 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - **Upgrading belay during a live session no longer breaks test runs.** A session started before the upgrade wrapped test commands through its own binary, which the upgrade had replaced, so every wrapped command failed to start. belay now wraps only through a binary that is still on disk, and otherwise lets the command run as written.
 - `belay doctor` points to `belay config migrate` for 0.1 config names.
 - **A session could hang on exit and lose its handoff.** When belay wrote the session card at the same moment the session ended (you quit Claude Code, the agent stopped, or an idle session timed out), the two could wait on each other forever. The next session then saw the old one as still running and got no handoff. Every exit path now takes the locks in one order.
+- Skills from `.tar.gz` archives are read on macOS (bsdtar's listing differs from GNU tar's); links, devices, and traversal are still refused before extracting.
+- Outside git, a project's root and its project key are spelled the same when the path goes through a symlink (macOS `/var`).
 
 ## 0.1.0
 
