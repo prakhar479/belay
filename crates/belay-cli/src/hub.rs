@@ -646,7 +646,7 @@ impl Hub {
             | HubRequest::Resume
                 if !user =>
             {
-                return "belay: refused. Fleet control is the user's.".into();
+                return "belay: refused. Fleet control is yours to run: use your own terminal, not a belay session.".into();
             }
             HubRequest::Stop { slot } => FleetEvent::StopRequest { by, slot },
             HubRequest::Down => FleetEvent::Down,
@@ -3689,7 +3689,7 @@ pub fn restart(spec: Option<&str>) -> Result<String> {
 /// tells sessions apart by their process tree.
 fn refuse_in_fleet_session() -> Result<()> {
     if std::env::var_os("BELAY_FLEET_SLOT").is_some() {
-        bail!("Fleet control is the user's. A fleet session asks its lead or the user.");
+        bail!("Fleet control is yours to run: use your own terminal, not a belay session. A fleet session asks its lead or you.");
     }
     Ok(())
 }

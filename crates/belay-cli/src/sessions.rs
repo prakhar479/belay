@@ -188,7 +188,9 @@ pub fn resolve(spec: Option<&str>, live: bool) -> Result<PathBuf> {
         .find(in_here)
         .or(all.first())
         .cloned()
-        .ok_or_else(|| anyhow!("no sessions in {}", root.display()))
+        .ok_or_else(|| {
+            anyhow!("Nothing recorded yet. Run `belay claude` in a project, then try again.")
+        })
 }
 
 /// One line per session for `belay sessions`, newest first.

@@ -115,7 +115,7 @@ fn a_client_lists_tools_adds_and_finds_a_memory_and_reads_the_ledger() {
         json!({"text": "The api tests need DB_URL set", "kind": "gotcha", "tags": ["pytest"]}),
     );
     assert!(
-        !err && said.starts_with("Kept m-1 as the agent's"),
+        !err && said.starts_with("Kept m-1. It waits for your OK"),
         "{said}"
     );
     let (found, err) = s.tool("memory_search", json!({"query": "DB_URL", "limit": 3}));

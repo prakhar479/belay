@@ -903,7 +903,7 @@ fn render(ins: &Inspected, origin: &Origin) -> String {
             let _ = writeln!(out, "  {}", w.render());
         }
     }
-    let _ = writeln!(out, "Digest: {}", ins.digest);
+    let _ = writeln!(out, "Fingerprint: {}", ins.digest);
     out
 }
 

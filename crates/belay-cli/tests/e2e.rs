@@ -217,7 +217,7 @@ fn a_default_session_shapes_and_guards() {
     // R2.3: the flag the user lifted counts against the guard's precision.
     let report = belay(&["report"], &session);
     assert!(
-        report.contains("Guard precision: 1 flagged · 1 allowed by the user (100%"),
+        report.contains("Test guard: 1 edits blocked · 1 let through by you (100%"),
         "{report}"
     );
 
@@ -644,7 +644,7 @@ fn failing_test_run_is_summarized_through_belay_run() {
     drop(daemon);
 
     let report = belay(&["report"], &session);
-    assert!(report.contains("Wrapped test runs: 1"), "{report}");
+    assert!(report.contains("Test runs belay watched: 1"), "{report}");
     assert!(report.contains("Shaping: 1 outputs"), "{report}");
     assert!(report.contains("[applied]"), "{report}");
     assert!(!report.contains("Not shapeable"), "{report}");
@@ -1155,7 +1155,10 @@ fn denied_wrapped_call_may_be_retried_unwrapped() {
         "the retry runs unwrapped"
     );
     let report = belay(&["report"], &session);
-    assert!(report.contains("denied by auto mode: 1 (100%)"), "{report}");
+    assert!(
+        report.contains("refused by Claude Code's auto mode: 1 (100%)"),
+        "{report}"
+    );
 }
 
 /// R3.5: `belay status` reads the session from BELAY_SESSION_DIR and prints one line.
@@ -2551,7 +2554,7 @@ fn fleet_lead_plans_tasks_and_workers_do_them_in_order() {
     assert!(lead.contains("Added t-1.1, for worker."), "{lead}");
     assert!(lead.contains("Added t-1.2, for worker."), "{lead}");
     assert!(
-        lead.contains("Fleet control is the user's"),
+        lead.contains("Fleet control is yours to run"),
         "the lead cannot take the fleet down: {lead}"
     );
     let work = fs::read_to_string(dir.join("work.log")).unwrap();
@@ -4882,7 +4885,7 @@ fn memory_add_search_approve_and_migrate() {
         true,
     );
     assert_eq!(code, Some(0));
-    assert!(said.contains("Kept m-1 as the agent's"), "{said}");
+    assert!(said.contains("Kept m-1. It waits for your OK"), "{said}");
     let (_, said) = run(
         &["memory", "add", "I review on Fridays", "--scope", "user"],
         false,

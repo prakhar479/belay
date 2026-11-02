@@ -800,7 +800,8 @@ pub fn run(since: Since, by: By, json: bool) -> Result<String> {
 }
 
 fn usd(x: f64) -> String {
-    format!("~${x:.2}")
+    // Clamp: a tiny negative estimate must not print as "-0.00".
+    format!("~${:.2}", if x > 0.0 { x } else { 0.0 })
 }
 
 pub fn render(
@@ -857,7 +858,7 @@ pub fn render(
             where_line(went)
         );
     } else {
-        let _ = writeln!(out, "Where it went: no belay session in this period.");
+        let _ = writeln!(out, "No belay sessions in this period yet.");
     }
     match limit.usual_est {
         Some(usual) => {

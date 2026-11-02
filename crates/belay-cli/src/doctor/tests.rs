@@ -209,7 +209,7 @@ fn sandbox_readiness() {
     let all = checks(&f);
     assert!(of(&all, "sandbox")
         .iter()
-        .any(|c| c.status == Status::Ok && c.text.contains("watchdog alone")));
+        .any(|c| c.status == Status::Ok && c.text.contains("own watchdog")));
 
     f.sandbox.linux = false;
     let all = checks(&f);
@@ -386,8 +386,8 @@ fn background_warns_with_the_fix_when_the_lid_is_not_held() {
     f.background = keepawake::assess_wsl(true, Some((1, 1)));
     let c = one(&f, "background");
     assert_eq!(c.status, Status::Warn);
-    assert!(c.text.contains("closed lid not held off"), "{}", c.text);
-    assert!(c.fix.unwrap().contains("LIDACTION 0"));
+    assert!(c.text.contains("closed lid can put"), "{}", c.text);
+    assert!(c.fix.unwrap().contains("belay keep-awake --help"));
     f.background = keepawake::assess_wsl(true, Some((0, 0)));
     assert_eq!(one(&f, "background").status, Status::Ok);
 }

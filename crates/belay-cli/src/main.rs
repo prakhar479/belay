@@ -50,7 +50,8 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(
     name = "belay",
     version,
-    about = "Local supervisor for command-line coding agents"
+    about = "Your coding agent, with everything it can't give itself.",
+    before_help = "Start here: `belay install` · `belay claude` · `belay doctor` · `belay brief`"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -59,7 +60,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Start Claude Code under belay. Other arguments, `--help` included, go to `claude`.
+    /// Start Claude Code under belay
+    ///
+    /// Other arguments, `--help` included, go to `claude`.
     ///
     /// belay's own flags may come anywhere: to join a fleet from this terminal,
     /// `--belay-fleet [ID]` with `--belay-role R` and `--belay-name N`.
@@ -72,11 +75,14 @@ enum Cmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Start an agent under belay: `belay launch claude-code [args…]` is `belay claude`.
+    /// Start an agent under belay (`belay claude` is the usual way)
+    ///
+    /// `belay launch claude-code [args…]` is `belay claude`.
     ///
     /// Arguments after the agent go to it, `--help` included; belay's own flags work as
     /// for `belay claude`. Agents: claude-code. `belay help launch` shows this text.
     #[command(disable_help_flag = true)]
+    #[command(hide = true)]
     Launch {
         agent: String,
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -91,16 +97,19 @@ enum Cmd {
     /// Install stable hooks for an agent once (not built yet).
     #[command(hide = true)]
     Init { agent: String },
-    /// Pause belay in a live session: one feature, or all of them. Run it yourself;
-    /// the agent may not. Features: guard, loops, shape, wrap_tests, verify, memory, awareness,
-    /// commons.
+    /// Pause belay's help in a live session (yours to run)
+    ///
+    /// Pass one feature, or none to pause them all. Run it yourself; the agent may not.
+    /// Features: guard, loops, shape, wrap_tests, verify, memory, awareness, commons.
     Pause {
         feature: Option<String>,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// Resume what `belay pause` paused: one feature, or all of them.
+    /// Turn back on what `belay pause` paused
+    ///
+    /// One feature, or all of them.
     Resume {
         feature: Option<String>,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
@@ -113,15 +122,19 @@ enum Cmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
-    /// Allow one edit the test guard blocked (the latest, or action a-N). Run it yourself,
-    /// for example with `! belay allow` in Claude Code; the agent may not.
+    /// Let through one edit the test guard blocked (yours to run)
+    ///
+    /// The latest one, or action a-N. Run it yourself, for example with `! belay allow`
+    /// in Claude Code; the agent may not.
     Allow {
         id: Option<String>,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// Show what happened in a session (default: the newest one started here).
+    /// Show what happened in a session
+    ///
+    /// The default is the newest session started here.
     Report {
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
@@ -130,8 +143,10 @@ enum Cmd {
         #[arg(long)]
         full: bool,
     },
-    /// What a session changed, what it checked, and what to look at before a commit or
-    /// merge. From the ledger and git, never the agent's own summary.
+    /// What a session changed and checked, before you commit
+    ///
+    /// Built from what actually happened, never from the agent's own summary.
+    /// Shows what changed, what was checked, and what to look at before a commit or merge.
     Brief {
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
@@ -143,23 +158,27 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Print the full original of a summarized output (o-N).
+    /// Print the full original of a shortened output (o-N)
     Show {
         id: String,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// Show the cause chain of an action (a-N), output (o-N), or entry number.
+    /// Show why belay did something (a-N, o-N, or an entry number)
+    ///
+    /// Shows the chain of causes behind an action, an output, or an entry.
     Why {
         id: String,
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// Say belay got something wrong: an action (a-N), an output (o-N), an entry number,
-    /// or `session`; with no id, the newest warning. The note is optional. A flag lifts
-    /// nothing. `belay review` lists flags.
+    /// Say belay got something wrong
+    ///
+    /// Name an action (a-N), an output (o-N), an entry number, or `session`;
+    /// with no id, the newest warning. The note is optional. A flag lifts nothing.
+    /// `belay review` lists flags.
     Flag {
         /// `[TARGET] [NOTE…]`: a first word that is not an id starts the note.
         words: Vec<String>,
@@ -167,11 +186,15 @@ enum Cmd {
         #[arg(long, allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// List flags across all sessions by rule, newest first: what each points at, and
-    /// commands to look closer and to save it as a fixture. The agent's flags come apart.
+    /// List what you flagged, newest first
+    ///
+    /// Each flag shows what it points at, and commands to look closer and to save it
+    /// as a fixture.
     Review,
-    /// Install belay into Claude Code: the plugin (default), the status line, or the
-    /// launcher alias. Shows each change and asks first.
+    /// Set belay up with Claude Code
+    ///
+    /// Installs the plugin (default), the status line, or the launcher alias.
+    /// Shows each change and asks first.
     Install {
         #[command(flatten)]
         parts: install::Parts,
@@ -186,8 +209,10 @@ enum Cmd {
         #[arg(long, short)]
         yes: bool,
     },
-    /// Undo `belay install`: the plugin and belay's status line by default. A status line
-    /// that is not belay's is left alone.
+    /// Undo `belay install`
+    ///
+    /// Removes the plugin and belay's status line by default. A status line that is
+    /// not belay's is left alone.
     Uninstall {
         #[command(flatten)]
         parts: install::Parts,
@@ -195,15 +220,27 @@ enum Cmd {
         #[arg(long, short)]
         yes: bool,
     },
-    /// Will belay work here? Checks the install, Claude Code, the plugin, the sandbox,
-    /// skills, config, and data. Each line is ok, warn, or fail; exit 1 only on a fail.
+    /// Check that belay will work here
+    ///
+    /// Checks the install, Claude Code, the plugin, the sandbox, skills, config, and data.
+    /// Each line is ok, warn, or fail; exit 1 only on a fail.
     Doctor {
         /// The same checks as JSON.
         #[arg(long)]
         json: bool,
     },
-    /// Keep the machine awake: for a time, while a process runs, or while a command runs
-    /// (default: until Ctrl-C). Says first what it can hold off here. Records nothing.
+    /// Keep this machine awake while belay works
+    ///
+    /// For a time, while a process runs, or while a command runs (default: until Ctrl-C).
+    /// It says first what it can hold off here. It records nothing.
+    ///
+    /// A closed lid can still put a machine to sleep, and background sessions pause then.
+    /// On WSL, in Windows run `powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0`,
+    /// `powercfg /setdcvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0`, then
+    /// `powercfg /setactive SCHEME_CURRENT` (set 1 to put sleep back). On macOS, run
+    /// `sudo pmset -a disablesleep 1` (`0` undoes it). On Linux, set `HandleLidSwitch=ignore`
+    /// and `HandleLidSwitchExternalPower=ignore` in /etc/systemd/logind.conf.
+    /// `belay keep-awake` prints the exact fix for this machine.
     KeepAwake {
         /// How long: `90s`, `45m`, `2h`, `1h30m`.
         #[arg(long = "for", value_name = "DURATION", conflicts_with_all = ["pid", "cmd"])]
@@ -215,8 +252,9 @@ enum Cmd {
         #[arg(last = true)]
         cmd: Vec<String>,
     },
-    /// One session as a sanitized JSON bundle (paths, home, user name, and secrets
-    /// replaced), to attach to a bug report.
+    /// Save one session as a cleaned JSON file for a bug report
+    ///
+    /// Paths, home, user name, and secrets are replaced.
     Export {
         /// An id, a prefix, `-N`, or a path (default: the newest session started here).
         #[arg(long, allow_hyphen_values = true)]
@@ -232,8 +270,9 @@ enum Cmd {
         #[arg(long, requires = "action")]
         fixture: Option<PathBuf>,
     },
-    /// Delete recorded sessions (their ledgers and stored outputs). Live sessions are
-    /// kept.
+    /// Delete recorded sessions
+    ///
+    /// Removes their records and stored outputs. Live sessions are kept.
     Purge {
         /// One session: an id, a prefix, `-N`, or a path.
         #[arg(long, allow_hyphen_values = true, conflicts_with_all = ["all", "older_than"])]
@@ -245,8 +284,11 @@ enum Cmd {
         #[arg(long, value_name = "DAYS")]
         older_than: Option<u64>,
     },
-    /// (Experimental) What a git diff, or a belay session, changed in tests and checks:
-    /// assertions and tests, snapshots, suppressions, check config, dependencies.
+    /// (Experimental) What a diff changed in tests and checks
+    ///
+    /// Reads a git diff, or a belay session: assertions and tests, snapshots,
+    /// suppressions, check config, dependencies.
+    #[command(hide = true)]
     Audit {
         /// `A..B`, `A...B` (from the merge base), or `A` (to the working tree).
         /// Default: HEAD to the working tree.
@@ -258,11 +300,14 @@ enum Cmd {
         #[arg(long, num_args = 0..=1, default_missing_value = "-1", allow_hyphen_values = true)]
         session: Option<String>,
     },
-    /// One line for the Claude Code status line: what belay did so far.
-    /// Prints nothing outside a belay session.
+    /// Print one line for the Claude Code status line
+    ///
+    /// Says what belay did so far. Prints nothing outside a belay session.
     Status,
-    /// Where the model's tokens went: totals and an estimated cost from Claude Code's
-    /// transcripts, tokens spent in loops and failing runs, and the 5-hour limit.
+    /// Where the model's tokens went, and what it cost
+    ///
+    /// Totals and an estimated cost from Claude Code's transcripts, tokens spent in loops
+    /// and failing runs, and the 5-hour limit.
     Usage {
         /// Since local midnight today.
         #[arg(long, conflicts_with_all = ["week", "since"])]
@@ -280,8 +325,10 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Print what belay does in a session as it happens: the newest live session, or
-    /// the one named. Ctrl-C stops.
+    /// Watch what belay does in a session, live
+    ///
+    /// The newest live session, or the one named. Ctrl-C stops.
+    /// With no live session it says so and exits 1.
     Watch {
         /// A session id or prefix, `-1` (newest), `-2`, …, or a path.
         #[arg(long, allow_hyphen_values = true)]
@@ -290,8 +337,11 @@ enum Cmd {
         #[arg(long)]
         verbose: bool,
     },
-    /// A fleet's task board: add, give out, take, finish, or block tasks. In a fleet
-    /// session, the agent uses these; belay knows which session asks.
+    /// A fleet's task board
+    ///
+    /// Add, give out, take, finish, or block tasks. In a fleet session, the agent uses
+    /// these; belay knows which session asks.
+    #[command(hide = true)]
     Task {
         #[command(subcommand)]
         cmd: TaskCmd,
@@ -299,10 +349,13 @@ enum Cmd {
         #[arg(long, global = true)]
         fleet: Option<String>,
     },
-    /// Send a message: to any belay session by its card name, to `topic:<t>` (sessions
-    /// that joined it), to `repo` (every session in this repo), or to `user`. In a fleet,
-    /// also `@role`, `#team`, or a slot. Without --kind: an answer to whoever asked, a
-    /// question if the text asks, else a notice (in a fleet, its channels decide).
+    /// Send a message to another session or to you
+    ///
+    /// To any belay session by its card name, to `topic:<t>` (sessions that joined it),
+    /// to `repo` (every session in this repo), or to `user`. In a fleet, also `@role`,
+    /// `#team`, or a slot. Without --kind: an answer to whoever asked, a question if the
+    /// text asks, else a notice (in a fleet, its channels decide).
+    #[command(hide = true)]
     Msg {
         /// A card name, `topic:<t>`, `repo`, `user`; in a fleet also `@role`, `#team`
         to: String,
@@ -315,19 +368,26 @@ enum Cmd {
         #[arg(long)]
         fleet: Option<String>,
     },
-    /// Messages: this session's (commons and fleet), or, for you, yours and the fleet's.
+    /// Read messages for this session, or for you
+    ///
+    /// This session's (shared and fleet), or, for you, yours and the fleet's.
+    #[command(hide = true)]
     Inbox {
         /// The fleet's id (default: this session's fleet, else the newest live one)
         #[arg(long)]
         fleet: Option<String>,
     },
-    /// Keep a note for this project: what sessions should know (`belay notes` lists them).
-    /// A note typed in your terminal is kept; one from an agent waits for your review.
+    /// Keep a note for this project
+    ///
+    /// What sessions should know (`belay notes` lists them). A note typed in your
+    /// terminal is kept; one from an agent waits for your review.
     Note {
         /// What every new session of this project should know
         text: String,
     },
-    /// This project's notes; `approve <id>` or `drop <id>` reviews one (yours to run).
+    /// List this project's notes
+    ///
+    /// `approve <id>` or `drop <id>` reviews one (yours to run).
     Notes {
         /// approve or drop
         verb: Option<String>,
@@ -337,8 +397,10 @@ enum Cmd {
         #[arg(long)]
         all: bool,
     },
-    /// Fixes sessions learned in this project (a failure, the change, the run that then
-    /// passed); `forget` drops them (yours to run).
+    /// List fixes sessions learned in this project
+    ///
+    /// Each is a failure, the change, and the run that then passed.
+    /// `forget` drops them (yours to run).
     Fixes {
         /// forget
         verb: Option<String>,
@@ -346,8 +408,10 @@ enum Cmd {
         #[arg(long)]
         all: bool,
     },
-    /// Publish a finding others can pull with `belay ask`: a gotcha, a decision, how
-    /// something works. Text reaches other projects; `--code-file` only this one.
+    /// Publish a finding other sessions can pull with `belay ask`
+    ///
+    /// A gotcha, a decision, how something works. Text reaches other projects;
+    /// `--code-file` only this one.
     Share {
         /// The finding, in a few sentences.
         text: String,
@@ -364,7 +428,9 @@ enum Cmd {
         #[arg(long)]
         code_file: Option<PathBuf>,
     },
-    /// Search what other sessions published (and fixes they learned) before you dig in.
+    /// Search what other sessions published
+    ///
+    /// Also searches fixes they learned. Look here before you dig in.
     Ask {
         /// What you want to know, in words.
         query: String,
@@ -374,7 +440,9 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// This project's findings; `drop f-N…` removes them (yours to run).
+    /// List this project's findings
+    ///
+    /// `drop f-N…` removes them (yours to run).
     Findings {
         /// drop
         verb: Option<String>,
@@ -386,34 +454,47 @@ enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// The effective config: each key, its value, and where it came from (the file or
-    /// the default). `belay config migrate` rewrites 0.1 keys in the file.
+    /// Show the settings belay is using
+    ///
+    /// Each key, its value, and where it came from (the file or the default).
+    /// `belay config migrate` rewrites 0.1 keys in the file.
     Config {
         #[command(subcommand)]
         action: Option<ConfigCmd>,
     },
-    /// Memories for this project and you: list, search, add, show; approve or drop
-    /// (yours to run); migrate copies notes, fixes, findings, and handoffs in once.
+    /// What belay remembers for this project and you
+    ///
+    /// List, search, add, show; approve or drop (yours to run); migrate copies notes,
+    /// fixes, findings, and handoffs in once.
     Memory {
         #[command(subcommand)]
         action: Option<MemoryCmd>,
     },
-    /// Skills from URLs: preview, add (an agent's add only stages), list, update;
-    /// approve, reject, remove (yours to run).
+    /// Add skills from a URL, safely
+    ///
+    /// Preview, add, list, update; approve, reject, remove (yours to run).
+    /// An agent can only suggest a skill; you approve it.
     Skill {
         #[command(subcommand)]
         action: Option<SkillCmd>,
     },
-    /// An MCP server over stdio: memory search and add, the handoff, outputs, and why.
+    /// Let other tools read belay's memory (advanced)
+    ///
+    /// Runs an MCP server over stdio: memory search and add, the handoff, outputs, and why.
+    #[command(hide = true)]
     Mcp,
-    /// Leave a handoff for the next session in this repo ("done: …; open: …; next: …"),
-    /// from inside a session. With no text, show what the next session here would get.
+    /// Leave a note for the next session in this repo
+    ///
+    /// Use "done: …; open: …; next: …", from inside a session. With no text, shows
+    /// what the next session here would get.
     Handoff {
         /// What is done, what is open, what comes next.
         text: Option<String>,
     },
-    /// This session's card: say what you are working on (from inside a belay session).
-    /// With no flags, show it.
+    /// Say what this session is working on
+    ///
+    /// From inside a belay session. With no flags, shows the card.
+    #[command(hide = true)]
     Card {
         /// What this session is working on, in one line.
         #[arg(long)]
@@ -434,8 +515,11 @@ enum Cmd {
         #[arg(long, value_delimiter = ',')]
         leave: Option<Vec<String>>,
     },
-    /// Fleets of agents: `belay fleet up` runs one from a fleet file. Alone, it lists the
-    /// fleets and the live belay sessions on this machine, grouped by repo.
+    /// Run several agents together (advanced)
+    ///
+    /// `belay fleet up` runs one from a fleet file. Alone, it lists the fleets and the
+    /// live belay sessions on this machine, grouped by repo.
+    #[command(hide = true)]
     Fleet {
         #[command(subcommand)]
         cmd: Option<FleetCmd>,
@@ -443,8 +527,9 @@ enum Cmd {
         #[arg(long)]
         all: bool,
     },
-    /// Roll the files back to a snapshot belay took at the end of an agent turn
-    /// (`t-N`; `t-0` is the start). Alone, it lists the snapshots. Your index, HEAD,
+    /// Roll files back to the end of an earlier agent turn
+    ///
+    /// Pass `t-N` (`t-0` is the start). Alone, it lists the snapshots. Your index, HEAD,
     /// stash and branches are not touched. Run it yourself, in your own terminal.
     Undo {
         /// A snapshot: `t-N`, or `u-N` (the files as they were before undo N).
@@ -456,20 +541,26 @@ enum Cmd {
         #[arg(long)]
         yes: bool,
     },
-    /// Sandboxes: run a command, an agent session, or a headless task on a clone of this
-    /// repo with a private home and limits; its changes land on branch
+    /// Run a command or agent on a private copy of this repo
+    ///
+    /// Runs on a clone with a private home and limits; its changes land on branch
     /// `belay/sandbox/<id>` for you to merge.
     Sandbox {
         #[command(subcommand)]
         cmd: sandbox::SandboxCmd,
     },
-    /// Background sessions: an agent keeps working on a prompt after you leave, in a
-    /// sandbox when it can, and tells you when it is done or needs you.
+    /// Keep an agent working after you leave
+    ///
+    /// An agent keeps working on a prompt in the background, in a sandbox when it can,
+    /// and tells you when it is done or needs you.
     Bg {
         #[command(subcommand)]
         cmd: bg::BgCmd,
     },
-    /// What belay would have done in an existing Claude Code transcript, or in all of them.
+    /// See what belay would have done in an old transcript
+    ///
+    /// Reads an existing Claude Code transcript, or all of them.
+    #[command(hide = true)]
     Retro {
         #[arg(required_unless_present = "all")]
         transcript: Option<PathBuf>,
@@ -490,8 +581,10 @@ enum Cmd {
         #[arg(long, requires = "all")]
         summary: bool,
     },
-    /// The live belay sessions on this machine: what each is doing and how it is going
-    /// (their cards). Agents may run it too. `--history` lists every recorded session.
+    /// List the live belay sessions on this machine
+    ///
+    /// What each is doing and how it is going (their cards). Agents may run it too.
+    /// `--history` lists every recorded session.
     Sessions {
         /// Also sessions that ended in the last day.
         #[arg(long)]
@@ -1029,10 +1122,7 @@ fn run(cli: Cli) -> Result<i32> {
             print!("{}", usage::run(since, by, json)?);
             Ok(0)
         }
-        Cmd::Watch { session, verbose } => {
-            watch::run(session.as_deref(), verbose)?;
-            Ok(0)
-        }
+        Cmd::Watch { session, verbose } => watch::run(session.as_deref(), verbose),
         Cmd::Status => {
             config::quiet();
             // A status line must never show an error: print nothing instead. Under the
@@ -1237,12 +1327,12 @@ fn run(cli: Cli) -> Result<i32> {
             })
         }
         Cmd::Fleet { cmd: None, all } => {
-            print!(
-                "{}{}{}",
-                hub::list(all),
-                fleet::view_default(),
-                hub::disk_use()
-            );
+            let (fleets, sessions) = (hub::list(all), fleet::view_default());
+            print!("{fleets}{sessions}");
+            if fleets.is_empty() && sessions.starts_with("No live belay sessions") {
+                println!("No fleets either. Start one with `belay fleet up`.");
+            }
+            print!("{}", hub::disk_use());
             Ok(0)
         }
         Cmd::Fleet { cmd: Some(c), .. } => fleet_cmd(c),

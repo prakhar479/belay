@@ -59,6 +59,14 @@ pub fn run(json: bool) -> (String, i32) {
     (out, code)
 }
 
+/// `text` with the home directory written as `~`.
+pub fn tilde(text: &str) -> String {
+    match env::var("HOME") {
+        Ok(h) if h.len() > 1 => text.replace(&h, "~"),
+        _ => text.to_string(),
+    }
+}
+
 pub fn render(all: &[Check]) -> String {
     let mut out = String::new();
     for c in all {
@@ -67,9 +75,9 @@ pub fn render(all: &[Check]) -> String {
             Status::Warn => "warn",
             Status::Fail => "fail",
         };
-        let _ = write!(out, "{status:<5} {:<10} {}", c.area, c.text);
+        let _ = write!(out, "{status:<5} {:<10} {}", c.area, tilde(&c.text));
         if let Some(fix) = &c.fix {
-            let _ = write!(out, " Fix: {fix}");
+            let _ = write!(out, " Fix: {}", tilde(fix));
         }
         out.push('\n');
     }
@@ -165,9 +173,19 @@ pub struct DataFacts {
 pub fn checks(f: &Facts) -> Vec<Check> {
     let mut out = vec![binary(f), claude(f), home(f)];
     out.extend(config_checks(f));
-    out.push(plugin(f));
-    out.push(alias(f));
-    out.push(statusline(f));
+    if f.plugin == Plugin::Absent && !f.alias && f.statusline.is_none() {
+        // A fresh machine: one calm line, not three warnings.
+        out.push(check(
+            Status::Ok,
+            "setup",
+            "Not set up with Claude Code yet: `belay install` does it.",
+            None,
+        ));
+    } else {
+        out.push(plugin(f));
+        out.push(alias(f));
+        out.push(statusline(f));
+    }
     out.extend(sandbox_checks(&f.sandbox));
     out.extend(skills(&f.skills));
     out.push(data(&f.data));
@@ -206,7 +224,7 @@ fn claude(f: &Facts) -> Check {
         Some(v) if f.conformant.iter().any(|c| c == v) => check(
             Status::Ok,
             "claude",
-            format!("Claude Code {v} is one belay was checked against."),
+            format!("Claude Code {v} (tested with belay)."),
             None,
         ),
         Some(v) => check(
@@ -230,7 +248,7 @@ fn home(f: &Facts) -> Check {
         HomeState::Missing => check(
             Status::Ok,
             "home",
-            format!("Data dir {h} does not exist yet; belay makes it on start."),
+            "Nothing recorded yet; belay makes its data folder on first run.".to_string(),
             None,
         ),
         HomeState::Symlink => check(
@@ -273,7 +291,7 @@ fn config_checks(f: &Facts) -> Vec<Check> {
         return vec![check(
             Status::Ok,
             "config",
-            format!("No config at {p}; the defaults apply."),
+            "Using the defaults (no config file).".to_string(),
             None,
         )];
     };
@@ -455,7 +473,7 @@ fn sandbox_checks(s: &SandboxFacts) -> Vec<Check> {
             None => out.push(check(
                 Status::Ok,
                 "sandbox",
-                "bwrap can make a sandbox here (user namespaces work).",
+                "Sandboxes work here.",
                 None,
             )),
             Some(e) => out.push(check(
@@ -471,7 +489,7 @@ fn sandbox_checks(s: &SandboxFacts) -> Vec<Check> {
             out.push(check(
                 Status::Ok,
                 "sandbox",
-                format!("WSL: the layout hides /init, /mnt, and WSL_INTEROP. {MORE}"),
+                format!("WSL: sandboxes are closed off from Windows. {MORE}"),
                 None,
             ));
         } else {
@@ -484,17 +502,12 @@ fn sandbox_checks(s: &SandboxFacts) -> Vec<Check> {
         }
     }
     out.push(if s.systemd_scope {
-        check(
-            Status::Ok,
-            "sandbox",
-            "Limits use a systemd user scope, with belay's watchdog as well.",
-            None,
-        )
+        check(Status::Ok, "sandbox", "Sandbox limits are enforced.", None)
     } else {
         check(
             Status::Ok,
             "sandbox",
-            "No systemd user scope here, so belay's watchdog alone enforces limits.",
+            "Sandbox limits are enforced by belay's own watchdog.",
             None,
         )
     });
@@ -588,7 +601,12 @@ fn background(a: &keepawake::Assessment) -> Check {
     if a.all_held() {
         check(Status::Ok, "background", a.summary(), None)
     } else {
-        check(Status::Warn, "background", a.summary(), a.fix.as_deref())
+        check(
+            Status::Warn,
+            "background",
+            "A closed lid can put this machine to sleep; background sessions pause then.",
+            Some("`belay keep-awake --help` shows how to change it."),
+        )
     }
 }
 
