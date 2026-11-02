@@ -84,7 +84,7 @@ pub fn args(spec: &Spec, exists: &dyn Fn(&Path) -> bool) -> Vec<OsString> {
     a.extend(["--proc", "/proc", "--dev", "/dev"].map(OsString::from));
     // Read-write: the private home, then the worktree; read-only binds after them, so
     // those inside the home (the agent's plugins) sit on top.
-    for p in [&spec.home, &spec.work] {
+    for p in [&spec.home, &spec.work].into_iter().chain(&spec.rw) {
         bind(&mut a, "--bind", p, p);
     }
     for (src, dst) in &spec.ro {
@@ -121,6 +121,7 @@ mod tests {
                 ),
                 (PathBuf::from("/h/.nvm"), PathBuf::from("/h/.nvm")),
             ],
+            rw: vec![PathBuf::from("/data/cache/r-1/sandbox/target")],
             env: vec![("HOME".into(), "/data/sb/s1/home".into())],
             argv: vec!["make".into(), "test".into()],
         }
@@ -144,7 +145,7 @@ mod tests {
             "--ro-bind /usr /usr",
             "--ro-bind /etc /etc",
             "--tmpfs /tmp --tmpfs /run --proc /proc --dev /dev",
-            "--bind /data/sb/s1/home /data/sb/s1/home --bind /data/sb/s1/work /data/sb/s1/work",
+            "--bind /data/sb/s1/home /data/sb/s1/home --bind /data/sb/s1/work /data/sb/s1/work --bind /data/cache/r-1/sandbox/target /data/cache/r-1/sandbox/target",
             "--ro-bind /h/.cargo /h/.cargo",
             "--ro-bind /h/.claude/plugins /data/sb/s1/home/.claude/plugins",
             "--chdir /data/sb/s1/work/src --clearenv --setenv HOME /data/sb/s1/home -- make test",

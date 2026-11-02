@@ -342,6 +342,8 @@ struct Hub {
     done_trees: BTreeMap<String, (String, u64)>,
     /// Trees taken before a check ran, until the check's result is applied.
     pending_trees: BTreeMap<String, String>,
+    /// `build_cache`, and what the hub's environment already says (P0.4).
+    build: (crate::disk::BuildCache, crate::disk::Env),
 }
 
 pub fn run_hub(dir: &Path, resume: bool) -> Result<()> {
@@ -386,6 +388,10 @@ pub fn run_hub(dir: &Path, resume: bool) -> Result<()> {
         lifted: std::collections::BTreeSet::new(),
         done_trees: BTreeMap::new(),
         pending_trees: BTreeMap::new(),
+        build: (
+            crate::config::load().build_cache,
+            crate::disk::Env::current(),
+        ),
     };
     let _ = fs::write(dir.join("hub.pid"), std::process::id().to_string());
     if resume {
@@ -1004,6 +1010,7 @@ impl Hub {
             .env("BELAY_FLEET", &self.meta.id)
             .env("BELAY_FLEET_SLOT", slot)
             .env("BELAY_FLEET_RULES", self.rules_for(slot, &cwd))
+            .envs(self.build_env(&cwd))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(err)
@@ -1625,6 +1632,7 @@ impl Hub {
         let scratch = self.dir.join("scratch");
         let lock = Arc::clone(&self.checking);
         let audit = self.audit;
+        let env = wt.as_deref().map(|w| self.build_env(w)).unwrap_or_default();
         thread::spawn(move || {
             let _one = lock.lock().unwrap_or_else(|e| e.into_inner());
             let event = match wt {
@@ -1637,7 +1645,7 @@ impl Hub {
                     {
                         let _ = tx.send(Msg::Tree(task.clone(), tree));
                     }
-                    let (exit, output) = run_with_timeout(&wt, &command, CHECK_TIMEOUT);
+                    let (exit, output) = run_with_timeout(&wt, &command, &env, CHECK_TIMEOUT);
                     let passed = exit == Some(0);
                     let flags = match (&base, passed && audit) {
                         (Some((root, from)), true) => audit_flags(root, from, &scratch),
@@ -1758,6 +1766,24 @@ impl Hub {
         }
     }
 
+    /// The build-cache variables for a session or check in `cwd` (P0.4). Only a belay
+    /// worktree gets them: the user's own checkout (a shared workspace) keeps its
+    /// `target/`. Keyed by the worktree's name, so no two running sessions share one.
+    fn build_env(&self, cwd: &Path) -> Vec<(String, String)> {
+        let (Some(repo), Some(key)) = (
+            &self.meta.repo,
+            cwd.strip_prefix(self.dir.join("worktrees"))
+                .ok()
+                .and_then(|r| r.to_str())
+                .filter(|r| !r.is_empty()),
+        ) else {
+            return Vec::new();
+        };
+        let (mode, env) = &self.build;
+        let cache = crate::disk::cache_root().join(crate::disk::repo_key(Path::new(repo)));
+        crate::disk::cargo_env(*mode, &cache, cwd, key, env)
+    }
+
     /// A session's write rules (F5c), as JSON for `BELAY_FLEET_RULES`.
     fn rules_for(&self, slot: &str, cwd: &Path) -> String {
         let role = self.model.role_of(slot);
@@ -1828,11 +1854,17 @@ const CHECK_OUTPUT_BYTES: usize = 4 << 20;
 
 /// Run `command` with `sh` in `dir`, stdout and stderr together. Its exit code (None:
 /// killed or timed out) and output.
-fn run_with_timeout(dir: &Path, command: &str, timeout: Duration) -> (Option<i32>, String) {
+fn run_with_timeout(
+    dir: &Path,
+    command: &str,
+    env: &[(String, String)],
+    timeout: Duration,
+) -> (Option<i32>, String) {
     let child = Command::new("sh")
         .arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir)
+        .envs(env.iter().map(|(k, v)| (k, v)))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .process_group(0)
@@ -2666,6 +2698,23 @@ pub fn list(all: bool) -> String {
     list_dirs(&fleet_dirs(), all)
 }
 
+/// belay's disk use, for `belay fleet`: one line, and a warning past 10 GB.
+pub fn disk_use() -> String {
+    disk_line(&crate::disk::usage(&paths::home()))
+}
+
+fn disk_line(u: &crate::disk::Usage) -> String {
+    if u.over() {
+        format!(
+            "warn: {} Over {}: `belay fleet prune --yes` removes finished worktrees; `belay doctor` says more.\n",
+            u.line(),
+            crate::disk::human(crate::disk::WARN_BYTES)
+        )
+    } else {
+        format!("{}\n", u.line())
+    }
+}
+
 /// A fleet that is down, with no live session and no worktree left (pruned), is not
 /// listed unless `all`: it has nothing left to look at.
 fn list_dirs(dirs: &[PathBuf], all: bool) -> String {
@@ -2785,31 +2834,73 @@ pub fn prune(yes: bool, branches: bool) -> Result<String> {
 
 fn prune_dirs(dirs: &[PathBuf], yes: bool, branches: bool) -> String {
     let mut out = String::new();
-    let (mut removed, mut kept) = (0, 0);
+    let mut counts = (0, 0);
     let mut down = Vec::new();
     for d in dirs {
         if is_up(d) {
             continue;
         }
         let Ok(meta) = read_meta(d) else { continue };
-        let (Some(repo), Some(base)) = (&meta.repo, &meta.base) else {
-            continue;
-        };
-        down.push((meta.id.clone(), PathBuf::from(repo)));
-        let repo = Path::new(repo);
-        let mut wts: Vec<PathBuf> = fs::read_dir(d.join("worktrees"))
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .collect();
-        wts.sort();
+        if let Some(repo) = &meta.repo {
+            down.push((meta.id.clone(), PathBuf::from(repo)));
+        }
+        prune_fleet(d, &meta, yes, &|_| None, &mut out, &mut counts);
+    }
+    let (removed, kept) = counts;
+    let _ = writeln!(
+        out,
+        "{} {removed} worktree{}, kept {kept}.{}",
+        if yes { "Removed" } else { "Would remove" },
+        if removed == 1 { "" } else { "s" },
+        if yes || removed == 0 {
+            ""
+        } else {
+            " Run `belay fleet prune --yes` to remove them."
+        }
+    );
+    if branches {
+        prune_branches(&down, yes, &mut out);
+    }
+    out
+}
+
+/// The worktrees of one fleet that is down: each is removed (with `yes`) when it is
+/// clean and has no commits beyond the base, or when all it changed is in the repo's
+/// HEAD; otherwise kept, with why. `hold` gives a worktree (by its name) another reason
+/// to keep it. A line per worktree goes to `out`; `counts` is (removed, kept). A build
+/// dir inside the worktree goes with it.
+fn prune_fleet(
+    d: &Path,
+    meta: &Meta,
+    yes: bool,
+    hold: &dyn Fn(&str) -> Option<String>,
+    out: &mut String,
+    counts: &mut (usize, usize),
+) {
+    let (removed, kept) = (&mut counts.0, &mut counts.1);
+    let (Some(repo), Some(base)) = (&meta.repo, &meta.base) else {
+        return;
+    };
+    let repo = Path::new(repo);
+    let mut wts: Vec<PathBuf> = fs::read_dir(d.join("worktrees"))
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .collect();
+    wts.sort();
+    {
         for wt in wts {
             let name = wt
                 .file_name()
                 .map(|n| n.to_string_lossy().replace("__", "/"))
                 .unwrap_or_default();
             let branch = branch_name(&meta.id, &name);
+            if let Some(w) = hold(&name) {
+                *kept += 1;
+                let _ = writeln!(out, "keep   {} ({w})", wt.display());
+                continue;
+            }
             let dirty = git_out(&wt, &["status", "--porcelain"]).is_some();
             let count = |range: String, at: &Path| {
                 git_out(at, &["rev-list", "--count", &range])
@@ -2837,7 +2928,7 @@ fn prune_dirs(dirs: &[PathBuf], yes: bool, branches: bool) -> String {
             };
             match why {
                 Some(w) => {
-                    kept += 1;
+                    *kept += 1;
                     let _ = writeln!(out, "keep   {} ({w})", wt.display());
                 }
                 None if yes => {
@@ -2853,35 +2944,65 @@ fn prune_dirs(dirs: &[PathBuf], yes: bool, branches: bool) -> String {
                         .is_ok_and(|s| s.success());
                     if ok {
                         let _ = git_out(repo, &["branch", "-D", &branch]);
-                        removed += 1;
+                        *removed += 1;
                         let _ = writeln!(out, "removed {}{note}", wt.display());
                     } else {
-                        kept += 1;
+                        *kept += 1;
                         let _ =
                             writeln!(out, "keep   {} (git worktree remove failed)", wt.display());
                     }
                 }
                 None => {
-                    removed += 1;
+                    *removed += 1;
                     let _ = writeln!(out, "would remove {}{note}", wt.display());
                 }
             }
         }
     }
+}
+
+/// At `belay fleet down`, once the hub is gone: remove the fleet's worktrees that
+/// `belay fleet prune` would, except where a task is not finished (done or dropped).
+/// Lists what it removed and what it kept.
+fn prune_at_down(dir: &Path) -> String {
+    use belay_core::fleet::model::TaskState;
+    let Ok(meta) = read_meta(dir) else {
+        return String::new();
+    };
+    let model = replay(&meta, &read_ledger(dir));
+    // Worktree name → a task in it that is not finished.
+    let mut open: BTreeMap<String, String> = BTreeMap::new();
+    for t in model.tasks() {
+        if matches!(t.state, TaskState::Done | TaskState::Dropped) {
+            continue;
+        }
+        let Some(slot) = &t.slot else { continue };
+        let name = match model.role_of(slot).map(|r| &r.workspace) {
+            Some(Workspace::Shared) => continue,
+            Some(Workspace::Team { name }) => format!("team-{name}"),
+            _ => slot.to_string(),
+        };
+        open.entry(name).or_insert_with(|| t.id.clone());
+    }
+    let hold = |name: &str| open.get(name).map(|id| format!("task {id} is not done"));
+    let mut out = String::new();
+    let mut counts = (0, 0);
+    prune_fleet(dir, &meta, true, &hold, &mut out, &mut counts);
+    if counts == (0, 0) {
+        return String::new();
+    }
     let _ = writeln!(
         out,
-        "{} {removed} worktree{}, kept {kept}.{}",
-        if yes { "Removed" } else { "Would remove" },
-        if removed == 1 { "" } else { "s" },
-        if yes || removed == 0 {
+        "Removed {} worktree{}, kept {}.{}",
+        counts.0,
+        if counts.0 == 1 { "" } else { "s" },
+        counts.1,
+        if counts.1 == 0 {
             ""
         } else {
-            " Run `belay fleet prune --yes` to remove them."
+            " Merge their work, then `belay fleet prune --yes`."
         }
     );
-    if branches {
-        prune_branches(&down, yes, &mut out);
-    }
     out
 }
 
@@ -3531,7 +3652,10 @@ pub fn down(spec: Option<&str>) -> Result<String> {
     }
     for _ in 0..400 {
         if !is_up(&dir) {
-            return Ok(format!("{said}\nThe fleet is down."));
+            return Ok(format!(
+                "{said}\nThe fleet is down.\n{}",
+                prune_at_down(&dir)
+            ));
         }
         thread::sleep(Duration::from_millis(100));
     }
@@ -3629,7 +3753,7 @@ mod tests {
     fn a_check_that_leaves_a_background_process_still_finishes() {
         let d = std::env::temp_dir();
         let t = std::time::Instant::now();
-        let (code, out) = run_with_timeout(&d, "sleep 30 & echo hi", Duration::from_secs(60));
+        let (code, out) = run_with_timeout(&d, "sleep 30 & echo hi", &[], Duration::from_secs(60));
         assert_eq!(code, Some(0), "{out}");
         assert!(
             t.elapsed() < Duration::from_secs(10),
@@ -3643,6 +3767,7 @@ mod tests {
         let (code, out) = run_with_timeout(
             &d,
             "head -c 6000000 /dev/zero | tr '\\0' x; echo done",
+            &[],
             Duration::from_secs(20),
         );
         assert_eq!(code, Some(0), "{}", out.len());
@@ -3807,6 +3932,57 @@ mod tests {
             "sandbox branches are not a fleet's"
         );
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn down_keeps_a_worktree_whose_task_is_not_done() {
+        let (root, repo, fleet) = down_fleet("prune-hold");
+        for w in ["worker-1", "worker-2"] {
+            let p = fleet.join("worktrees").join(w);
+            assert!(git_ok(
+                &repo,
+                &[
+                    "worktree",
+                    "add",
+                    "-q",
+                    "--detach",
+                    p.to_str().unwrap(),
+                    "main"
+                ]
+            ));
+        }
+        let hold = |name: &str| (name == "worker-1").then(|| "task t-1 is not done".to_string());
+        let mut out = String::new();
+        let mut counts = (0, 0);
+        prune_fleet(
+            &fleet,
+            &read_meta(&fleet).unwrap(),
+            true,
+            &hold,
+            &mut out,
+            &mut counts,
+        );
+        assert_eq!(counts, (1, 1), "{out}");
+        assert!(out.contains("worker-1 (task t-1 is not done)"), "{out}");
+        assert!(fleet.join("worktrees/worker-1").exists());
+        assert!(!fleet.join("worktrees/worker-2").exists(), "{out}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn disk_use_warns_past_10_gb() {
+        let small = crate::disk::Usage {
+            parts: vec![("fleets", 1_000_000)],
+            ..Default::default()
+        };
+        assert!(disk_line(&small).starts_with("belay data 1.0 MB"));
+        let big = crate::disk::Usage {
+            parts: vec![("fleets", 46_000_000_000)],
+            ..Default::default()
+        };
+        let line = disk_line(&big);
+        assert!(line.starts_with("warn: belay data 46.0 GB"), "{line}");
+        assert!(line.contains("belay fleet prune --yes"), "{line}");
     }
 
     #[test]
@@ -3979,7 +4155,8 @@ tokens   = "20M"
     #[test]
     fn a_check_killed_by_a_signal_says_so() {
         let d = std::env::temp_dir();
-        let (code, out) = run_with_timeout(&d, "echo partial; kill -9 $$", Duration::from_secs(20));
+        let (code, out) =
+            run_with_timeout(&d, "echo partial; kill -9 $$", &[], Duration::from_secs(20));
         assert_eq!(code, None);
         assert!(out.contains("killed by signal 9"), "{out}");
     }

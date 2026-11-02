@@ -106,6 +106,9 @@ pub struct Spec {
     pub cwd: PathBuf,
     /// Host path → sandbox path, read-only (skipped when the host path is missing).
     pub ro: Vec<(PathBuf, PathBuf)>,
+    /// More read-write dirs, at the same path: the repo's build cache, with
+    /// `sandbox_build_cache = shared`.
+    pub rw: Vec<PathBuf>,
     /// The whole environment.
     pub env: Vec<(String, String)>,
     pub argv: Vec<String>,
@@ -424,6 +427,7 @@ pub fn layout(
         .collect();
     let mut env = environment(&host, &files.env, &meta.home(), &meta.id, exe.parent());
     env.extend(tool_env);
+    let rw = build_cache(meta, cfg.sandbox_build_cache, &mut env)?;
     env.sort();
     let cwd = Some(work.join(rel))
         .filter(|c| c.is_dir())
@@ -433,9 +437,37 @@ pub fn layout(
         home: meta.home(),
         cwd,
         ro,
+        rw,
         env,
         argv,
     })
+}
+
+/// With `sandbox_build_cache = shared`, a Rust clone builds into the repo's sandbox
+/// cache, `<home>/cache/<repo key>/sandbox/target`, bound read-write. Every sandbox of
+/// the repo shares it, so one can leave artifacts another runs (docs/sandbox.md).
+/// A target dir already in the sandbox's environment stands.
+fn build_cache(
+    meta: &Meta,
+    mode: crate::disk::BuildCache,
+    env: &mut Vec<(String, String)>,
+) -> Result<Vec<PathBuf>> {
+    let have = crate::disk::Env {
+        target_dir: env.iter().any(|(k, _)| k == "CARGO_TARGET_DIR"),
+        ..Default::default()
+    };
+    let cache = crate::disk::cache_root().join(crate::disk::repo_key(&meta.repo));
+    let add = crate::disk::cargo_env(mode, &cache, &meta.work(), "sandbox", &have);
+    let mut rw = Vec::new();
+    for (k, v) in add {
+        if k == "CARGO_TARGET_DIR" {
+            // Fail closed: a cache that cannot be made is not bound, and nothing runs.
+            fs::create_dir_all(&v).with_context(|| format!("make the build cache {v}"))?;
+            rw.push(PathBuf::from(&v));
+        }
+        env.push((k, v));
+    }
+    Ok(rw)
 }
 
 /// One line of `<dir>/events.jsonl`.

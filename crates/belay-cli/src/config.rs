@@ -31,6 +31,8 @@
 //! sandbox_ro = ~/.cargo, ~/.rustup   # toolchain dirs bound read-only (default: these,
 //!                            # ~/.nvm, ~/.pyenv, ~/.local/bin, when they exist)
 //! resume = continue          # a resumed conversation continues belay's state; fresh starts clean
+//! build_cache = shared       # fleet builds: a cargo target dir per repo and slot; separate, off
+//! sandbox_build_cache = off  # sandbox builds: shared binds one cache per repo in (see docs/sandbox.md)
 //! ```
 //!
 //! 0.1 keys still load: `look` reads as `on`; `fleet` is `awareness`, `learn` is
@@ -46,6 +48,7 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, bail, Result};
 use belay_core::{GuardSetting, ReportLevel};
 
+use crate::disk::BuildCache;
 use crate::sandbox::limits;
 
 pub mod migrate;
@@ -85,6 +88,12 @@ pub struct Config {
     /// A resumed conversation (`claude --resume`, `-c`, `/resume`) continues the belay
     /// state its earlier runs left (`continue`), or starts clean (`fresh`) (U8).
     pub resume: String,
+    /// Where a fleet session's cargo builds go (P0.4): `shared` (a target dir per repo
+    /// and slot under `<home>/cache`), `separate` (each worktree's own), or `off`.
+    pub build_cache: BuildCache,
+    /// A sandbox's cargo builds: `shared` binds one cache per repo in, read-write;
+    /// `off` keeps them in the sandbox's clone.
+    pub sandbox_build_cache: BuildCache,
 }
 
 impl Default for Config {
@@ -111,6 +120,9 @@ impl Default for Config {
             .map(String::from)
             .to_vec(),
             resume: "continue".into(),
+            build_cache: BuildCache::Shared,
+            // Off: a shared cache lets one sandbox leave artifacts another runs.
+            sandbox_build_cache: BuildCache::Off,
         }
     }
 }
@@ -143,6 +155,11 @@ impl Config {
             ),
             ("sandbox_ro", self.sandbox_ro.join(", ")),
             ("resume", self.resume.clone()),
+            ("build_cache", self.build_cache.word().to_string()),
+            (
+                "sandbox_build_cache",
+                self.sandbox_build_cache.word().to_string(),
+            ),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v))
@@ -377,7 +394,7 @@ fn describe(path: &Path, parsed: &Parsed, exists: bool) -> String {
 }
 
 /// Every key of 0.2. The 0.1 names are in `RENAMED`.
-const KEYS: [&str; 27] = [
+const KEYS: [&str; 29] = [
     "shape_threshold_tokens",
     "max_summary_ratio",
     "loop_threshold",
@@ -405,6 +422,8 @@ const KEYS: [&str; 27] = [
     "sandbox_task_tokens",
     "sandbox_ro",
     "resume",
+    "build_cache",
+    "sandbox_build_cache",
 ];
 
 /// 0.1 key names, and the 0.2 name each now has (`None`: ignored).
@@ -605,6 +624,16 @@ fn apply(
                 bail!("{key} must be continue or fresh, got {value}");
             }
             c.resume = value.to_string();
+        }
+        "build_cache" => {
+            c.build_cache = BuildCache::parse(value)
+                .ok_or_else(|| anyhow!("{key} must be shared, separate, or off, got {value}"))?;
+        }
+        "sandbox_build_cache" => {
+            c.sandbox_build_cache = match BuildCache::parse(value) {
+                Some(m @ (BuildCache::Shared | BuildCache::Off)) => m,
+                _ => bail!("{key} must be shared or off, got {value}"),
+            };
         }
         _ => unreachable!("checked against KEYS"),
     }

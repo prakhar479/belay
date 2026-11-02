@@ -82,6 +82,14 @@ supervising daemon that does not start.
   It does not see the repo's refs, config, or hooks.
 - **The agent's conversation.** `belay sandbox task --resume` copies that conversation's
   transcript into the private home: the agent inside reads all of it.
+- **Build output shared on purpose.** With `sandbox_build_cache = shared` (off by
+  default), every sandbox of one repo binds the same build dir,
+  `<belay home>/cache/<repo key>/sandbox/target`, read-write. One sandbox can write
+  build output there that another sandbox of the repo then runs: a build script, a
+  proc macro, a test binary. A bad instruction in one sandbox can then reach the next.
+  It does not reach the host or fleets: nothing outside a sandbox reads that dir. The
+  dir is not counted in `sandbox_disk`. Leave it off unless the sandboxes of a repo
+  all run work you trust alike.
 - **Permission prompts in a task.** A headless task runs its agent without permission
   prompts (for Claude Code, `bypassPermissions`). The sandbox is the boundary; belay's
   guard still runs through the hooks.
@@ -94,6 +102,7 @@ bwrap --unshare-user --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup-
       --ro-bind /usr /bin /sbin /lib /lib64 /etc     (each when it exists)
       --tmpfs /tmp --tmpfs /run --proc /proc --dev /dev
       --bind <home> <home> --bind <work> <work>
+      [sandbox_build_cache = shared: --bind <cache> <cache>]
       --ro-bind <the repo's objects dir>, <each sandbox_ro dir>,
                 <the agent's files and dirs in home>, <the belay binary>,
                 <the session socket>

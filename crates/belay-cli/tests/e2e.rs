@@ -1912,6 +1912,9 @@ fn belay_in(dir: &Path, home: &Path, agent: &Path, args: &[&str]) -> String {
         .env("BELAY_HOME", home)
         .env("BELAY_CLAUDE_BIN", agent)
         .env("BELAY_CONFIG", dir.join("no-config.toml"))
+        // A fleet hub started here gives its sessions a build dir unless one is set.
+        .env_remove("CARGO_TARGET_DIR")
+        .env_remove("RUSTC_WRAPPER")
         .output()
         .unwrap();
     assert!(
@@ -2116,16 +2119,22 @@ fn fleet_hub_starts_restarts_and_stops_sessions() {
     fs::write(Path::new(cwd1.trim()).join("work.txt"), "unsaved\n").unwrap();
     let down = belay(&["fleet", "down"]);
     assert!(down.contains("The fleet is down."), "{down}");
+    // Down removes the clean worktree (P0.4) and keeps the one with work.
+    assert!(
+        down.contains("removed ") && down.contains("peer-2") && !Path::new(cwd2.trim()).exists(),
+        "{down}"
+    );
+    assert!(
+        down.contains("keep") && down.contains("uncommitted"),
+        "{down}"
+    );
     let s = belay(&["fleet", "status"]);
     assert!(s.contains("hub not running"), "{s}");
     assert_eq!(s.matches("stopped").count(), 2, "{s}");
 
-    // Prune lists, then removes only the clean worktree.
+    // Prune lists what is left, and never removes work.
     let dry = belay(&["fleet", "prune"]);
-    assert!(
-        dry.contains("would remove") && dry.contains("peer-2"),
-        "{dry}"
-    );
+    assert!(dry.contains("Would remove 0 worktrees, kept 1."), "{dry}");
     assert!(dry.contains("keep") && dry.contains("uncommitted"), "{dry}");
     // Removing is the user's (rule 12): refused from a shell without a terminal.
     let prune_yes = |terminal: bool| {
@@ -2145,13 +2154,11 @@ fn fleet_hub_starts_restarts_and_stops_sessions() {
         String::from_utf8_lossy(&refused.stderr).contains("own terminal"),
         "{refused:?}"
     );
-    assert!(Path::new(cwd2.trim()).exists(), "refused: nothing removed");
     assert!(prune_yes(true).status.success());
     assert!(
         Path::new(cwd1.trim()).join("work.txt").exists(),
         "work is never lost"
     );
-    assert!(!Path::new(cwd2.trim()).exists(), "the clean one is gone");
 
     // The ledger replays to the same records.
     let fleet_dir = fs::read_dir(home.join("fleets"))
@@ -2994,6 +3001,80 @@ fn fleet_brings_dependencies_work_into_a_fresh_worktree() {
     assert!(
         dir.join("b-told.txt").exists(),
         "the agent is told what came in"
+    );
+}
+
+/// P0.4: a fleet session in a Rust repo builds into belay's cache, one dir per repo and
+/// slot, not into its worktree; at `belay fleet down` the worktree of a done task whose
+/// branch is merged goes, and one with commits the repo lacks stays, listed.
+#[test]
+fn fleet_down_removes_merged_worktrees_and_sessions_build_in_the_cache() {
+    let (dir, repo, home) = fleet_repo(
+        "disk",
+        &[("Cargo.toml", "[workspace]\n"), ("a.txt", "a\n")],
+        "preset = \"pool\"\n[role.worker]\nreplicas = \"2..2\"\n",
+    );
+    let agent = fake_script(
+        &dir,
+        "fake-disk.sh",
+        r#"    *"Task t-"[12]":"*)
+      id=$(printf '%s' "$line" | sed -n 's/.*Task \(t-[0-9]*\):.*/\1/p')
+      echo "$CARGO_TARGET_DIR" > "$D/target-$id"; echo "$BELAY_FLEET_SLOT" > "$D/slot-$id"
+      echo "$id" > "$id.txt"; git add "$id.txt"
+      git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -qm "$id"
+      belay task done "$id" "made $id" >> "$D/done.txt" 2>&1; result ;;"#,
+    );
+    let belay = |args: &[&str]| belay_in(&repo, &home, &agent, args);
+    let _down = FleetDown(repo.clone(), home.clone(), agent.clone());
+    belay(&["fleet", "up", "fleet.toml"]);
+    belay(&["task", "add", "one"]);
+    belay(&["task", "add", "two"]);
+    board_until(&belay, &|b| b.matches(" done ").count() == 2);
+    let read = |f: &str| fs::read_to_string(dir.join(f)).unwrap().trim().to_string();
+    let (s1, s2) = (read("slot-t-1"), read("slot-t-2"));
+    assert_ne!(s1, s2, "two workers");
+    let fleet_dir = fs::read_dir(home.join("fleets"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let id = fleet_dir.file_name().unwrap().to_string_lossy().to_string();
+    // Each session's CARGO_TARGET_DIR: the repo's cache, its own slot's dir.
+    for (task, slot) in [("t-1", &s1), ("t-2", &s2)] {
+        let t = PathBuf::from(read(&format!("target-{task}")));
+        assert!(t.starts_with(home.join("cache")), "{}", t.display());
+        assert!(t.ends_with(format!("{slot}/target")), "{}", t.display());
+    }
+    // The user merges t-1's branch, not t-2's.
+    let merged = Command::new("git")
+        .arg("-C")
+        .arg(&repo)
+        .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+        .args(["-c", "commit.gpgsign=false", "merge", "-q", "--no-edit"])
+        .arg(format!("belay/{id}/{s1}"))
+        .output()
+        .unwrap();
+    assert!(merged.status.success(), "{merged:?}");
+    let out = belay(&["fleet", "down"]);
+    let (wt1, wt2) = (
+        fleet_dir.join("worktrees").join(&s1),
+        fleet_dir.join("worktrees").join(&s2),
+    );
+    assert!(!wt1.exists(), "merged and done: removed\n{out}");
+    assert!(wt2.exists(), "not merged: kept\n{out}");
+    assert!(
+        out.contains(&format!("removed {}", wt1.display()))
+            && out.contains(&format!("keep   {}", wt2.display()))
+            && out.contains("1 commit(s) not in the base")
+            && out.contains("Removed 1 worktree, kept 1."),
+        "{out}"
+    );
+    // `belay fleet` shows what belay's data takes.
+    let list = belay(&["fleet"]);
+    assert!(
+        list.contains("belay data ") && list.contains("fleets "),
+        "{list}"
     );
 }
 
