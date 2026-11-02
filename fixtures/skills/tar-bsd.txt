@@ -1,0 +1,4 @@
+drwxr-xr-x  0 user   staff       0 Nov  1 10:00 top/
+-rw-r--r--  0 user   staff      30 Nov  1 10:00 top/SKILL.md
+-rwxr-xr-x  0 user   staff      10 Nov  1 10:00 top/scripts/run.sh
+lrwxr-xr-x  0 user   staff       0 Nov  1 10:00 top/link -> /etc/passwd

@@ -61,8 +61,10 @@ pub fn project_of(cwd: &Path) -> String {
 
 /// The checkout `cwd` is in (its worktree): learned paths are relative to it.
 pub fn root_of(cwd: &Path) -> String {
+    // Outside git, the real path: git's own answers are real paths, and `project_of`
+    // must agree with this when /var is /private/var.
     crate::audit::repo_root(cwd)
-        .unwrap_or_else(|_| cwd.to_path_buf())
+        .unwrap_or_else(|_| fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf()))
         .display()
         .to_string()
 }

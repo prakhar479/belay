@@ -411,6 +411,8 @@ mod tests {
         assert_eq!(fmt_duration(90), "90s");
     }
 
+    // The watchdog reads /proc: sandboxes are Linux-only.
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_tree_holds_a_child_and_its_child() {
         let mut child = Command::new("sh")
@@ -430,6 +432,8 @@ mod tests {
         }
     }
 
+    // The watchdog reads /proc: sandboxes are Linux-only.
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_watchdog_stops_a_memory_hog_and_says_why() {
         let limits = Limits {

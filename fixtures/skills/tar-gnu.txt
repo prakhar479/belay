@@ -1,0 +1,4 @@
+drwxr-xr-x user/staff        0 2026-11-01 10:00 top/
+-rw-r--r-- user/staff       30 2026-11-01 10:00 top/SKILL.md
+-rwxr-xr-x user/staff       10 2026-11-01 10:00 top/scripts/run.sh
+lrwxrwxrwx user/staff        0 2026-11-01 10:00 top/link -> /etc/passwd

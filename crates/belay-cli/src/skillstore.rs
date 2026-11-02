@@ -445,7 +445,12 @@ fn list_archive(file: &Path, kind: ArchiveKind, work: &Path) -> Result<Vec<Entry
         .filter_map(|l| {
             let t: Vec<&str> = l.split_whitespace().collect();
             let (perms, size) = match kind {
-                ArchiveKind::TarGz => (t.first()?, t.get(2)?),
+                ArchiveKind::TarGz => {
+                    let (perms, size) = tar_row(&t)?;
+                    // bsdtar shows a hard link as a file "link to" its target.
+                    let k = if l.contains(" link to ") { 'h' } else { perms };
+                    return Some((k, size.parse().ok()?));
+                }
                 // `-rw-r--r--  3.0 unx  6 tx stor 26-Nov-01 10:00 name`: skip the header
                 // and footer, whose second word is no version.
                 ArchiveKind::Zip => {
@@ -474,6 +479,18 @@ fn list_archive(file: &Path, kind: ArchiveKind, work: &Path) -> Result<Vec<Entry
             size,
         })
         .collect())
+}
+
+/// Type letter and size from a `tar -tv` row. GNU: `-rw-r--r-- user/group 6 date time name`.
+/// bsdtar (macOS): `-rw-r--r--  0 user group 6 Nov  1 10:00 name`, a link count first.
+fn tar_row<'a>(t: &[&'a str]) -> Option<(char, &'a str)> {
+    let perms = t.first()?.chars().next()?;
+    let size = if t.get(1)?.contains('/') {
+        t.get(2)?
+    } else {
+        t.get(4)?
+    };
+    Some((perms, size))
 }
 
 /// Refuse an archive belay will not extract: traversal, absolute paths, links, devices,
@@ -1312,6 +1329,26 @@ pub fn doctor_lines() -> Vec<(&'static str, String)> {
 
 #[cfg(test)]
 mod tests {
+    /// GNU tar and bsdtar (macOS) list differently: both give the type and the size.
+    #[test]
+    fn tar_listings_of_both_flavors_are_read() {
+        for f in ["tar-gnu.txt", "tar-bsd.txt"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../fixtures/skills")
+                .join(f);
+            let text = fs::read_to_string(path).unwrap();
+            let rows: Vec<(char, &str)> = text
+                .lines()
+                .map(|l| tar_row(&l.split_whitespace().collect::<Vec<_>>()).unwrap())
+                .collect();
+            assert_eq!(
+                rows,
+                [('d', "0"), ('-', "30"), ('-', "10"), ('l', "0")],
+                "{f}"
+            );
+        }
+    }
+
     use super::*;
 
     fn tmp(name: &str) -> PathBuf {
