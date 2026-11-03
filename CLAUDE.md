@@ -56,7 +56,9 @@ crates/belay-core/src/        pure logic, no I/O
   policy.rs                    `.belay.toml`: test paths, protected paths
   text.rs                      ANSI stripping, redaction, truncation, sha256
 crates/belay-cli/src/         binary `belay`: all I/O
-  main.rs                      CLI
+  main.rs                      entry: hook/reap fast paths, parse, exit code
+  cli.rs                       clap types: every subcommand and its arguments
+  dispatch.rs                  runs the parsed subcommand
   launcher.rs                  `belay claude`: daemon + agent with hooks
   daemon.rs                    per-session state behind a Unix socket
   shim.rs                      `belay hook <Event>` (fail open)
@@ -73,7 +75,13 @@ crates/belay-cli/src/         binary `belay`: all I/O
   sessions.rs                  prune old sessions, remove stale sockets
   paths.rs                     session dirs, socket path, Claude projects dir
   fleet.rs                     F1 watcher (tails peers' ledgers), `belay fleet` view
-  hub.rs                       fleet hub: runs a fleet file; `belay fleet/task/msg/inbox`
+  hub.rs                       fleet hub: meta, `up`, the hub loop, request handling
+  hub/slots.rs                 starting sessions, workspaces, checks, output readers, process helpers
+  hub/work.rs                  the hub's work on worktrees: snapshots, moving work in and out
+  hub/client.rs                client side: send, status, task, msg, inbox, list views
+  hub/prune.rs                 `belay fleet prune`
+  hub/merge.rs                 `belay fleet report/merge/replay/restart/down`
+  hub/supervise.rs, hub/tests.rs  detached hub start; hub tests
   learnstore.rs                <home>/learn: fixes.jsonl, notes; `belay note/notes`
   commons.rs                   card.json per session; `belay sessions` board, `belay card`, messages
   findings.rs                  <home>/commons/findings.jsonl; `belay share/ask/findings`
