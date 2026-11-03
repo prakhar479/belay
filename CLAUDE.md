@@ -45,6 +45,11 @@ crates/belay-core/src/        pure logic, no I/O
   controller/notice.rs         notices for the user (rule 5), report levels
   controller/memory.rs         recall at start, carry pack after compaction, handoffs
   controller/snapshot.rs       per-turn snapshot and undo records
+  controller/config.rs         Config, Response, Permission (re-exported from controller)
+  controller/shaping.rs        prepare, observe, shaping outputs, end of turn, filter
+  controller/tools.rs          tool requested/denied, wrapping, file edits
+  controller/commons.rs        card, send/share/ask, fleet and learning setters
+  controller/belay_cmd.rs      spots the agent running belay's user-only commands (rule 12)
   memory.rs                    memories: scopes, kinds, provenance, rank, consolidate, handoff_from
   fleet/awareness.rs           F1: what other sessions did that matters here
   fleet/spec.rs                fleet files: roles, channels, limits, presets
@@ -61,6 +66,9 @@ crates/belay-cli/src/         binary `belay`: all I/O
   dispatch.rs                  runs the parsed subcommand
   launcher.rs                  `belay claude`: daemon + agent with hooks
   daemon.rs                    per-session state behind a Unix socket
+  daemon/commons.rs            commons requests (msg, share, ask, card, handoff)
+  daemon/inbox.rs              fleet claims, inbox lines, learned fixes read at hooks
+  daemon/watch.rs              watchers: done, fleet, idle, parent exit
   shim.rs                      `belay hook <Event>` (fail open)
   run.rs                       `belay run`: the wrapper around test commands (exit code kept)
   plugin.rs                    the Claude Code plugin's session start and mapping
