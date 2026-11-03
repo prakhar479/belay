@@ -44,6 +44,7 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - **Routine line:** a fresh session (not a resume or a compaction) gets one line at its start that points the agent at belay: read the last handoff, say what it works on, run `belay brief` before it is done, leave a handoff before it stops. It is recorded as a `routine` action. New config key `agent_skill = on|off` (default on) turns it off.
 - `belay claude` gives the agent belay's skill, slash commands, and MCP tools with no plugin install (`--plugin-dir`, hooks left out; skipped when the plugin is installed). Turn off with `agent_skill = off`.
 - `belay install --permissions` (in the default install) allows belay's read-only and note-taking commands and MCP tools in Claude Code's settings, so the agent is not asked each time. `belay uninstall` removes exactly those rules, and `belay doctor` reports them.
+- The site has a "How it's built" section, linked from the top menu: one diagram of belay's layer outside the conversation (connector, the rules-only judge, the four abilities, the record, and the view only you get), the three design choices behind it, and a link to `docs/design.md`.
 
 ### Changed
 
