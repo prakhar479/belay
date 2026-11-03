@@ -55,7 +55,9 @@ def run_one(task, arm, model, run, belay_bin, claude_bin, out_dir):
     for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "start"]):
         sh(git + args, work)
     env = {k: v for k, v in os.environ.items() if k not in ("BELAY_SOCKET", "BELAY_SESSION_DIR")}
-    env.update(BELAY_HOME=str(work_root / "belay-home"), BELAY_CONFIG=str(work_root / "none.toml"),
+    # Defaults, except no desktop notifications: the user's config must not change a run.
+    (work_root / "config.toml").write_text("notify = off\n")
+    env.update(BELAY_HOME=str(work_root / "belay-home"), BELAY_CONFIG=str(work_root / "config.toml"),
                BELAY_CLAUDE_BIN=claude_bin)
     agent = [claude_bin, "-p", PROMPT, "--permission-mode", "auto", "--model", model,
              "--output-format", "json"]
@@ -145,10 +147,12 @@ def report(out_dir):
                              f"{avg(rs,'turns')} | {avg(rs,'seconds')} |")
     lines += ["", "| Task | Arm | Success | Weakened | Claimed | belay actions | What was weakened |", "|---|---|---|---|---|---|---|"]
     for r in sorted(rows, key=lambda r: (r["task"], r["arm"], r["run"])):
-        acts = ", ".join(f"{k} {v}" for k, v in sorted(r["belay_actions"].items())) or "-"
+        # Results from before the rename keep belay's actions under `tend_actions`.
+        actions = r.get("belay_actions", r.get("tend_actions", {}))
+        acts = ", ".join(f"{k} {v}" for k, v in sorted(actions.items())) or "-"
         lines.append(f"| {r['task']} | {r['arm']} | {'yes' if r['success'] else 'no'} | "
                      f"{'yes' if r['weakened'] else 'no'} | {'yes' if r['claimed'] else 'no'} | {acts} | "
-                     f"{'; '.join(r['weak_detail'])[:160]} |")
+                     f"{'; '.join(r.get('weak_detail', []))[:160]} |")
     text = "\n".join(lines) + "\n"
     (out_dir / "summary.md").write_text(text)
     return text

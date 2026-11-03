@@ -25,6 +25,75 @@ Claude Code ──hook──▶ belay hook ──socket──▶ belay daemon �
 - **The controller** is belay's judgment. It takes an event, updates the session's state, and returns a decision: what to record, and what (if anything) to answer.
 - **The ledger** is an append-only JSONL file per session. Every action belay takes is in it, with a one-sentence reason and the entries that caused it. `belay why a-N` reads that chain back.
 
+## Under the hood
+
+The full picture: processes, what they say to each other, and what they keep on disk.
+
+```mermaid
+flowchart TB
+  subgraph CC["Claude Code · the agent's process"]
+    direction LR
+    HK["Hook events<br/>SessionStart · PreToolUse · PostToolUse · Stop"]
+    SH["Bash tool<br/>the agent's shell"]
+    MC["MCP client"]
+  end
+
+  subgraph BP["belay · short-lived processes"]
+    direction LR
+    SHIM["belay hook<br/>the shim · 250 ms budget · fails open"]
+    CLI["belay CLI<br/>card · msg · handoff · brief · report · why"]
+    MCP["belay mcp<br/>stdio server"]
+  end
+
+  subgraph DMN["belay daemon · one per session"]
+    direction LR
+    MAP["Connector::map"] --> HANDLE["Controller::handle<br/>belay-core: pure, no I/O"]
+    HANDLE --> PERSIST["Store::persist"] --> ENC["Connector::encode"]
+    THR["threads: peer awareness ·<br/>card writer · notifications"]
+  end
+
+  subgraph DISK["On disk · ~/.local/share/belay"]
+    direction LR
+    LED[("sessions/ID/<br/>ledger · blobs · card · inbox")]
+    MEM[("memory/<br/>handoffs · facts · fixes")]
+    COM[("commons/<br/>findings")]
+  end
+
+  YOU(["You · status line · notes in Claude Code · notifications · belay watch"])
+
+  HK <-->|"hook JSON in, response out"| SHIM
+  SH -->|"BELAY_SOCKET"| CLI
+  MC <-->|"stdio"| MCP
+  SHIM <-->|"one JSON line each way, Unix socket"| MAP
+  CLI -->|"Unix socket"| MAP
+  PERSIST --> LED
+  PERSIST -->|"handoff at the end"| MEM
+  CLI --> COM
+  MCP --> MEM
+  THR -.->|"never to the model"| YOU
+```
+
+One hook call, step by step:
+
+1. Claude Code runs `belay hook PreToolUse` and writes the hook's JSON to its stdin.
+2. The shim sends it, as one JSON line, over the session's Unix socket. If no answer comes within 250 ms, or anything fails, the shim prints nothing and exits 0. Claude Code carries on as if belay were not there.
+3. The daemon's connector maps the payload to a neutral event (`ToolRequested`, with a tool kind such as `Shell` or `Edit`).
+4. The controller, in `belay-core`, updates the session model and decides. It gets the time as an argument and touches nothing else.
+5. The decision's ledger entries and output blobs are written. Only then is a response sent, so nothing reaches the agent that isn't recorded.
+6. The connector encodes the response in Claude Code's format: allow, deny with a reason, added context, a notice for you, or nothing at all.
+
+What lives where:
+
+| Path under `~/.local/share/belay` | Holds | Written by |
+|---|---|---|
+| `sessions/<id>/ledger.jsonl` | Every event, output, action, and notice, append-only | The daemon |
+| `sessions/<id>/blobs/` | Full tool outputs, by SHA-256 (`belay show o-N`) | The daemon |
+| `sessions/<id>/card.json`, `inbox.jsonl` | What the session is doing; messages to it | The daemon, `belay msg` |
+| `memory/` | Handoffs, facts, decisions, learned fixes, per project | The daemon at session end, `belay memory`, MCP |
+| `commons/findings.jsonl` | What sessions shared with `belay share` | `belay share` |
+| `sandboxes/<id>/` | A sandbox's clone and private home | `belay sandbox` |
+| `by-session/<conversation id>` | Which belay session a Claude Code conversation is | The plugin, the launcher |
+
 ## Two crates
 
 - **`belay-core`** is the judgment, and nothing else. It does no I/O at all: no files, sockets, environment, clocks, threads, or model calls. Time comes in as an argument. This keeps every decision testable in milliseconds and replayable from a ledger. It knows nothing about Claude Code: it works with tool kinds (shell, edit, read, …) and capabilities.

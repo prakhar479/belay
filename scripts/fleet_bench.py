@@ -86,7 +86,12 @@ def run(preset):
     sh(["git", "init", "-q"], repo)
     sh(git + ["add", "."], repo)
     sh(git + ["commit", "-qm", "base"], repo)
-    env = dict(os.environ, BELAY_HOME=home)
+    # Its own config: the user's must not change the run, and no desktop notifications.
+    config = os.path.join(d, "config.toml")
+    open(config, "w").write("notify = off\n")
+    env = dict(os.environ, BELAY_HOME=home, BELAY_CONFIG=config)
+    for k in ("BELAY_SOCKET", "BELAY_SESSION_DIR", "BELAY_FLEET", "BELAY_FLEET_SLOT"):
+        env.pop(k, None)
     t = lambda *a: sh([args.belay, *a], repo, env, check=False).stdout
     t0 = time.time()
     t("fleet", "up", "fleet.toml")
