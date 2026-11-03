@@ -169,7 +169,15 @@ fn keep_handoff(st: &State) {
 /// so the two can never deadlock (taking the state first did: the card stayed live with
 /// no handoff, a CI flake). The caller holds both until the process exits, so no request
 /// is writing the ledger or the card when it ends (R0.6).
+///
+/// Once a daemon decides to exit, it does, within `EXIT_GRACE`: a thread stuck on a
+/// lock must not keep a daemon (and its socket) alive after its session is gone.
 fn end_session(state: &Mutex<State>) -> impl Sized + '_ {
+    thread::spawn(|| {
+        thread::sleep(EXIT_GRACE);
+        eprintln!("belayd: the session did not end in time; exiting anyway");
+        std::process::exit(0);
+    });
     let mut last = CARD_LAST.lock().unwrap_or_else(|e| e.into_inner());
     let done = lock(state);
     keep_handoff(&done);
@@ -179,6 +187,8 @@ fn end_session(state: &Mutex<State>) -> impl Sized + '_ {
     }
     (last, done)
 }
+
+const EXIT_GRACE: Duration = Duration::from_secs(10);
 
 /// When the daemon last got a request (ms), for the idle exit.
 static LAST_REQUEST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
