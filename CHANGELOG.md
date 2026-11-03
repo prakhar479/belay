@@ -100,6 +100,7 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - `belay fleet prune` removes a worktree whose work you took another way (cherry-picked, or applied as a patch) even after your branch moved on: it checks that merging the worktree into HEAD would change nothing. Before, it kept every such worktree as unmerged.
 - Running belay's own tests (`make check`) no longer pops up desktop notifications from the test's fake sessions.
 - The repo's scripts match 0.2: `bench.py` and `fleet_bench.py` run with their own config (no desktop notifications, the user's config unused), and `bench.py --report` reads results saved before the rename.
+- `belay fleet prune` now recognizes work you took another way (cherry-pick, patch) on a machine where belay has not stored anything yet. Before, the check needed belay's home folder to exist, and kept the worktree.
 
 ## 0.1.0
 
