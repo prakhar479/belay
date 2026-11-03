@@ -2,7 +2,7 @@
 //! this one. Peers' activity comes in as `Event::Peer`; notices go out as data, and the
 //! controller records and delivers them at this session's next hook.
 //!
-//! Rules (design: `docs/fleet-2026-10-21.md`):
+//! Rules:
 //! - Peer edit: in this checkout, a peer edited a file after this session did.
 //! - Peer git: in this checkout, a peer ran a git command that changes files or HEAD.
 //! - Peer failure: a failed run here names a file a peer edited in this checkout recently.

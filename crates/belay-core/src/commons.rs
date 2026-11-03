@@ -1,7 +1,7 @@
 //! The commons (C1): every belay session keeps a card that says who it is, what it is
 //! doing, and how it is going. belay observes most of it; the agent adds its task, a
 //! note, and what it offers. Pure: the daemon writes the card, readers render it.
-//! Design: docs/commons-2026-10-22.md.
+//! Design: docs/design.md.
 
 use std::collections::BTreeMap;
 

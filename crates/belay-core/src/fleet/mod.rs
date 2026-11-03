@@ -1,6 +1,5 @@
 //! Fleets: belay sessions on one machine that know about each other (F1) and run as a
-//! team the user describes (F3b). Design: `docs/fleet-2026-10-21.md` and
-//! `docs/fleet-topologies-2026-10-21.md`.
+//! team the user describes (F3b). See the guide's Fleets section.
 
 mod awareness;
 pub mod model;

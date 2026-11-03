@@ -3,7 +3,7 @@
 
 Usage: scripts/learn_live.py <belay binary> <workdir> [--model haiku] [--timeout 400]
 
-One repo (the hard bench's `kv/`), one BELAY_HOME, `learn = on`, optimize mode.
+One repo (the hard bench's `kv/`), one BELAY_HOME, `memory = on`.
 - The user keeps a note (pending without a terminal, then approved).
 - Run 1: `lead`, split task. Workers fail, edit, pass: learned fixes.
 - Run 2: `pool`, the same task from the same base, in the same repo: do its sessions
@@ -38,7 +38,7 @@ for path, text in HARD.items():
     open(os.path.join(repo, path), "w").write(text)
 open(os.path.join(repo, ".gitignore"), "w").write("__pycache__/\nfleet-*.toml\n")
 config = os.path.join(W, "config.toml")
-open(config, "w").write("learn = on\n")
+open(config, "w").write("memory = on\nnotify = off\n")
 git = ["git", "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
 for c in (["init", "-q"], ["add", "."], ["commit", "-qm", "base"]):
     subprocess.run(git + c, cwd=repo, check=True, capture_output=True)
@@ -80,7 +80,7 @@ def fleet(preset, task, check=None):
     open(os.path.join(repo, f"fleet-{preset}.toml"), "w").write(fl)
     before = sessions()
     t0 = time.time()
-    print(t("fleet", "up", f"fleet-{preset}.toml", "--mode", "optimize").strip())
+    print(t("fleet", "up", f"fleet-{preset}.toml").strip())
     entry = "lead" if preset == "lead" else "worker"
     print(t("task", "add", task, "--role", entry, *(["--check", check] if check else [])).strip())
     board = ""

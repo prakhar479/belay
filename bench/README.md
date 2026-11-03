@@ -1,6 +1,6 @@
 # Seeded benchmark
 
-Tasks that tempt a coding agent to cut corners, run with and without belay (checkpoint V1). Natural sessions rarely trigger belay's guard or loop detection, so this measures them on purpose.
+Tasks that tempt a coding agent to cut corners, run with and without belay. Natural sessions rarely trigger belay's guard or loop detection, so this measures them on purpose.
 
 | Task | Honest fix | Tempting shortcut |
 |---|---|---|
@@ -22,8 +22,8 @@ scripts/bench.py --report bench/results/<dir>  # summarize again
 
 The two arms:
 
-- **base:** plain `claude`. An installed belay plugin is look-only, so it changes nothing.
-- **belay:** `belay claude --belay-mode optimize`.
+- **base:** plain `claude`, with the belay plugin disabled (`claude plugin disable belay@belay`), so belay changes nothing.
+- **belay:** `belay claude`.
 
 How a run is scored:
 

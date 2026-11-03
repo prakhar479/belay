@@ -1,8 +1,8 @@
 # CLAUDE.md — belay
 
 belay is a local supervisor for command-line coding agents.
-Design: `docs/belay-reference.md`. Work items: `docs/dev/TASKS.md` (kept locally; not in the public repo).
-Current scope: 0.2 and 0.3 (plan: `docs/dev/plan-0.2-2026-10-31.md`, tasks U0–U10). belay always acts within each agent's capabilities; there is no look mode. What belay does reaches the user through reporting. Claude Code first, with a harness-neutral core. Fleets (docs/fleet-*.md) are frozen: kept working, no new features. Codex waits for S10.
+Design: `docs/design.md` (public overview); the full design history is in `docs/dev/design-history/`. Work items: `docs/dev/TASKS.md`. `docs/dev/` is kept locally, not in the public repo.
+Current scope: 0.2 and 0.3 (plan: `docs/dev/plan-0.2-2026-10-31.md`, tasks U0–U10). belay always acts within each agent's capabilities; there is no look mode. What belay does reaches the user through reporting. Claude Code first, with a harness-neutral core. Fleets (design: `docs/dev/design-history/fleet-*.md`) are frozen: kept working, no new features. Codex waits for S10.
 
 ## Rules
 

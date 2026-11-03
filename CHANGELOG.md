@@ -69,6 +69,8 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - The guide and the site give sessions working together, messages between sessions, and fleets their own section ("It works together").
 - `commons` is on by default: agents see who else is working here, and hear other sessions' messages, findings, and handoffs, each labelled as another session's words. `commons = off` keeps each session to itself.
 - `belay install` with no flags sets up the plugin, the status line, and the permission rules together. It leaves a status line that is not belay's as it is, with a note.
+- New `docs/design.md`: how belay works, for the curious and for contributors. It replaces the internal design notes (`docs/belay-reference.md` and the dated fleet and commons notes), which are no longer in the repo.
+- `SECURITY.md` and `CONTRIBUTING.md` match 0.2: the one network call (`belay skill`), the commands only you may run, sandboxes sharing the network, and all twelve rules.
 
 ### Fixed
 

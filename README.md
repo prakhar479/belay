@@ -141,7 +141,7 @@ belay 0.2 is young, so here's exactly where it stands:
 
 - **[The guide](docs/guide.md):** every feature and setting, plus troubleshooting.
 - **[How sandboxes protect you](docs/sandbox.md):** what they keep safe, and what they don't.
-- **[Design notes](docs/belay-reference.md):** for the curious.
+- **[How belay works](docs/design.md):** for the curious, and for contributors.
 
 ## Contributing
 
