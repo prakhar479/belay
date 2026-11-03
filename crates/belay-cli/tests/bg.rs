@@ -1,6 +1,8 @@
 //! `belay bg` end to end: the detached supervisor runs `belay claude` with a fake
 //! headless agent, and the tests look at its state, notifications, and attach.
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -10,6 +12,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 fn bin() -> &'static str {
+    common::no_desktop();
     env!("CARGO_BIN_EXE_belay")
 }
 

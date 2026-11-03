@@ -1,6 +1,8 @@
 //! End-to-end: launcher → daemon → shim → connector → controller → ledger,
 //! with a fake agent script in place of Claude Code.
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -10,6 +12,7 @@ use std::time::{Duration, Instant};
 
 fn bin() -> &'static str {
     hermetic();
+    common::no_desktop();
     env!("CARGO_BIN_EXE_belay")
 }
 

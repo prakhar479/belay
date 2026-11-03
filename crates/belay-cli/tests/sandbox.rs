@@ -1,6 +1,8 @@
 //! End-to-end: `belay sandbox` with bubblewrap. Each test is skipped, with the reason
 //! printed, where bwrap or user namespaces are not available.
 
+mod common;
+
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -8,6 +10,7 @@ use std::process::{Command, Output};
 
 fn bin() -> &'static str {
     hermetic();
+    common::no_desktop();
     env!("CARGO_BIN_EXE_belay")
 }
 
