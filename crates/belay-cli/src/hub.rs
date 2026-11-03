@@ -2880,7 +2880,12 @@ fn changes_in_head(repo: &Path, wt: &Path, base: &str) -> bool {
 /// (cherry-picked, applied as a patch) and HEAD has moved on since, which a file-by-file
 /// comparison with HEAD misses. The snapshot commit is on no ref; git collects it later.
 fn merges_to_nothing(repo: &Path, wt: &Path) -> bool {
+    // The temporary index lists the repo's files: belay's private home, made if missing
+    // (a fresh machine, or CI, has none yet).
     let scratch = paths::home();
+    if paths::ensure_private_dir(&scratch).is_err() {
+        return false;
+    }
     let Ok(snap) = crate::audit::worktree_commit(wt, &scratch, "belay prune check", Some("HEAD"))
     else {
         return false;
