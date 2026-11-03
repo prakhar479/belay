@@ -881,10 +881,12 @@ A `.belay.toml` at the repo root, committed with the project, adjusts the guard 
 ```toml
 test_paths = ["e2e/**", "checks/*.py"]           # also test files
 protected = ["migrations/**", "tests/golden/**"]  # edits are guarded like test weakening
-audit_ignore = ["vendor/**"]                      # left out of `belay audit`
+audit_ignore = ["vendor/**"]                      # left out of `belay audit` and `belay brief`
 ```
 
 An edit of a protected path is denied (with `guard = deny`) until you run `! belay allow`. Globs are relative to the repo root. `*` stays within a directory, `**` crosses them, and a pattern without `/` matches a file name anywhere. When `belay claude` starts, it skips a bad line with a warning; the other lines still apply.
+
+Files that tools generate are always left out of `belay audit` and `belay brief`, with or without a `.belay.toml`: Python bytecode (`*.pyc`, `__pycache__/`), tool caches (`.pytest_cache/`, `.mypy_cache/`, `.ruff_cache/`, `.tox/`), `node_modules/`, and `.DS_Store`.
 
 ## Audit (experimental)
 

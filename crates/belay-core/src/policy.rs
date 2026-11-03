@@ -96,13 +96,34 @@ impl Policy {
             .map(|g| g.pattern.as_str())
     }
 
+    /// Left out of the audit and the brief: the repo's `audit_ignore`, and files tools
+    /// generate (bytecode, caches) that a repo without a `.gitignore` would list.
     pub fn audit_ignores(&self, path: &str) -> bool {
-        self.first(&self.audit_ignore, path).is_some()
+        generated(self.rel(path)) || self.first(&self.audit_ignore, path).is_some()
     }
 
     pub fn is_empty(&self) -> bool {
         self.test_paths.is_empty() && self.protected.is_empty() && self.audit_ignore.is_empty()
     }
+}
+
+/// A file a tool writes, not a person: Python bytecode and tool caches, macOS folder
+/// metadata. Only names no one writes by hand.
+fn generated(rel: &str) -> bool {
+    const DIRS: [&str; 6] = [
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+        "node_modules",
+    ];
+    let mut parts = rel.split('/');
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    parts.any(|p| DIRS.contains(&p))
+        || name == ".DS_Store"
+        || name.ends_with(".pyc")
+        || name.ends_with(".pyo")
 }
 
 /// Parse `.belay.toml`: `key = ["glob", …]` lines and `#` comments. Returns the policy
@@ -259,5 +280,28 @@ broken = [1, 2]
         assert!(p
             .protected_by("/home/dev/atlas/benchmarks/sub/x_frozen_plan.md")
             .is_none());
+    }
+
+    #[test]
+    fn generated_files_are_left_out_of_the_audit() {
+        let p = Policy::default();
+        for path in [
+            "__pycache__/calc.cpython-312.pyc",
+            "pkg/__pycache__/x.pyc",
+            "a.pyc",
+            "web/node_modules/left-pad/index.js",
+            ".pytest_cache/v/cache/nodeids",
+            "docs/.DS_Store",
+        ] {
+            assert!(p.audit_ignores(path), "{path}");
+        }
+        for path in [
+            "calc.py",
+            "src/pycache.rs",
+            "node_modules.md",
+            "tests/test_x.py",
+        ] {
+            assert!(!p.audit_ignores(path), "{path}");
+        }
     }
 }
