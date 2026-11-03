@@ -93,7 +93,7 @@ impl Default for Config {
             memory: true,
             recall_tokens: 600,
             awareness: true,
-            commons: false,
+            commons: true,
             routine: true,
             report: ReportLevel::Quiet,
             other_overrides: BTreeMap::new(),

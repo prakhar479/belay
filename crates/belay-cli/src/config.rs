@@ -21,7 +21,7 @@
 //! memory = on                # handoffs, recall at start, learned fixes, project notes
 //! recall_tokens = 600        # most tokens the start recall and the carry pack take
 //! awareness = on             # tell the agent what other belay sessions here did
-//! commons = off              # pass other sessions' messages to the agent
+//! commons = on               # pass other sessions' messages to the agent
 //! agent_skill = on           # give the agent belay's skill and tools, and one line at a fresh start
 //! report = quiet             # how much belay tells the user: quiet, normal, verbose
 //! sandbox_memory = 4G        # `belay sandbox`: most memory its processes use together

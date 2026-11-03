@@ -198,7 +198,7 @@ belay always acts within what the agent supports, and records every action with 
 | `verify` | `on` | At the end of a turn with files changed since the last passing test run, asks the agent to run it before it finishes |
 | `memory` | `on` | Handoffs between sessions, recall at the start and after a compaction, learned fixes, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
-| `commons` | `off` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
+| `commons` | `on` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
 | `agent_skill` | `on` | `belay claude` gives the agent belay's skill, slash commands, and MCP tools when the plugin is not installed. Also, at the start of a fresh session (not a resume or a compaction), adds one line to the agent's context that points it at the belay skill's routine: read the last handoff, say what it works on, run `belay brief` before it is done, leave a handoff before it stops. `off` leaves the line out |
 | `report` | `quiet` | How much belay tells you about what it did: `quiet` (warnings), `normal` (+ what it did), `verbose` (+ minor notes). See "Seeing what belay does" |
 
@@ -698,11 +698,11 @@ A skill added while Claude Code runs may not be seen until the session restarts.
 
 When you run several sessions on one machine, belay lets each one see the others and talk to them. Each session says what it's working on, you see them all on one board, and they can message each other and you. These features are called the commons.
 
-Cards are always kept, for your board, and your own messages always reach agents. Messages, findings and handoffs from other sessions reach the agent once you set `commons = on`:
+Cards are always kept, for your board, and your own messages always reach agents. Messages, findings and handoffs from other sessions reach the agent too, labelled as another session's words. To keep each session to itself:
 
 ```toml
 # ~/.config/belay/config.toml
-commons = on
+commons = off
 ```
 
 The agent uses all of this on its own: the belay skill tells it to check the board when it starts, say what it works on, and message a session before it edits the same files.
@@ -724,7 +724,7 @@ $ belay sessions
       active 1 min ago
 ```
 
-`--all` adds sessions that ended in the last day, and `--json` is for scripts and agents. With `commons = on`, a session that starts while others run is told how many there are and how to see them.
+`--all` adds sessions that ended in the last day, and `--json` is for scripts and agents. A session that starts while others run is told how many there are and how to see them.
 
 ### Messages
 
@@ -766,7 +766,7 @@ The next session in that repo (any worktree) gets the newest card that ended the
 - its last test;
 - whether it was looping or blocked.
 
-`belay handoff` with no text shows what the next session would get. With `commons = on` the agent hears it at start. With `memory = on` (the default), belay also keeps the handoff in memory, and the next session hears that one instead (see [Memory](#memory)).
+`belay handoff` with no text shows what the next session would get. The agent hears it at start (not with `commons = off`). With `memory = on` (the default), belay also keeps the handoff in memory, and the next session hears that one instead (see [Memory](#memory)).
 
 ### Awareness notices
 
@@ -933,7 +933,7 @@ verify = on                     # ask the agent to run its tests before it finis
 memory = on                     # handoffs, recall at start, learned fixes, project notes
 recall_tokens = 600             # most tokens the start recall and the carry pack take
 awareness = on                  # what other belay sessions here did
-commons = off                   # other sessions' messages and handoffs reach the agent
+commons = on                    # other sessions' messages and handoffs reach the agent
 agent_skill = on                # the agent gets belay's skill and tools, and one line at a fresh start
 report = quiet                  # how much belay tells you: quiet, normal, verbose
 resume = continue               # a resumed conversation keeps belay's state; fresh starts clean

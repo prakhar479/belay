@@ -2064,7 +2064,11 @@ fn only_the_users_terminal_is_the_user() {
 
 #[test]
 fn a_question_the_agent_never_saw_does_not_make_the_reply_an_answer() {
-    let mut c = ctl(); // commons = look: agents' messages are held
+    let cfg = Config {
+        commons: false, // agents' messages are held, so this one is never seen
+        ..Config::default()
+    };
+    let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE);
     c.handle(commons_msg("web", "question", "which port?"), 1);
     c.handle(requested("t1", "ls", false), 2);
     let (_, r) = c.send("web", vec!["web".into()], None, "8000", 3);
@@ -2175,7 +2179,7 @@ fn defaults_act_with_no_flags() {
     let cfg = Config::default();
     assert_eq!(cfg.guard, GuardSetting::Deny);
     assert!(cfg.loops && cfg.shape && cfg.memory && cfg.awareness);
-    assert!(!cfg.wrap_tests && !cfg.commons);
+    assert!(!cfg.wrap_tests && cfg.commons);
     assert_eq!(cfg.report, ReportLevel::Quiet);
     assert!(cfg.overrides().is_empty());
     let mut c = Controller::new(cfg, Capabilities::CLAUDE_CODE);
