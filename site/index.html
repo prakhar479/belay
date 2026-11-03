@@ -470,7 +470,7 @@ h1.hero-title .line { display: block; }
 .demo-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 12px; text-align: center; margin-top: 16px; font-size: 13px; color: var(--ink-3); }
 .demo-note .btn-sm { height: 30px; padding: 0 11px; font-size: 12.5px; }
 .no-js .demo-note { display: none; }
-.motion-off .live, .motion-off .caret, .motion-off .wire .pkt, .motion-off .ret .lane i { animation: none !important; }
+.motion-off .live, .motion-off .caret, .motion-off .wire .pkt, .motion-off .ret .ret-lane i { animation: none !important; }
 .motion-off .wire .pkt { display: none; }
 .no-js .chapters { display: none; }
 .no-js .scene { display: block !important; }
@@ -723,11 +723,11 @@ h2.h2 .mute { color: var(--ink-3); }
   font-size: 14.5px; color: var(--ink-3); transition: border-color .4s ease, color .4s ease, background .4s ease; position: relative; overflow: hidden;
 }
 .ret .arrow { font-family: var(--mono); color: var(--ink-3); flex: none; }
-.ret .lane { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
-.ret .lane i { position: absolute; top: 0; height: 2px; width: 120px; right: -120px; background: linear-gradient(270deg, transparent, var(--accent-strong)); opacity: 0; }
+.ret .ret-lane { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; }
+.ret .ret-lane i { position: absolute; top: 0; height: 2px; width: 120px; right: -120px; background: linear-gradient(270deg, transparent, var(--accent-strong)); opacity: 0; }
 .ret { border-style: solid; border-color: var(--accent-line); background: var(--accent-soft); color: var(--ink); }
 .ret .arrow { color: var(--accent); }
-.ret .lane i { opacity: 1; animation: lane 2.2s linear infinite; }
+.ret .ret-lane i { opacity: 1; animation: lane 2.2s linear infinite; }
 @keyframes lane { from { right: -120px; } to { right: 100%; } }
 @media (min-width: 1000px) { .ret { margin-left: 0; width: calc(80% - 8px); } }
 
@@ -829,6 +829,9 @@ h2.h2 .mute { color: var(--ink-3); }
 @media (min-width: 1000px) { .qs .l5 { grid-column: 1 / span 5; padding-right: 24px; position: sticky; top: 100px; } .qs .r7 { grid-column: 6 / span 7; } }
 .qs h2.h2 { font-size: clamp(34px, 4.2vw, 54px); }
 .steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+/* Quick start: the install steps and the steps after them count as one list. */
+#start .win { counter-reset: s; }
+#start .win .steps { counter-reset: none; }
 .steps li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 14px 16px 14px 14px; border-top: 1px solid var(--t-line); }
 .steps li:first-child { border-top: none; }
 .steps .num { counter-increment: s; width: 24px; height: 24px; border-radius: 7px; display: grid; place-items: center; font: 600 11.5px/1 var(--mono); color: var(--t-green); border: 1px solid rgba(82, 238, 191, .3); margin-top: 1px; }
@@ -992,7 +995,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
   .js .reveal { opacity: 1; transform: none; }
-  .wire .pkt, .ret .lane i, .live, .caret { animation: none !important; }
+  .wire .pkt, .ret .ret-lane i, .live, .caret { animation: none !important; }
   .wire .pkt { display: none; }
 }
 @media print {
@@ -1487,7 +1490,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
         <div class="win">
           <div class="term-bar"><div class="dots" aria-hidden="true"><i></i><i></i><i></i></div><div class="term-title">belay sandbox</div></div>
 <pre tabindex="0" role="region" aria-label="belay sandbox commands"><span class="ps">$</span> belay sandbox run -- make test         <span class="dm"># a command; its changes land on a branch</span>
-<span class="ps">$</span> belay sandbox claude                   <span class="dm"># a whole Claude Code session, watched from outside</span>
+<span class="ps">$</span> belay sandbox claude                   <span class="dm"># a whole Claude Code session inside</span>
 <span class="ps">$</span> belay sandbox task "add tests for parse_size"   <span class="dm"># a headless follow-up</span>
 <span class="ps">$</span> belay sandbox show fix                 <span class="dm"># branch, commits, audit, limit stops</span>
 <span class="ps">$</span> belay sandbox diff fix                 <span class="dm"># what the branch changed</span>
@@ -1557,7 +1560,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
     <div class="ret reveal">
       <span class="arrow" aria-hidden="true">←</span>
       <span>The agent gets an answer: go ahead, stop, or "here's something you should know". You get a short note too, which the agent never sees.</span>
-      <span class="lane" aria-hidden="true"><i></i></span>
+      <span class="ret-lane" aria-hidden="true"><i></i></span>
     </div>
 
     <div class="g12 modes">
@@ -1920,7 +1923,7 @@ Loops (13 s in loops): 1
       <div class="status-top">
         <div>
           <h3>belay 0.2 is young.</h3>
-          <p>It's young. Here's exactly where it stands, so you know what to expect.</p>
+          <p>Here's exactly where it stands, so you know what to expect.</p>
         </div>
         <span class="badge-proto"><i aria-hidden="true"></i> Early release</span>
       </div>
@@ -1928,7 +1931,7 @@ Loops (13 s in loops): 1
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other coding agents are on the way; belay is built so they can plug in.</span><p class="st">Supported</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>We test belay against real Claude Code sessions on each of these versions:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code><code>2.1.316</code></span><p class="st">Checked</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Linux and WSL</b><span>Where it is tested.</span><p class="st">Tested</p></div></div>
-        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Builds exist. They are untested.</span><p class="st">Untested</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Every test passes on macOS in CI. It hasn't had real sessions yet.</span><p class="st">Early</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Windows</b><span>Works through WSL. Native Windows isn't supported.</span><p class="st">WSL only</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only for now. Uses your normal internet connection.</span><p class="st">Linux only</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They keep working. No new features for now.</span><p class="st">Frozen</p></div></div>

@@ -49,7 +49,7 @@ This guide covers every feature and setting. Each section stands on its own, so 
 
 ## Install
 
-belay is one binary with no runtime dependencies. It supports Claude Code on Linux and WSL; macOS builds exist but are not yet tested. Windows is not supported outside WSL.
+belay is one binary with no runtime dependencies. It supports Claude Code on Linux and WSL; on macOS every test passes in CI, but it has not had real sessions yet. Windows is not supported outside WSL.
 
 **One command** (recommended):
 
