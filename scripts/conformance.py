@@ -7,6 +7,7 @@ and the transcript. Run it after each Claude Code update.
     scripts/conformance.py                      # uses target/debug/belay
     scripts/conformance.py --record             # also write docs/conformance/<version>.md
     scripts/conformance.py --replay <work dir>  # re-check a kept run (--keep); no model call
+    scripts/conformance.py --plugin             # also a short Haiku session through the plugin
 
 It costs one short model session. Exit code 0 if every check passes.
 """
@@ -124,6 +125,60 @@ def resume_checks(work: Path, home: Path, first: Path, first_hooks: list, check)
           ids and conv not in ids, ", ".join(map(str, ids)))
 
 
+PLUGIN_PROMPT = """This is a test harness run in a throwaway directory.
+Do exactly these two steps, one tool call each, then stop:
+
+1. Call the MCP tool mcp__plugin_belay_belay__handoff_get.
+2. Run this exact Bash command: env | grep ^BELAY_
+"""
+
+
+def plugin_installed(claude: str) -> bool:
+    out = subprocess.run([claude, "plugin", "list"], capture_output=True, text=True).stdout
+    return "belay@belay" in out
+
+
+def run_plugin(work: Path, args, env: dict) -> None:
+    """Plain `claude` with belay's plugin: the installed one, else `--plugin-dir`."""
+    proj = work / "plugin-proj"
+    proj.mkdir()
+    env = dict(env)
+    env["PATH"] = str(Path(args.belay).resolve().parent) + os.pathsep + env.get("PATH", "")
+    cmd = [args.claude, "-p", PLUGIN_PROMPT, "--model", "haiku", "--allowedTools",
+           "mcp__plugin_belay_belay__handoff_get,Bash(env:*)"]
+    if not plugin_installed(args.claude):
+        cmd += ["--plugin-dir", str(ROOT / "plugin")]
+    subprocess.run(cmd, cwd=proj, env=env, capture_output=True, text=True, timeout=args.timeout)
+    (work / "plugin-ran").write_text("1\n")
+
+
+def plugin_checks(home: Path, check) -> None:
+    """Plugin mode [Verify] facts: MCP tool names, CLAUDE_ENV_FILE, hooks with that env."""
+    sessions = sorted(d for d in (home / "sessions").glob("*") if "-p" in d.name)
+    if not sessions:
+        check("Plugin: a plugin session was recorded", False, "no session")
+        return
+    ledger = [e["body"] for e in jsonl(sessions[-1] / "ledger.jsonl") if "body" in e]
+    path = next((e["event"].get("transcript_path") for e in ledger
+                 if e.get("kind") == "event" and e["event"].get("type") == "session_started"), None)
+    transcript = jsonl(Path(path)) if path else []
+    seen = tool_results(transcript)
+    uses = [b for d in transcript for b in ((d.get("message") or {}).get("content") or [])
+            if isinstance(b, dict) and b.get("type") == "tool_use"]
+    mcp = [b["id"] for b in uses if b.get("name") == "mcp__plugin_belay_belay__handoff_get"]
+    # Used by `belay install --permissions` (PERMISSION_RULES).
+    check("Plugin: MCP tools are named mcp__plugin_belay_belay__<tool>",
+          mcp and all("error" not in seen.get(i, "").lower()[:40] for i in mcp),
+          ", ".join(sorted({b.get("name", "") for b in uses})))
+    env_out = "".join(seen.get(b["id"], "") for b in uses if b.get("name") == "Bash")
+    check("Plugin: the agent's shell has its session (CLAUDE_ENV_FILE)",
+          f"BELAY_SESSION_DIR={sessions[-1]}" in env_out and "BELAY_PLUGIN=1" in env_out,
+          env_out.strip().replace("\n", " ")[:160])
+    check("Plugin: hooks still act after the shell has BELAY_SOCKET",
+          any(e.get("kind") == "event" and e["event"].get("type") == "tool_completed"
+              and "env" in json.dumps(e["event"].get("input", {})) for e in ledger))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--belay", default=str(ROOT / "target/debug/belay"))
@@ -133,6 +188,8 @@ def main() -> int:
     ap.add_argument("--keep", action="store_true", help="keep the work dir after a pass")
     ap.add_argument("--resume", action="store_true",
                     help="also check resuming (U8): two more short sessions (model calls)")
+    ap.add_argument("--plugin", action="store_true",
+                    help="also check plugin mode: one short Haiku session through the plugin")
     ap.add_argument("--replay", metavar="WORK_DIR",
                     help="check a work dir kept by --keep instead of running a session")
     args = ap.parse_args()
@@ -152,7 +209,11 @@ def main() -> int:
         (work / "claude-version").write_text(version + "\n")
         proj, home = work / "shop", work / "home"
         project(proj)
-        env = dict(os.environ, BELAY_HOME=str(home), BELAY_CAPTURE="1", BELAY_CLAUDE_BIN=args.claude)
+        # Its own config: the user's must not change what is checked. wrap_tests is off
+        # by default; the wrap checks below need it on. No desktop notifications.
+        (work / "config.toml").write_text("wrap_tests = true\nnotify = off\n")
+        env = dict(os.environ, BELAY_HOME=str(home), BELAY_CAPTURE="1", BELAY_CLAUDE_BIN=args.claude,
+                   BELAY_CONFIG=str(work / "config.toml"))
         env.pop("BELAY_SOCKET", None)
         env.pop("BELAY_SESSION_DIR", None)
         run = subprocess.run(
@@ -172,6 +233,11 @@ def main() -> int:
                     sorted((home / "sessions").glob("*"))[-1].name + "\n")
             (work / "first-session").write_text(
                 sorted((home / "sessions").glob("*"))[0].name + "\n")
+        if args.plugin:
+            if not (work / "first-session").exists():
+                (work / "first-session").write_text(
+                    sorted((home / "sessions").glob("*"))[0].name + "\n")
+            run_plugin(work, args, env)
 
     sessions = sorted((home / "sessions").glob("*"))
     if (work / "first-session").exists():
@@ -271,6 +337,13 @@ def main() -> int:
     check("The next Stop came with stop_hook_active and was let through",
           any(p.get("stop_hook_active") for p in payloads("Stop"))
           and len(verifies) == 1)
+    # The start line (agent_skill): one line at a fresh start points the agent at belay.
+    routine = actions("routine")
+    check("belay pointed the agent at its routine at the start (agent_skill)",
+          routine and routine[0].get("applied"),
+          "; ".join(a["reason"] for a in routine) or "no routine action")
+    check("The start line reached the agent's context",
+          "this session runs under belay" in all_text)
     denied = payloads("PermissionDenied")
     check("Settings with a PermissionDenied hook load (the session ran)", ledger)
     # [Verify] U8 `project_dir_name`: Claude Code names a project's transcript dir after
@@ -281,6 +354,8 @@ def main() -> int:
               Path(transcript_path).parent.name == want, Path(transcript_path).parent.name)
     if (work / "resumed-session").exists():
         resume_checks(work, home, session, hooks, check)
+    if (work / "plugin-ran").exists():
+        plugin_checks(home, check)
 
     lines = [f"# Claude Code {version}", "",
              f"belay conformance (scripts/conformance.py), {len(hooks)} hook calls, "

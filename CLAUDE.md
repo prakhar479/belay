@@ -110,6 +110,8 @@ BELAY_CAPTURE=1 ./target/debug/belay claude          # also keep raw hook payloa
 jq . ~/.local/share/belay/sessions/<id>/hooks.jsonl   # raw payloads (with BELAY_CAPTURE=1)
 scripts/conformance.py --record     # live check of the Claude Code behaviors belay needs (one short session)
 scripts/conformance.py --replay <dir> # re-check a run kept with --keep (no model call)
+scripts/conformance.py --plugin      # also plain `claude` with the plugin: env file, MCP names (one Haiku session)
+scripts/skill_live.py               # does the agent use belay unasked? two Haiku sessions, scored (~$0.05)
 scripts/learn_live.py ./target/debug/belay <dir>   # live fleet + learning check on Haiku (~$0.04)
 cargo test --release -p belay-cli --test e2e -- --ignored shim_latency   # rule 7 budget
 (cd fuzz && cargo +nightly fuzz run shell -- -max_total_time=60)       # also: output, guard
