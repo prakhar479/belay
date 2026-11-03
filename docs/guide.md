@@ -100,18 +100,19 @@ belay doctor     # will belay work here? one line per check: ok, warn, or fail, 
 
 ### Into Claude Code
 
-`belay install` sets up the rest in one step. It shows each change and asks before it makes it (`--yes` skips the question).
+`belay install` sets up the rest in one step: the plugin, the status line, and the permission rules. It shows each change and asks before it makes it (`--yes` skips the question). Name parts to install only those:
 
 ```sh
-belay install                  # the Claude Code plugin: belay's hooks, its skill, and slash commands
+belay install                  # all three below
+belay install --plugin         # the Claude Code plugin: belay's hooks, its skill, and slash commands
 belay install --statusline     # `belay status` as the status line, in ~/.claude/settings.json
 belay install --launcher       # prints an alias so `claude` starts under belay
 belay install --permissions    # lets the agent run belay's everyday commands without a prompt
 ```
 
-- `--plugin` (the default) runs `claude plugin marketplace add prakhar479/belay` and `claude plugin install belay@belay`. `--from <path>` uses a local clone instead. `BELAY_CLAUDE_BIN` picks the `claude` binary.
-- `--statusline` keeps every other key in `settings.json` and saves the old file as `settings.json.belay-backup`. It refuses to replace a status line that is not belay's unless you add `--force`.
-- `--permissions` (also in the default `belay install`) adds Claude Code permission rules to `permissions.allow` in `settings.json`, with the same backup. It keeps your entries and adds no duplicates. The rules cover belay's read-only and note-taking commands: `belay handoff`, `memory search|list|show|add`, `ask`, `share`, `card`, `sessions`, `msg`, `inbox`, `brief`, `report`, `why`, `show`, `usage`, `status`, `flag`, `skill preview`, and the MCP tools `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `brief`, `skill_preview`. Nothing that runs commands or changes files (`sandbox`, `bg`, `undo`, `skill add`) and nothing that is yours to decide (`allow`, `pause`, `approve`, `drop`, `remove`, `rm`) is in the list.
+- `--plugin` runs `claude plugin marketplace add prakhar479/belay` and `claude plugin install belay@belay`. `--from <path>` uses a local clone instead. `BELAY_CLAUDE_BIN` picks the `claude` binary.
+- `--statusline` keeps every other key in `settings.json` and saves the old file as `settings.json.belay-backup`. It refuses to replace a status line that is not belay's unless you add `--force`. The default `belay install` leaves your own status line as it is and says so.
+- `--permissions` adds Claude Code permission rules to `permissions.allow` in `settings.json`, with the same backup. It keeps your entries and adds no duplicates. The rules cover belay's read-only and note-taking commands: `belay handoff`, `memory search|list|show|add`, `ask`, `share`, `card`, `sessions`, `msg`, `inbox`, `brief`, `report`, `why`, `show`, `usage`, `status`, `flag`, `skill preview`, and the MCP tools `memory_search`, `memory_add`, `handoff_get`, `output_show`, `why`, `brief`, `skill_preview`. Nothing that runs commands or changes files (`sandbox`, `bg`, `undo`, `skill add`) and nothing that is yours to decide (`allow`, `pause`, `approve`, `drop`, `remove`, `rm`) is in the list.
 - `--launcher` prints the line to add to your shell config. belay does not edit it for you.
 
 `belay uninstall` removes the plugin, belay's status line, and belay's permission rules. A status line that is not belay's stays, and so does every other rule. `belay doctor` says whether the plugin is installed, whether the status line is belay's, and whether the permission rules are in place.

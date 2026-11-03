@@ -95,6 +95,9 @@ pub struct Opts {
     /// Replace a status line that is not belay's.
     pub force: bool,
     pub yes: bool,
+    /// `--statusline` was given. Without it (the default install), a status line that is
+    /// not belay's is left alone with a note, not an error.
+    pub asked_statusline: bool,
 }
 
 /// Claude Code's config dir: `CLAUDE_CONFIG_DIR`, else `~/.claude`.
@@ -379,6 +382,70 @@ fn run_steps(steps: Vec<Step>, notes: Vec<String>, yes: bool) -> Result<i32> {
     Ok(0)
 }
 
+/// The settings with every part `o` installs, each made on the result of the last, so
+/// one write carries them all; `None` when nothing changes.
+fn settings_installed(
+    before: Option<&str>,
+    o: &Opts,
+    notes: &mut Vec<String>,
+) -> Result<Option<String>> {
+    let mut text = before.map(str::to_string);
+    if o.parts.statusline {
+        let theirs = text
+            .as_deref()
+            .and_then(statusline_of)
+            .filter(|(_, belays)| !belays);
+        match theirs {
+            Some((cmd, _)) if !o.force && !o.asked_statusline => notes.push(format!(
+                "Your status line runs `{cmd}`; leaving it. `belay install --statusline --force` replaces it with belay's."
+            )),
+            _ => match merge_statusline(text.as_deref(), o.force)? {
+                Some(new) => text = Some(new),
+                None => notes.push("The status line already runs `belay status`.".into()),
+            },
+        }
+    }
+    if o.parts.permissions {
+        match merge_permissions(text.as_deref())? {
+            Some(new) => text = Some(new),
+            None => notes.push("belay's permission rules are already in settings.json.".into()),
+        }
+    }
+    Ok(text.filter(|t| Some(t.as_str()) != before))
+}
+
+/// The settings without the parts `o` removes, in one write; `None` when nothing changes.
+fn settings_removed(
+    before: Option<&str>,
+    o: &Opts,
+    notes: &mut Vec<String>,
+) -> Result<Option<String>> {
+    let mut text = before.map(str::to_string);
+    if o.parts.statusline {
+        match text
+            .as_deref()
+            .map(remove_statusline)
+            .transpose()?
+            .flatten()
+        {
+            Some(new) => text = Some(new),
+            None => notes.push("The status line is not belay's; leaving it.".into()),
+        }
+    }
+    if o.parts.permissions {
+        match text
+            .as_deref()
+            .map(remove_permissions)
+            .transpose()?
+            .flatten()
+        {
+            Some(new) => text = Some(new),
+            None => notes.push("None of belay's permission rules are in settings.json.".into()),
+        }
+    }
+    Ok(text.filter(|t| Some(t.as_str()) != before))
+}
+
 pub fn install(o: &Opts) -> Result<i32> {
     let mut steps = Vec::new();
     let mut notes = Vec::new();
@@ -395,19 +462,9 @@ pub fn install(o: &Opts) -> Result<i32> {
             PLUGIN_ID.into(),
         ]));
     }
-    if o.parts.statusline {
-        let path = settings_path();
-        match merge_statusline(read_settings(&path)?.as_deref(), o.force)? {
-            Some(new) => steps.push(Step::Settings { path, new }),
-            None => notes.push("The status line already runs `belay status`.".into()),
-        }
-    }
-    if o.parts.permissions {
-        let path = settings_path();
-        match merge_permissions(read_settings(&path)?.as_deref())? {
-            Some(new) => steps.push(Step::Settings { path, new }),
-            None => notes.push("belay's permission rules are already in settings.json.".into()),
-        }
+    let path = settings_path();
+    if let Some(new) = settings_installed(read_settings(&path)?.as_deref(), o, &mut notes)? {
+        steps.push(Step::Settings { path, new });
     }
     if o.parts.launcher {
         let (line, place) = alias_line(&env::var("SHELL").unwrap_or_default());
@@ -434,27 +491,9 @@ pub fn uninstall(o: &Opts) -> Result<i32> {
             MARKETPLACE.into(),
         ]));
     }
-    if o.parts.statusline {
-        let path = settings_path();
-        let new = match read_settings(&path)? {
-            Some(text) => remove_statusline(&text)?,
-            None => None,
-        };
-        match new {
-            Some(new) => steps.push(Step::Settings { path, new }),
-            None => notes.push("The status line is not belay's; leaving it.".into()),
-        }
-    }
-    if o.parts.permissions {
-        let path = settings_path();
-        let new = match read_settings(&path)? {
-            Some(text) => remove_permissions(&text)?,
-            None => None,
-        };
-        match new {
-            Some(new) => steps.push(Step::Settings { path, new }),
-            None => notes.push("None of belay's permission rules are in settings.json.".into()),
-        }
+    let path = settings_path();
+    if let Some(new) = settings_removed(read_settings(&path)?.as_deref(), o, &mut notes)? {
+        steps.push(Step::Settings { path, new });
     }
     if o.parts.launcher {
         let (line, _) = alias_line(&env::var("SHELL").unwrap_or_default());
@@ -563,6 +602,54 @@ mod tests {
         assert_eq!(obj(&fs::read_to_string(&path).unwrap()), before);
         assert!(!home.join(".claude/settings.json.belay-tmp").exists());
         fs::remove_dir_all(&home).unwrap();
+    }
+
+    fn opts(asked_statusline: bool) -> Opts {
+        Opts {
+            parts: Parts {
+                statusline: true,
+                permissions: true,
+                ..Default::default()
+            },
+            from: None,
+            force: false,
+            yes: true,
+            asked_statusline,
+        }
+    }
+
+    #[test]
+    fn one_write_carries_the_status_line_and_the_permissions() {
+        let mut notes = Vec::new();
+        let new = settings_installed(Some(r#"{"model":"opus"}"#), &opts(false), &mut notes)
+            .unwrap()
+            .unwrap();
+        assert!(
+            statusline_of(&new).unwrap().1 && permissions_present(&new),
+            "{new}"
+        );
+        assert_eq!(obj(&new)["model"], "opus");
+        assert!(settings_installed(Some(&new), &opts(false), &mut notes)
+            .unwrap()
+            .is_none());
+        let gone = settings_removed(Some(&new), &opts(false), &mut notes)
+            .unwrap()
+            .unwrap();
+        assert_eq!(obj(&gone), json!({"model": "opus"}));
+    }
+
+    #[test]
+    fn the_default_install_leaves_your_own_status_line() {
+        let theirs = r#"{"statusLine":{"type":"command","command":"my-line"}}"#;
+        let mut notes = Vec::new();
+        let new = settings_installed(Some(theirs), &opts(false), &mut notes)
+            .unwrap()
+            .unwrap();
+        assert_eq!(statusline_of(&new).unwrap().0, "my-line");
+        assert!(permissions_present(&new));
+        assert!(notes.iter().any(|n| n.contains("my-line")), "{notes:?}");
+        // Asked for by name, it is refused as before: --force replaces it.
+        assert!(settings_installed(Some(theirs), &opts(true), &mut notes).is_err());
     }
 
     #[test]

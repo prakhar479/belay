@@ -193,7 +193,8 @@ enum Cmd {
     Review,
     /// Set belay up with Claude Code
     ///
-    /// Installs the plugin (default), the status line, or the launcher alias.
+    /// By default: the plugin, the status line (unless you have your own), and permission
+    /// rules for belay's everyday commands. Or name the parts, or the launcher alias.
     /// Shows each change and asks first.
     Install {
         #[command(flatten)]
@@ -1259,10 +1260,12 @@ fn run(cli: Cli) -> Result<i32> {
             force,
             yes,
         } => install::install(&install::Opts {
+            asked_statusline: parts.statusline,
             parts: parts.or(install::Parts {
                 plugin: true,
+                statusline: true,
                 permissions: true,
-                ..Default::default()
+                launcher: false,
             }),
             from,
             force,
@@ -1278,6 +1281,7 @@ fn run(cli: Cli) -> Result<i32> {
             from: None,
             force: false,
             yes,
+            asked_statusline: parts.statusline,
         }),
         Cmd::Doctor { json } => {
             let (report, code) = doctor::run(json);
