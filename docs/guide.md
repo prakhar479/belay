@@ -196,7 +196,7 @@ belay always acts within what the agent supports, and records every action with 
 | `loops` | `on` | Tells the agent when a failure is unchanged after several fixes, or an edit cycles |
 | `shape` | `on` | Summarizes large test and build output (above `shape_threshold_tokens`) |
 | `wrap_tests` | `false` | Runs test commands through `belay run`, so a failed run can be summarized too |
-| `verify` | `on` | At the end of a turn with files changed since the last passing test run, asks the agent to run it before it finishes |
+| `verify` | `on` | At the end of a turn with files changed since the last passing test run, asks the agent to run it before it finishes (once per session when no test ran at all) |
 | `memory` | `on` | Handoffs between sessions, recall at the start and after a compaction, learned fixes, and the project's notes |
 | `awareness` | `on` | Tells the agent what other belay sessions here did that matters to it |
 | `commons` | `on` | Passes other sessions' messages, handoffs, and who is here to the agent. Your own messages always reach it |
@@ -267,7 +267,13 @@ When the agent ends its turn with files changed since the last passing run of it
 belay: files changed since the last passing run of `pytest`. Run it before you finish.
 ```
 
-The command is the last test or check command the session ran. belay asks at most once per turn, and never twice for the same unchanged state, so it cannot loop with the agent. Changes to docs (`.md`, `.txt`, `.rst`) do not count. A fleet session is left alone: the hub runs its task's check. Turn it off with `verify = off`.
+The command is the last test or check command the session ran. If source files changed and the session never ran a test or check, belay knows no command to name. It asks once per session instead:
+
+```text
+belay: source files changed and no test or check ran in this session. Run the project's tests before you finish, or say why they can't run.
+```
+
+belay asks at most once per turn, and never twice for the same unchanged state, so it cannot loop with the agent. Changes to docs (`.md`, `.txt`, `.rst`) do not count. A fleet session is left alone: the hub runs its task's check. Turn it off with `verify = off`.
 
 ### Test output, summarized
 

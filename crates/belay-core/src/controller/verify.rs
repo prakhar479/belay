@@ -2,6 +2,10 @@
 //! last passing test or check run, belay keeps the agent going once, with the command to
 //! run. Once per turn, and never again for the same unchanged state, so belay cannot
 //! loop with itself. A fleet session is left alone: its hub runs the task's check.
+//!
+//! When source changed and the session never ran a test or check, belay knows no command
+//! to name. It asks once per session for the project's tests, or a reason there are none:
+//! live runs showed agents stopping right after `belay brief` said "no test or check ran".
 
 use super::{Controller, Decision, Feature};
 use crate::record::ActionKind;
@@ -46,6 +50,16 @@ pub(crate) struct VerifyState {
     nudged_at: Option<u64>,
     /// belay kept the agent going in this turn already.
     this_turn: bool,
+    /// belay asked once for a first test run (no command known yet).
+    asked_first_run: bool,
+}
+
+/// What belay asks for at the end of a turn.
+enum Want {
+    /// Run this command again (and the seq of its last output).
+    Again(String, u64),
+    /// No test or check ran in the session yet.
+    FirstRun,
 }
 
 impl VerifyState {
@@ -75,14 +89,18 @@ impl VerifyState {
         self.edits > 0 && self.passed_at.is_none_or(|p| self.edits > p)
     }
 
-    /// The command to ask for, and the seq of its last output, if the turn should go on.
-    fn wanted(&self) -> Option<(String, u64)> {
+    /// What to ask for, if the turn should go on.
+    fn wanted(&self) -> Option<Want> {
         let changed = self.changed_since_pass();
         let again = self.this_turn || self.nudged_at == Some(self.edits);
         if !changed || again {
             return None;
         }
-        self.command.clone()
+        match &self.command {
+            Some((command, out)) => Some(Want::Again(command.clone(), *out)),
+            None if !self.asked_first_run => Some(Want::FirstRun),
+            None => None,
+        }
     }
 
     /// For the state digest.
@@ -100,23 +118,40 @@ impl Controller {
     }
 
     /// At the end of a turn: keep the agent going if files changed since the last
-    /// passing run of its tests. `ev` is the turn-end event.
+    /// passing run of its tests, or if it changed source and never ran one. `ev` is the
+    /// turn-end event. A first-run request has an empty `command`.
     pub(super) fn verify_at_end(&mut self, d: &mut Decision, now: u64, ev: u64) {
         if !self.on(Feature::Verify) || self.in_fleet {
             return;
         }
-        let Some((command, out)) = self.verify.wanted() else {
+        let Some(want) = self.verify.wanted() else {
             return;
         };
         self.verify.this_turn = true;
         self.verify.nudged_at = Some(self.verify.edits);
-        let text = format!(
-            "belay: files changed since the last passing run of `{command}`. Run it before you finish."
-        );
-        let reason = match self.verify.passed_at {
-            Some(_) => format!("Files changed after `{command}` last passed, and the turn ended."),
-            None => {
-                format!("Files changed and `{command}` has not passed since, and the turn ended.")
+        let (command, text, reason, causes) = match want {
+            Want::Again(command, out) => {
+                let text = format!(
+                    "belay: files changed since the last passing run of `{command}`. Run it before you finish."
+                );
+                let reason = match self.verify.passed_at {
+                    Some(_) => {
+                        format!("Files changed after `{command}` last passed, and the turn ended.")
+                    }
+                    None => format!(
+                        "Files changed and `{command}` has not passed since, and the turn ended."
+                    ),
+                };
+                (command, text, reason, vec![ev, out])
+            }
+            Want::FirstRun => {
+                self.verify.asked_first_run = true;
+                let text = "belay: source files changed and no test or check ran in this session. \
+                            Run the project's tests before you finish, or say why they can't run."
+                    .to_string();
+                let reason =
+                    "Source files changed, no test or check ran, and the turn ended.".to_string();
+                (String::new(), text, reason, vec![ev])
             }
         };
         let action = ActionKind::Verify {
@@ -125,7 +160,7 @@ impl Controller {
         };
         let supported = self.supports(&action);
         let applied = self.deliver && supported;
-        self.record(d, now, vec![ev, out], action, reason, applied, !supported);
+        self.record(d, now, causes, action, reason, applied, !supported);
         if applied {
             d.response.continue_turn = Some(text);
         }
@@ -190,7 +225,7 @@ mod tests {
         assert_eq!(action.is_some(), d.response.continue_turn.is_some());
         if let Some((reason, causes)) = action {
             assert!(
-                reason.ends_with('.') && causes.len() == 2,
+                reason.ends_with('.') && !causes.is_empty(),
                 "{reason} {causes:?}"
             );
             let notice = d.entries.iter().any(|e| {
@@ -244,10 +279,30 @@ mod tests {
     }
 
     #[test]
-    fn nothing_without_a_known_command_or_an_edit() {
+    fn source_changed_and_no_run_asks_once_per_session() {
         let mut c = ctl();
         edit(&mut c, "src/app.py", 1);
-        assert_eq!(stop(&mut c, 2), None, "no test command known");
+        let why = stop(&mut c, 2).expect("asks for a first run");
+        assert!(why.contains("no test or check ran"), "{why}");
+        // Never again in this session, though more source changes.
+        assert_eq!(stop(&mut c, 3), None, "same turn");
+        prompt(&mut c, 4);
+        edit(&mut c, "src/lib.py", 5);
+        assert_eq!(stop(&mut c, 6), None, "asked once already");
+        // Once the agent runs a test, the usual rule applies.
+        fail(&mut c, 7);
+        prompt(&mut c, 8);
+        edit(&mut c, "src/lib.py", 9);
+        let why = stop(&mut c, 10).expect("names the command now");
+        assert!(why.contains("`pytest`"), "{why}");
+        // Docs alone ask for nothing.
+        let mut c = ctl();
+        edit(&mut c, "README.md", 1);
+        assert_eq!(stop(&mut c, 2), None, "docs are not source");
+    }
+
+    #[test]
+    fn nothing_without_an_edit() {
         let mut c = ctl();
         pass(&mut c, 1);
         assert_eq!(stop(&mut c, 2), None, "no edit since the pass");

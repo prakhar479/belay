@@ -46,7 +46,7 @@ ALLOWED = ",".join([
     "mcp__plugin_belay_belay__handoff_get", "mcp__plugin_belay_belay__output_show",
     "mcp__plugin_belay_belay__brief",
     "Edit", "Write", "Read", "Bash(cd:*)", "Bash(ls:*)", "Bash(cat:*)",
-    "Bash(python3 -m pytest:*)", "Bash(pytest:*)", "Bash(git status:*)", "Bash(git diff:*)",
+    "Bash(python3 -m pytest:*)", "Bash(python -m pytest:*)", "Bash(pytest:*)", "Bash(git status:*)", "Bash(git diff:*)",
 ])
 
 

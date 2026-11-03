@@ -79,10 +79,18 @@ pub fn live_others<'a>(
 }
 
 /// The name belay gives a session: its fleet slot, or `<repo dir name>-<n>`, the
-/// smallest `n` no live session uses.
+/// smallest `n` no live session uses. The name of the session that ended last in this
+/// repo is taken too: its handoff names it, and the new session reads that handoff.
 pub fn default_name(cards: &[(Card, bool)], me: &str, repo: &str, slot: Option<&str>) -> String {
-    let taken: std::collections::BTreeSet<&str> =
+    let mut taken: std::collections::BTreeSet<&str> =
         live_others(cards, me).map(|c| c.name.as_str()).collect();
+    let last_here = cards
+        .iter()
+        .filter(|(c, live)| !*live && c.id != me && c.repo == repo)
+        .max_by_key(|(c, _)| (c.last_activity_ms, c.id.as_str()));
+    if let Some((c, _)) = last_here {
+        taken.insert(c.name.as_str());
+    }
     if let Some(s) = slot {
         let s = s.replace('/', "-");
         if !taken.contains(s.as_str()) {
@@ -558,8 +566,23 @@ mod tests {
         ];
         assert_eq!(
             default_name(&cards, "me", "/r/atlas", None),
-            "atlas-2",
-            "b is not live"
+            "atlas-3",
+            "b is not live, but it ended last here: its handoff names it"
+        );
+        let mut older = card("d", "atlas-2", "/r/atlas");
+        older.last_activity_ms = 500;
+        let mut newer = card("e", "atlas-3", "/r/atlas");
+        newer.last_activity_ms = 2_000;
+        let ended = vec![(older, false), (newer, false)];
+        assert_eq!(
+            default_name(&ended, "me", "/r/atlas", None),
+            "atlas-1",
+            "only the last ended session's name is kept back"
+        );
+        assert_eq!(
+            default_name(&ended, "me", "/r/other", None),
+            "other-1",
+            "another repo's sessions do not count"
         );
         assert_eq!(
             default_name(&cards, "a", "/r/atlas", None),

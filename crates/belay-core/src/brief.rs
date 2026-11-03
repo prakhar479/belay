@@ -372,9 +372,13 @@ pub fn build(input: &Input) -> Brief {
                     look.push((0, item("guard", text, id)));
                 }
                 ActionKind::Verify { command, .. } => {
-                    let text = format!(
-                        "the turn ended with files changed since `{command}` last passed; belay asked for a run"
-                    );
+                    let text = if command.is_empty() {
+                        "the turn ended with source changed and no test or check run; belay asked for one".to_string()
+                    } else {
+                        format!(
+                            "the turn ended with files changed since `{command}` last passed; belay asked for a run"
+                        )
+                    };
                     look.push((1, item("verify", text, id)));
                 }
                 ActionKind::Shape {

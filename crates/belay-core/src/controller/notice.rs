@@ -156,6 +156,11 @@ pub fn notice_for(
         ),
         ActionKind::Routine { .. } => (Info, "pointed the agent at belay's routine.".into(), "routine lines"),
         ActionKind::Commons { .. } => (Act, reason.trim_end_matches('.').to_string() + ".", "commons notes"),
+        ActionKind::Verify { command, .. } if command.is_empty() => (
+            Act,
+            "source changed and no test or check ran: belay asked the agent to run the tests before it finishes.".into(),
+            "verify requests",
+        ),
         ActionKind::Verify { command, .. } => (
             Act,
             format!(

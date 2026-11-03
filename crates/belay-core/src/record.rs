@@ -241,7 +241,8 @@ pub enum ActionKind {
         text: String,
     },
     /// Keep the agent working at the end of its turn: files changed since the last
-    /// passing run of `command`, so it should run it before it finishes (U6.1).
+    /// passing run of `command`, so it should run it before it finishes (U6.1). An empty
+    /// `command`: source changed and no test or check ran in the session yet.
     Verify {
         command: String,
         text: String,
