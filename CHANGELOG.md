@@ -67,6 +67,8 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - belay is now under the MIT license only.
 - The agent skill is a routine the agent follows on its own: read the handoff, search memory, set its card, check the board, use sandboxes for risky work, run `brief` before "done", and leave a handoff. It also covers messages between sessions.
 - The guide and the site give sessions working together, messages between sessions, and fleets their own section ("It works together").
+- `commons` is on by default: agents see who else is working here, and hear other sessions' messages, findings, and handoffs, each labelled as another session's words. `commons = off` keeps each session to itself.
+- `belay install` with no flags sets up the plugin, the status line, and the permission rules together. It leaves a status line that is not belay's as it is, with a note.
 
 ### Fixed
 
@@ -88,6 +90,11 @@ Install it with one command: `curl -fsSL https://prakhar479.github.io/belay/inst
 - A global flag before the verb (`belay --flag allow`) no longer hides user-only commands from the agent denial.
 - The install script rejects a BELAY_VERSION with odd characters.
 - Under plain `claude` (the plugin), the agent's own `belay card`, `belay handoff "…"`, and `belay msg` work and act as its session. Before, they refused or were sent as yours, because the agent's shell did not know its session.
+- `belay brief` and `belay audit` leave out files tools generate (`*.pyc`, `__pycache__/`, tool caches, `node_modules/`, `.DS_Store`), even in a repo with no `.gitignore`.
+- A belay daemon that decides to exit (its agent is gone, or it was idle too long) now exits within 10 seconds even if a thread is stuck, so no daemon outlives its session.
+- `belay install --statusline --permissions` (and `uninstall`) no longer loses one of the two changes: both are now written to `settings.json` in one write.
+- `belay fleet prune` removes a worktree whose work you took another way (cherry-picked, or applied as a patch) even after your branch moved on: it checks that merging the worktree into HEAD would change nothing. Before, it kept every such worktree as unmerged.
+- Running belay's own tests (`make check`) no longer pops up desktop notifications from the test's fake sessions.
 
 ## 0.1.0
 
