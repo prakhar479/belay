@@ -4,6 +4,18 @@
 
 See `changelog.d/` (joined at release by `scripts/changelog.py --release`).
 
+## 0.2.2
+
+### Changed
+
+- belay has a new mark: a carabiner holding a prompt. It replaces the rope "b" in the site, its favicon and social card, and the README. The carabiners on the site's ropes are now the mark too.
+- The site has a 30-second video tour, served from the site itself. The README links to it.
+
+### Fixed
+
+- `kill` sent to `belay claude` just as Claude Code was starting could be lost, leaving Claude Code running without the launcher's stop. The signal now reaches Claude Code as soon as it has started.
+- Verify before done names the build or check itself (`cargo build`, `make check`), not the whole line it was part of. Before, after `cargo build -q | tail; ls; grep …` it asked the agent to re-run all of it. Loops also count `cargo build` and `cargo build -q | tail` as the same run.
+
 ## 0.2.1
 
 ### Changed

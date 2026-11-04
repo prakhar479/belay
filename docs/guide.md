@@ -63,7 +63,7 @@ What it does:
 3. Runs `belay install --yes` when Claude Code is on your PATH (see [Into Claude Code](#into-claude-code)).
 
 Settings, as environment variables before `sh`:
-- `BELAY_VERSION=v0.2.1` picks a release.
+- `BELAY_VERSION=v0.2.2` picks a release.
 - `BELAY_INSTALL_DIR=<dir>` picks the directory.
 - `BELAY_NO_SETUP=1` installs the binary only.
 - `BELAY_FROM_SOURCE=1` builds with cargo.

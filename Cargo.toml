@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/belay-core", "crates/belay-cli"]
 
 [workspace.package]
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 # std::io::pipe (belay run) needs 1.87.
 rust-version = "1.87"
