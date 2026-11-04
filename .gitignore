@@ -3,3 +3,6 @@
 __pycache__/
 bench/results/
 docs/dev/
+
+# /brag launch-video output (local only)
+brag-output*/

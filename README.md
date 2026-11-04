@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="https://prakhar479.github.io/belay/">Website</a> ·
+  <a href="https://prakhar479.github.io/belay/#tour">30-second tour</a> ·
   <a href="docs/guide.md">Guide</a> ·
   <a href="https://github.com/prakhar479/belay/releases">Releases</a>
 </p>

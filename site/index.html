@@ -26,6 +26,7 @@
 <meta name="twitter:image" content="https://prakhar479.github.io/belay/og.png">
 <meta name="twitter:image:alt" content="belay: Your coding agent, with everything it can't give itself. Claude Code, upgraded. It remembers. It's honest. It's safe. It's clear.">
 <link rel="icon" type="image/svg+xml" href="brand/icon.svg">
+<link rel="apple-touch-icon" href="brand/icon-512.png">
 <script>
   (function () {
     var d = document.documentElement;
@@ -992,14 +993,34 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
 .trace li::before { content: counter(t); position: absolute; left: 14px; top: 13px; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font: 600 12.5px/24px var(--mono); text-align: center; }
 .trace li b { color: var(--ink); }
 
+/* ---------- Tour video ---------- */
+.tour { margin: 56px auto 0; max-width: 980px; }
+.tour-frame { position: relative; border-radius: 20px; overflow: hidden; border: 1px solid var(--line-2); background: var(--t-bg); box-shadow: var(--term-shadow); aspect-ratio: 16 / 9; }
+.tour-frame video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.tour-play { position: absolute; inset: 0; display: flex; align-items: flex-end; justify-content: flex-start; padding: 22px; border: 0; cursor: pointer; color: #eef5f3;
+  background: linear-gradient(180deg, transparent 58%, rgba(3, 6, 6, .62)); font: 600 16px/1 var(--sans); }
+.tour-play .tp-pill { display: inline-flex; align-items: center; gap: 12px; padding: 7px 18px 7px 7px; border-radius: 999px; background: rgba(6, 12, 11, .74); border: 1px solid rgba(62, 230, 180, .35); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: border-color .2s ease, transform .2s ease; }
+.tour-play .tp-ring { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #b4f8dc, #3ee6b4 50%, #1fb8d6); box-shadow: 0 0 0 6px rgba(62, 230, 180, .14); transition: box-shadow .2s ease; }
+.tour-play .tp-ring svg { width: 18px; height: 18px; margin-left: 2px; fill: #04110d; }
+.tour-play:hover .tp-pill, .tour-play:focus-visible .tp-pill { border-color: rgba(62, 230, 180, .7); transform: translateY(-2px); }
+.tour-play:hover .tp-ring, .tour-play:focus-visible .tp-ring { box-shadow: 0 0 0 9px rgba(62, 230, 180, .2); }
+.tour-play:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: -4px; }
+.tour-play .tp-len { margin-left: 2px; font: 500 13px/1 var(--mono); color: rgba(238, 245, 243, .65); }
+@media (max-width: 560px) { .tour-play { padding: 10px; font-size: 13px; } .tour-play .tp-len { display: none; } .tour-play .tp-ring { width: 30px; height: 30px; box-shadow: 0 0 0 4px rgba(62, 230, 180, .14); } .tour-play .tp-ring svg { width: 15px; height: 15px; } .tour-play .tp-pill { gap: 10px; padding-right: 14px; } }
+.tour-frame.playing .tour-play { display: none; }
+.no-js .tour-play { display: none; }
+.tour figcaption { margin-top: 14px; text-align: center; font-size: 14px; color: var(--ink-3); }
+.final .mark-big .cursor { animation: cursor-blink 1.1s steps(1) infinite; }
+@keyframes cursor-blink { 50% { opacity: .2; } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
   .js .reveal { opacity: 1; transform: none; }
-  .wire .pkt, .ret .ret-lane i, .live, .caret { animation: none !important; }
+  .wire .pkt, .ret .ret-lane i, .live, .caret, .final .mark-big .cursor { animation: none !important; }
   .wire .pkt { display: none; }
 }
 @media print {
-  .nav, .chapters, .copy, .mini-copy, .rope-drop { display: none; }
+  .nav, .chapters, .copy, .mini-copy, .rope-drop, .tour-play { display: none; }
   .js .reveal { opacity: 1 !important; transform: none !important; }
   .js .pending { opacity: 1 !important; transform: none !important; }
 }
@@ -1019,13 +1040,8 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       <stop offset=".5" style="stop-color: var(--mark-2)"/>
       <stop offset="1" style="stop-color: var(--mark-3)"/>
     </linearGradient>
-    <symbol id="mark" viewBox="0 0 32 32">
-      <mask id="mark-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
-        <rect width="32" height="32" fill="#fff"/>
-        <path d="M13.2 16.3 C11 17.8 9 20.5 7.5 23.5" fill="none" stroke="#000" stroke-width="5.6" stroke-linecap="round"/>
-      </mask>
-      <path mask="url(#mark-gap)" d="M11.5 3 V22 C11.5 27.5 16.5 29.5 20.5 28 C25 26.3 26 20 22.5 16.5 C19 13 13.5 14 10.5 18.5" fill="none" stroke="url(#bg-grad)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M13.2 16.3 C11 17.8 9 20.5 7.5 23.5" fill="none" stroke="url(#bg-grad)" stroke-width="3.2" stroke-linecap="round"/>
+    <symbol id="mark" viewBox="0 0 64 64">
+      <path d="M41 12.5 C37 9.6 32 8.6 27 9.2 C19 10.2 14 15.5 14 23.5 V43 C14 51 20 56 28 56 H35.5 C45 56 51 50 50.5 41.5 L50 33.5" fill="none" stroke="url(#bg-grad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M43.6 15.6 L49.7 30.6" fill="none" stroke="url(#bg-grad)" stroke-width="3.4" stroke-linecap="round"/><path d="M23.5 27.5 L30.5 33 L23.5 38.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M33.5 41 H40.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round"/>
     </symbol>
     <symbol id="ridge" viewBox="0 0 1600 420" preserveAspectRatio="xMidYMax slice">
       <path style="fill: var(--ridge-1)" d="M0 262 L60 236 L120 249 L190 197 L240 214 L300 150 L338 178 L372 167 L430 222 L500 201 L560 169 L610 187 L680 112 L720 128 L760 70 L800 104 L836 97 L890 151 L950 139 L1010 177 L1070 151 L1130 156 L1180 120 L1220 140 L1262 133 L1320 191 L1380 179 L1440 201 L1500 171 L1550 189 L1600 181 L1600 420 L0 420 Z"/>
@@ -1124,8 +1140,10 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
             <path class="twist" d="M20 0 V36" fill="none" stroke-width="6" stroke-dasharray="1.8 3.4"/>
           </g>
           <rect class="knot" x="13.5" y="38" width="13" height="16" rx="5.5" stroke-width="1.5"/>
-          <path d="M30.5 59 A10.5 10.5 0 0 0 9.5 59 V77 A10.5 10.5 0 0 0 30.5 77" fill="none" stroke="url(#bg-grad)" stroke-width="4.2" stroke-linecap="round"/>
-          <path class="gate" d="M30.5 75.5 V62" fill="none" stroke-width="3" stroke-linecap="round"/>
+          <g transform="translate(-.6 50.2) scale(.64)">
+            <path d="M41 12.5 C37 9.6 32 8.6 27 9.2 C19 10.2 14 15.5 14 23.5 V43 C14 51 20 56 28 56 H35.5 C45 56 51 50 50.5 41.5 L50 33.5" fill="none" stroke="url(#bg-grad)" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M43.6 15.6 L49.7 30.6" fill="none" stroke="url(#bg-grad)" stroke-width="4.6" stroke-linecap="round"/>
+          </g>
         </g>
         <rect class="hang" x="12" y="84" width="16" height="12" rx="4" stroke-width="2.6"/>
       </svg>
@@ -1271,6 +1289,13 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       </article>
     </div>
     <p class="moments-close reveal">None of that is the model's fault: a single conversation simply can't hold it. <strong>belay is the part of your setup that lives outside the conversation.</strong> It sees across sessions and across time, and it answers to you.</p>
+    <figure class="tour reveal" id="tour">
+      <div class="tour-frame">
+        <video id="tour-video" src="media/belay-tour.mp4" poster="media/belay-tour.jpg" preload="none" controls playsinline width="1280" height="720" aria-label="belay in 30 seconds: a short video tour"></video>
+        <button class="tour-play" id="tour-play" type="button" aria-label="Play the 30-second tour"><span class="tp-pill"><span class="tp-ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span><span class="tp-lbl">Watch the tour <span class="tp-len">0:30</span></span></span></button>
+      </div>
+      <figcaption>belay in 30 seconds, with sound. The video is served from this site, like everything else on the page.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -1950,8 +1975,12 @@ Loops (13 s in loops): 1
     <div class="final-rope" aria-hidden="true"></div>
     <svg class="mark-big" viewBox="0 0 40 52" aria-hidden="true" focusable="false">
       <rect x="13.5" y="-2" width="13" height="16" rx="5.5" fill="var(--rope)" stroke="var(--rope-2)" stroke-width="1.5"/>
-      <path d="M30.5 21 A10.5 10.5 0 0 0 9.5 21 V39 A10.5 10.5 0 0 0 30.5 39" fill="none" stroke="url(#bg-grad)" stroke-width="4.2" stroke-linecap="round"/>
-      <path d="M30.5 37.5 V24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      <g transform="translate(-5.8 4.8) scale(.8)">
+        <path d="M41 12.5 C37 9.6 32 8.6 27 9.2 C19 10.2 14 15.5 14 23.5 V43 C14 51 20 56 28 56 H35.5 C45 56 51 50 50.5 41.5 L50 33.5" fill="none" stroke="url(#bg-grad)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M43.6 15.6 L49.7 30.6" fill="none" stroke="url(#bg-grad)" stroke-width="3.4" stroke-linecap="round"/>
+        <path d="M23.5 27.5 L30.5 33 L23.5 38.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path class="cursor" d="M33.5 41 H40.5" fill="none" stroke="currentColor" stroke-width="4.2" stroke-linecap="round"/>
+      </g>
     </svg>
     <p class="call reveal">On belay?</p>
     <h2 class="reveal" id="final-title"><span class="grad-text">Belay on.</span></h2>
@@ -2011,7 +2040,7 @@ Loops (13 s in loops): 1
     </div>
     <div class="foot-bottom">
       <span>MIT licensed</span>
-      <span>This page is one file. It makes no outside requests.</span>
+      <span>Everything on this page is served from this site. It makes no outside requests.</span>
     </div>
   </div>
 </footer>
@@ -2410,6 +2439,17 @@ Loops (13 s in loops): 1
     return function () { ts.forEach(clearTimeout); ts = []; st.forEach(function (s) { s.classList.add('lit'); }); };
   });
 })();
+</script>
+<script>
+  (function () {
+    var v = document.getElementById('tour-video'), b = document.getElementById('tour-play');
+    if (!v || !b) return;
+    var f = v.parentNode;
+    v.removeAttribute('controls');
+    function start() { f.classList.add('playing'); v.setAttribute('controls', ''); }
+    b.addEventListener('click', function () { start(); v.play(); v.focus(); });
+    v.addEventListener('play', start);
+  })();
 </script>
 </body>
 </html>
