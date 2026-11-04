@@ -611,15 +611,23 @@ pub(crate) fn wait_for(sock: &Path) -> bool {
 
 /// The agent's pid while it runs (0 before), for the signal handler.
 static CHILD: AtomicI32 = AtomicI32::new(0);
+/// A signal that came before the agent's pid was known (0: none). The agent can run
+/// before `spawn` returns, so a `kill <launcher>` in that gap must not be lost.
+static PENDING: AtomicI32 = AtomicI32::new(0);
 
 extern "C" fn on_signal(sig: libc::c_int) {
-    let pid = CHILD.load(Ordering::SeqCst);
     // Claude Code handles Ctrl-C itself: the terminal sends it to the whole group.
-    if pid > 0 && sig != libc::SIGINT {
+    if sig == libc::SIGINT {
+        return;
+    }
+    let pid = CHILD.load(Ordering::SeqCst);
+    if pid > 0 {
         // SAFETY: kill is async-signal-safe.
         unsafe {
             libc::kill(pid, sig);
         }
+    } else {
+        PENDING.store(sig, Ordering::SeqCst);
     }
 }
 
@@ -642,6 +650,14 @@ fn forward_signals() {
 fn run_child(cmd: &mut Command) -> std::io::Result<ExitStatus> {
     let mut child = cmd.spawn()?;
     CHILD.store(child.id() as i32, Ordering::SeqCst);
+    // Checked after the store: a signal from then on goes to the agent directly.
+    let sig = PENDING.swap(0, Ordering::SeqCst);
+    if sig > 0 {
+        // SAFETY: the child is ours and has not been waited on yet.
+        unsafe {
+            libc::kill(child.id() as i32, sig);
+        }
+    }
     let status = child.wait();
     CHILD.store(0, Ordering::SeqCst);
     status
