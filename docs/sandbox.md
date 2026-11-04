@@ -144,7 +144,7 @@ settings there). The agent's program is resolved on the host and bound at its re
 path. The hooks' `cwd` is the clone's path, which is the same inside and out, so the
 ledger and `belay why` read as in any session. belay runs no git in the clone from
 outside: undo snapshots and the session audit skip it (`belay sandbox show` audits the
-branch instead). Not yet confirmed: Claude Code's terminal UI under `--new-session`: bwrap
+branch instead). Not confirmed: Claude Code's terminal UI under `--new-session`: bwrap
 puts the sandbox in a new session, so it has no controlling terminal (this stops
 `TIOCSTI` input injection into your shell). The UI reads keys from stdin in raw mode,
 which works without one, but a resize signal may not reach it.
@@ -222,7 +222,7 @@ The doctor exits 1 if any probe escapes.
   kernel opens its interpreter, `/init`, when the program runs. A `.exe` run inside the
   sandbox still reaches WSL's `/init`, which prints an error and exits 1 without
   starting the Windows program. It cannot reach the interop socket in `/run/WSL`, and
-  `WSL_INTEROP` is unset. Not yet confirmed on newer WSL builds; `belay sandbox doctor` checks yours. A
+  `WSL_INTEROP` is unset. Not confirmed on newer WSL builds; `belay sandbox doctor` checks yours. A
   binfmt entry with flag `F` would keep `/init` open across namespaces.
 - `systemd-run --user --scope` fails on WSL without systemd ("Failed to connect to
   bus"). The `/proc` watchdog is then the only limit on memory and processes.

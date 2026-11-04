@@ -2,7 +2,7 @@
 
 ## Reporting a problem
 
-Please do not open a public issue for a security problem. Report it privately through GitHub: **Security → Report a vulnerability** on this repository. You get an answer within a week.
+Please do not open a public issue for a security problem. Report it privately through GitHub: **Security → Report a vulnerability** on this repository.
 
 Useful things to include: what an attacker can do, the steps to show it, and your belay and Claude Code versions (`belay doctor`).
 
@@ -19,4 +19,4 @@ Useful things to include: what an attacker can do, the steps to show it, and you
 
 ## Supported versions
 
-belay is young. Only the latest release gets fixes.
+belay is young, and there is no support commitment. Only the latest release is considered.

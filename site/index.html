@@ -1506,7 +1506,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
           <li><b>Walled off</b><span>It can't see your SSH keys, cloud logins, other projects, or Docker. On WSL it can't reach Windows either.</span></li>
           <li><b>Honest about the network</b><span>It uses your normal internet connection. Anything your machine can reach, the sandbox can too.</span></li>
           <li><b>Can't run away</b><span>It has limits on memory, processes, disk and time. Hit one, and belay stops it and tells you which.</span></li>
-          <li><b>Safe or nothing</b><span>If a proper sandbox can't be built on your machine, belay won't pretend: it runs nothing. Linux only for now.</span></li>
+          <li><b>Safe or nothing</b><span>If a proper sandbox can't be built on your machine, belay won't pretend: it runs nothing. Linux only.</span></li>
           <li><code>belay sandbox doctor</code><span>Don't take our word for it: this tries to break out of a fresh sandbox and tells you if anything gets through.</span></li>
         </ul>
         <p class="t">What it protects, and what it does not: <a href="https://github.com/prakhar479/belay/blob/main/docs/sandbox.md">the threat model</a>.</p>
@@ -1728,7 +1728,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
             <div class="arch-box">
               <p class="arch-k">Connector</p>
               <h3>Speaks the agent's language</h3>
-              <p>Turns one agent's hooks into belay's own events. Claude Code today; another agent is a new connector, nothing more.</p>
+              <p>Turns one agent's hooks into belay's own events. Claude Code is the only connector, and the only part that knows its hooks.</p>
             </div>
             <div class="arch-box arch-judge">
               <p class="arch-k">The judge</p>
@@ -1815,7 +1815,7 @@ footer.foot { border-top: 1px solid var(--line); padding: 56px 0 40px; }
       </div>
       <div class="card reveal" style="--rd:.06s">
         <p class="arch-k">Choice 2</p>
-        <h3>One layer, any agent.</h3>
+        <h3>One layer, no agent names.</h3>
         <p>The judge never names a tool or a hook. It works with kinds of steps and what each agent supports, and does less rather than fail where an agent can't do something.</p>
       </div>
       <div class="card reveal" style="--rd:.12s">
@@ -1953,14 +1953,14 @@ Loops (13 s in loops): 1
         <span class="badge-proto"><i aria-hidden="true"></i> Early release</span>
       </div>
       <div class="status-grid">
-        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>Other coding agents are on the way; belay is built so they can plug in.</span><p class="st">Supported</p></div></div>
+        <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Claude Code only</b><span>belay supports Claude Code. No other agent is supported.</span><p class="st">Supported</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Checked versions</b><span>We test belay against real Claude Code sessions on each of these versions:</span><span class="vchips"><code>2.1.303</code><code>2.1.304</code><code>2.1.308</code><code>2.1.316</code></span><p class="st">Checked</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>Linux and WSL</b><span>Where it is tested.</span><p class="st">Tested</p></div></div>
-        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Every test passes on macOS in CI. It hasn't had real sessions yet.</span><p class="st">Early</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>macOS</b><span>Every test passes on macOS in CI. It has not been tried in real sessions.</span><p class="st">Early</p></div></div>
         <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Windows</b><span>Works through WSL. Native Windows isn't supported.</span><p class="st">WSL only</p></div></div>
-        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only for now. Uses your normal internet connection.</span><p class="st">Linux only</p></div></div>
-        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They keep working. No new features for now.</span><p class="st">Frozen</p></div></div>
-        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Audit</b><span><code>belay audit</code> is under test. Its output may change.</span><p class="st">Experimental</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Sandboxes</b><span>Linux only. Uses your normal internet connection.</span><p class="st">Linux only</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Fleets</b><span>They work as the guide describes, and are not being extended.</span><p class="st">Frozen</p></div></div>
+        <div class="srow2 wn"><span class="si" aria-hidden="true">!</span><div><b>Audit</b><span><code>belay audit</code> has basic rules. It can miss things or flag too much.</span><p class="st">Experimental</p></div></div>
         <div class="srow2 ok"><span class="si" aria-hidden="true">✓</span><div><b>MIT licensed</b><span>Free and open source: use it, change it, share it.</span><p class="st">License</p></div></div>
       </div>
     </div>

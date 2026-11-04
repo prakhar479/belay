@@ -39,7 +39,7 @@ Your coding agent only knows what's in front of it right now:
 
 None of that is a flaw in the model. These are things a single conversation simply can't hold.
 
-**belay is the part of your setup that lives outside the conversation.** It sees across sessions and across time, and it answers to you, not to the agent. It works with Claude Code today, and it's built for any coding agent, with more on the way.
+**belay is the part of your setup that lives outside the conversation.** It sees across sessions and across time, and it answers to you, not to the agent. It works with Claude Code.
 
 ## What your agent gets
 
@@ -146,8 +146,8 @@ Then run `belay doctor` to make sure everything's in place, and keep using `clau
 ## Where it stands
 
 belay 0.2 is young, so here's exactly where it stands:
-- **Agents:** it works with Claude Code, tested on versions 2.1.303, 2.1.304, 2.1.308 and 2.1.316, and `belay doctor` checks yours. It's built for other coding agents too, and those are on the way.
-- **Platforms:** Linux and Windows through WSL are tested in real use. On macOS every test passes in CI, but it hasn't had real sessions yet. Sandboxes need Linux.
+- **Agents:** it works with Claude Code, tested on versions 2.1.303, 2.1.304, 2.1.308 and 2.1.316, and `belay doctor` checks yours.
+- **Platforms:** Linux and Windows through WSL are tested in real use. On macOS every test passes in CI, but it has not been tried in real sessions. Sandboxes need Linux.
 
 Found a problem, or belay got something wrong? [Open an issue](https://github.com/prakhar479/belay/issues); `belay flag a-N` and `belay export` help you show what happened.
 

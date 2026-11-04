@@ -4,7 +4,7 @@
 A change adds to its own section only, so parallel branches do not conflict here. Keep it one
 guide: do not split it into files. Changelog entries go in changelog.d/, not CHANGELOG.md. -->
 
-**belay upgrades your coding agent with everything it can't give itself.** Your agent is brilliant inside one conversation, and blind outside it: it can't remember yesterday, check its own work, protect you from what it runs, or keep a record. belay is the part of your setup that lives outside the conversation. It works with Claude Code today, and it's built for any coding agent.
+**belay upgrades your coding agent with everything it can't give itself.** Your agent is brilliant inside one conversation, and blind outside it: it can't remember yesterday, check its own work, protect you from what it runs, or keep a record. belay is the part of your setup that lives outside the conversation. It works with Claude Code.
 
 This guide covers every feature and setting. Each section stands on its own, so jump to what you need.
 
@@ -49,7 +49,7 @@ This guide covers every feature and setting. Each section stands on its own, so 
 
 ## Install
 
-belay is one binary with no runtime dependencies. It supports Claude Code on Linux and WSL; on macOS every test passes in CI, but it has not had real sessions yet. Windows is not supported outside WSL.
+belay is one binary with no runtime dependencies. It supports Claude Code on Linux and WSL; on macOS every test passes in CI, but it has not been tried in real sessions. Windows is not supported outside WSL.
 
 **One command** (recommended):
 
@@ -613,7 +613,7 @@ belay watches each sandbox from outside: memory (`sandbox_memory`), processes (`
 
 **Build cache.** A sandbox builds in its own clone, and the build goes when the clone goes. With `sandbox_build_cache = shared`, belay binds `<belay home>/cache/<repo>/sandbox/target` read-write into each sandbox of the repo and sets `CARGO_TARGET_DIR` to it, so builds start warm. It is off by default: a sandbox could leave build output there (a build script, a proc macro) that the next sandbox of the repo runs. Fleet sessions never use it. See [sandbox.md](sandbox.md#what-it-does-not-protect).
 
-There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only for now. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
+There is a sandbox only where it can be built as asked. Without bubblewrap (`bwrap`) or user namespaces, belay refuses and runs nothing. It is Linux only. Agents may run `belay sandbox run` and `belay sandbox task`, also as the MCP tools `sandbox_run` and `sandbox_task` (`sandbox_agent = off` stops that). Only you may run `belay sandbox claude` and `belay sandbox rm`: belay refuses them outside your terminal, and denies `rm` to the agent. What a sandbox protects, and what it does not, is in [sandbox.md](sandbox.md).
 
 ## Keeping the machine awake
 
@@ -919,7 +919,7 @@ It only reports; it never blocks. It reads the working tree through a temporary 
 - uses: prakhar479/belay@main
 ```
 
-The feature is under test, so its output may change.
+Its rules are basic: it can miss a change, or flag one that is fine.
 
 ## Config
 
