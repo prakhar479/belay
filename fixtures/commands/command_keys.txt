@@ -6,3 +6,11 @@ pytest -k x>y	pytest -k "x>y" 2>&1 | tail -5
 pytest tests/test_api.py	pytest tests/test_api.py > /tmp/out.txt 2>&1
 pytest tests/test_api.py	pytest tests/test_api.py >/tmp/out.txt
 pytest tests/test_api.py	pytest tests/test_api.py 2>&1
+# A build or check with no test runner keys on its own segment, not the whole line: seen
+# live, verify before done asked an agent to re-run `cargo build -q 2>&1 | tail -3; ls
+# docs; … | head -80; grep …` as "the check".
+cargo build	cargo build -q 2>&1 | tail -3; ls docs; ./target/debug/belay --help | head -80; grep -n tend docs/guide.md | head -40
+make check	make check 2>&1 | grep -E "test result|FAILED" | sort | uniq -c
+cargo clippy --all-targets	cd api && cargo clippy --all-targets 2>&1 | tail
+make check (in api)	cd api && make check
+ls docs	ls docs

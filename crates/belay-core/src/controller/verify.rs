@@ -302,6 +302,24 @@ mod tests {
     }
 
     #[test]
+    fn a_compound_build_line_is_named_by_its_build() {
+        let mut c = ctl();
+        run(
+            &mut c,
+            "cargo build -q 2>&1 | tail -3; ls docs; grep -n x docs/guide.md | head",
+            "",
+            false,
+            1,
+        );
+        edit(&mut c, "src/lib.rs", 2);
+        let why = stop(&mut c, 3).expect("continues");
+        assert_eq!(
+            why,
+            "belay: files changed since the last passing run of `cargo build`. Run it before you finish."
+        );
+    }
+
+    #[test]
     fn nothing_without_an_edit() {
         let mut c = ctl();
         pass(&mut c, 1);

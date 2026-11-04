@@ -328,12 +328,17 @@ fn detect_runner(cmd: &str) -> Option<TestRunner> {
 /// A key for "the same test run": the runner and its test selection, without output
 /// options, pipes, redirections, or setup prefixes. Agents rarely repeat a command
 /// exactly (`| tail -20` becomes `| tail -50`), so loops and re-runs compare keys (R1.3).
-/// Commands without a test runner keep their text.
+/// A build or check keys on its own segment the same way; other commands keep their text.
 pub fn command_key(cmd: &str) -> String {
-    let Some((runner, seg)) = runner_segment(cmd) else {
-        return cmd.trim().to_string();
+    // A build or check with no test runner keys on its own segment too: the rest of a
+    // compound line (`cargo build -q | tail; ls; grep …`) is not the check.
+    let (pytest, seg) = match runner_segment(cmd) {
+        Some((runner, seg)) => (runner == TestRunner::Pytest, seg),
+        None => match build_segment(cmd) {
+            Some(seg) => (false, seg),
+            None => return cmd.trim().to_string(),
+        },
     };
-    let pytest = runner == TestRunner::Pytest;
     let words = shell::program_words(&seg);
     let mut key: Vec<&str> = Vec::new();
     let mut skip_next = false;
@@ -629,6 +634,17 @@ pub fn runner_segment(cmd: &str) -> Option<(TestRunner, Vec<String>)> {
             }
         }
         runner_of(&seg).map(|r| (r, seg))
+    })
+}
+
+/// The first simple command that builds or checks (`cargo build`, `make check`), also
+/// inside `bash -c '…'`.
+fn build_segment(cmd: &str) -> Option<Vec<String>> {
+    shell::parse(cmd).segments.into_iter().find_map(|seg| {
+        if let Some(found) = shell_script(&seg).and_then(build_segment) {
+            return Some(found);
+        }
+        (kind_of(shell::program_words(&seg)) == Some(OutputKind::Build)).then_some(seg)
     })
 }
 
