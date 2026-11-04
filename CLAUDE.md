@@ -19,7 +19,7 @@ Do not break these. If a task needs you to, stop and ask.
 9. **No new dependency** in belay-core without a reason in the commit message.
 10. **Parsers need fixtures.** Every parser change adds a file in `fixtures/` and a test.
 11. **Network only on request.** belay makes a network call only for an explicit `belay skill` command. It uses `git` and `curl` subprocesses. The hook path, the daemon, and the core never touch the network.
-12. **Users approve what persists or escapes.** An approval that outlives the session, or that brings work out of a sandbox, is the user's: `allow`, `pause`, `undo`, `memory approve|drop`, `skill approve|remove`, `sandbox rm`. Each refuses outside the user's terminal, and PreToolUse denies the agent's run of it.
+12. **Users approve what persists or escapes.** An approval that outlives the session, or that brings work out of a sandbox, is the user's: `allow`, `pause|resume`, `undo`, `memory|notes approve|drop`, `findings drop`, `fixes forget`, `skill approve|reject|remove`, `sandbox rm`, `bg stop|attach`, `fleet prune --yes` (see `controller/belay_cmd.rs`). Each refuses outside the user's terminal, and PreToolUse denies the agent's run of it.
 
 ## Unverified facts
 

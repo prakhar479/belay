@@ -63,7 +63,7 @@ What it does:
 3. Runs `belay install --yes` when Claude Code is on your PATH (see [Into Claude Code](#into-claude-code)).
 
 Settings, as environment variables before `sh`:
-- `BELAY_VERSION=v0.2.0` picks a release.
+- `BELAY_VERSION=v0.2.1` picks a release.
 - `BELAY_INSTALL_DIR=<dir>` picks the directory.
 - `BELAY_NO_SETUP=1` installs the binary only.
 - `BELAY_FROM_SOURCE=1` builds with cargo.
@@ -103,7 +103,7 @@ belay doctor     # will belay work here? one line per check: ok, warn, or fail, 
 `belay install` sets up the rest in one step: the plugin, the status line, and the permission rules. It shows each change and asks before it makes it (`--yes` skips the question). Name parts to install only those:
 
 ```sh
-belay install                  # all three below
+belay install                  # the plugin, the status line, and the permission rules
 belay install --plugin         # the Claude Code plugin: belay's hooks, its skill, and slash commands
 belay install --statusline     # `belay status` as the status line, in ~/.claude/settings.json
 belay install --launcher       # prints an alias so `claude` starts under belay
@@ -134,7 +134,7 @@ belay retro --all          # every past session and subagent, ranked by what bel
 belay retro ~/.claude/projects/<project>/<session>.jsonl   # one session in detail
 ```
 
-On a session that went in circles, the report looks like this:
+On a session that went in circles, the report looks like this (shortened):
 
 ```text
 Session loop_session.jsonl · claude-code (retro) · 14 s
@@ -207,7 +207,7 @@ A feature that is off takes no action. An action the agent cannot take is record
 
 #### Pause and resume
 
-`belay pause` is the kill switch for a live session. `belay pause guard` pauses one feature; `belay pause` with no feature pauses all of them. `belay resume [feature]` turns them back on. Each pause and resume is in the ledger, and `belay status` shows what is paused. Run these yourself, in another terminal or with `!` in Claude Code: belay denies the agent's own `belay pause` and `belay resume`.
+`belay pause` is the kill switch for a live session. `belay pause guard` pauses one feature; `belay pause` with no feature pauses all of them. The features are `guard`, `loops`, `shape`, `wrap_tests`, `verify`, `memory`, `awareness`, and `commons`. `belay resume [feature]` turns them back on. Each pause and resume is in the ledger, and `belay status` shows what is paused. Run these yourself, in another terminal or with `!` in Claude Code: belay denies the agent's own `belay pause` and `belay resume`.
 
 0.1 had a look mode and an optimize mode. They are gone: `belay mode` says so, and `--belay-mode` is ignored with a warning. Reports of 0.1 sessions say "recorded in look mode (0.1)" when belay acted on nothing.
 
@@ -367,9 +367,10 @@ A note you type in your terminal is kept. A note an agent writes waits until you
 | `why {id}` | The cause chain of `a-N`, `o-N`, or an entry, as `belay why` |
 | `skill_preview {url}` | Fetches a skill and shows it, as `belay skill preview`. Installs nothing |
 | `skill_stage {url, scope?, name?}` | Stages a skill for you to approve, as an agent's `belay skill add` |
-
+| `brief {format?}` | The session brief, as `belay brief` (`text`, `markdown`, or `json`) |
 | `sandbox_run {argv, id?}` | Runs a command in a sandbox, as `belay sandbox run` (see [Sandboxes](#sandboxes)) |
 | `sandbox_task {prompt, id?, resume?, model?}` | A headless follow-up in a sandbox, as `belay sandbox task`; its result |
+| `bg_start {prompt, resume?, budget?, until?, model?}` | A background session for a user who is leaving, as `belay bg start`. Stopping or attaching to it stays yours |
 
 The session is `BELAY_SESSION_DIR` when set. Otherwise it is the newest session started in this directory, then in this project. The sandbox tools run as the agent: the same limits and refusals apply. The two skill tools fetch the URL they are given. Everything else stays on this machine. To add the server to another MCP client, run `belay mcp` as a stdio server from the project's directory.
 
@@ -1021,8 +1022,7 @@ Everything belay keeps stays on your machine. belay makes no model calls. It goe
 
 | Command | What it does |
 |---|---|
-| `belay claude [args…]` | Start Claude Code under belay. A resumed conversation (`--resume`, `-c`) continues its belay state; `--belay-fresh` starts clean |
-| `belay launch <agent> [args…]` | Start an agent under belay. `belay launch claude-code` is `belay claude` |
+| `belay claude [args…]` | Start Claude Code under belay. Every argument goes to Claude Code, except belay's own: `--belay-fresh` (a resumed conversation starts with clean belay state) and `--belay-fleet [F] --belay-name N` (join a running fleet as an attached role; see [Fleets](#fleets)). `belay claude --help` shows Claude Code's help |
 | `belay pause [feature]` · `belay resume [feature]` | Pause belay in the live session, or resume it (yours to run) |
 | `belay allow [a-N]` | Lift one guard block (yours to run) |
 | `belay undo [t-N] [--yes]` | List snapshots, or roll the files back to one (yours to run) |
@@ -1034,23 +1034,23 @@ Everything belay keeps stays on your machine. belay makes no model calls. It goe
 | `belay sandbox doctor` | Try to escape a fresh sandbox; exit 1 if a probe gets out |
 | `belay report [--session S] [--full]` | What happened in a session |
 | `belay brief [--session S] [--markdown\|--json]` | What a session changed, checked, and what to look at |
-| `belay why a-N` | The cause chain of an action |
+| `belay why a-N [--session S]` | The cause chain of an action, an output, or an entry |
 | `belay show o-N` | The full original of a summarized output |
 | `belay status` | One line for the status line |
 | `belay usage [--today\|--week\|--since DATE] [--by project\|session\|day] [--json]` | Tokens and estimated cost from the transcripts, where they went, and the 5-hour limit |
 | `belay watch [--session S] [--verbose]` | Print what belay does as it happens |
-| `belay retro <transcript> \| --all [--summary]` | What belay would have done in past transcripts |
+| `belay retro <transcript> [--full] \| --all [--summary] [--include-tmp] [--projects DIR]` | What belay would have done in past transcripts |
 | `belay flag [target] ["note"]` · `belay review` | Note and list where belay got it wrong |
-| `belay export --action a-N --fixture <dir>` | Save what led to an action as fixture files |
-| `belay sessions [--all\|--json\|--history]` | The board of live sessions |
+| `belay export --action a-N --fixture <dir> [--no-outputs]` | Save what led to an action as fixture files |
+| `belay sessions [--all\|--json\|--history] [--prune DAYS]` | The board of live sessions |
 | `belay card [--task …] [--name …] [--join …]` | This session's card |
 | `belay msg <to> "text"` · `belay inbox` | Messages between sessions and you |
 | `belay share "…"` · `belay ask "…"` · `belay findings` | Findings |
 | `belay handoff ["text"]` | Leave or read a handoff |
-| `belay note "…"` · `belay notes` · `belay fixes` | Project notes and learned fixes |
+| `belay note "…"` · `belay notes [--all] [approve\|drop]` · `belay fixes [--all] [forget]` | Project notes and learned fixes (approving, dropping and forgetting are yours to run) |
 | `belay memory [list\|search\|add\|show\|approve\|drop\|migrate]` | Memory: one store with provenance |
 | `belay skill [preview\|add\|list\|update\|approve\|reject\|remove]` | Skills from URLs: checked, pinned, approved by you |
-| `belay mcp` | MCP server over stdio: memory, skills, the handoff, outputs, why, and the brief |
+| `belay mcp` | MCP server over stdio: memory, the handoff, outputs, why, the brief, skills, sandboxes, and background sessions |
 | `belay fleet up\|status\|report\|merge\|down` | Start a fleet, watch it, merge its work, stop it |
 | `belay fleet pause\|resume\|restart\|replay` | Hold or go on handing out work; start a stopped hub again; replay its records |
 | `belay fleet stop\|spawn\|scale\|prune` | Stop or add sessions; remove worktrees of fleets that are down (`--branches`: also their merged branches) |

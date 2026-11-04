@@ -11,7 +11,7 @@
 #      Undo with `belay uninstall`.
 #
 # Settings (environment variables):
-#   BELAY_VERSION=v0.2.0      a release tag (default: the latest release)
+#   BELAY_VERSION=v0.2.1      a release tag (default: the latest release)
 #   BELAY_INSTALL_DIR=<dir>   where the binary goes (default: ~/.local/bin)
 #   BELAY_NO_SETUP=1          install the binary only; leave Claude Code alone
 #   BELAY_FROM_SOURCE=1       build with cargo even when a release binary exists
@@ -33,7 +33,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 if [ -n "${BELAY_VERSION:-}" ]; then
     case "$BELAY_VERSION" in
         v[0-9]* ) ;;
-        *) fail "BELAY_VERSION must look like v0.2.0 (got: $BELAY_VERSION)" ;;
+        *) fail "BELAY_VERSION must look like v0.2.1 (got: $BELAY_VERSION)" ;;
     esac
     case "$BELAY_VERSION" in
         *[!A-Za-z0-9.-]*) fail "BELAY_VERSION may hold only letters, digits, dots and dashes" ;;

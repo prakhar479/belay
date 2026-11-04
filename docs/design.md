@@ -112,7 +112,7 @@ What lives where:
 9. **Few dependencies** in the core, each with a reason.
 10. **Parsers need fixtures.** Every change to how belay reads a command or an output comes with a captured example and a test.
 11. **Network only on request.** Only `belay skill` fetches anything, and only when you run it. The hook path, the daemon, and the core never touch the network.
-12. **You approve what lasts or escapes.** Lifting a block, pausing belay, undoing, approving a memory or a skill, and removing a sandbox are yours. belay refuses them outside your own terminal, and denies the agent's attempts.
+12. **You approve what lasts or escapes.** Lifting a block, pausing belay, undoing, approving a memory or a skill, removing a sandbox, and stopping or taking over a background session are yours. belay refuses them outside your own terminal, and denies the agent's attempts.
 
 ## Where things live
 

@@ -42,7 +42,7 @@ These are in `CLAUDE.md`. A change that needs to break one should say so in its 
 9. **No new dependency** in belay-core without a reason in the commit message.
 10. **Parsers need fixtures.** Every parser change adds a case in `fixtures/` and a test.
 11. **Network only on request.** Only `belay skill` makes a network call, through `git` and `curl`. The hook path, the daemon, and the core never touch the network.
-12. **Users approve what lasts or escapes.** `allow`, `pause`, `undo`, `memory approve|drop`, `skill approve|remove`, and `sandbox rm` refuse outside the user's terminal, and the agent's run of them is denied.
+12. **Users approve what lasts or escapes.** `allow`, `pause|resume`, `undo`, `memory|notes approve|drop`, `findings drop`, `fixes forget`, `skill approve|reject|remove`, `sandbox rm`, `bg stop|attach`, and `fleet prune --yes` refuse outside the user's terminal, and the agent's run of them is denied (`controller/belay_cmd.rs`).
 
 ## Making a change
 
